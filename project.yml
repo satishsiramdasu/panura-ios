@@ -15,9 +15,11 @@ settings:
     CODE_SIGN_STYLE: Automatic
 
 packages:
+  # Google ships no official SPM package; SRGSSR repackages the official
+  # XCFrameworks. Module is still `GoogleCast`, so `import GoogleCast` is unchanged.
   GoogleCast:
-    url: https://github.com/google/CastSDK-Swift-Package
-    from: "4.8.0"
+    url: https://github.com/SRGSSR/google-cast-sdk
+    from: "4.8.4"
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads
     from: "11.0.0"
