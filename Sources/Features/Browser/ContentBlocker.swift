@@ -21,6 +21,7 @@ enum ContentBlocker {
     }
 
     /// Compile arbitrary content-blocker JSON (e.g. converted EasyList output).
+    @MainActor
     static func compileJSON(identifier: String, json: String) async -> WKContentRuleList? {
         let store = WKContentRuleListStore.default()
         return await withCheckedContinuation { cont in
@@ -35,6 +36,7 @@ enum ContentBlocker {
     }
 
     /// Return an already-compiled list from disk without rebuilding, if present.
+    @MainActor
     static func cached(identifier: String = baseIdentifier) async -> WKContentRuleList? {
         await withCheckedContinuation { cont in
             WKContentRuleListStore.default()?

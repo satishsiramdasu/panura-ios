@@ -34,7 +34,7 @@ final class AdManager: NSObject {
         let request = Request()
         InterstitialAd.load(with: slot.unitID, request: request) { [weak self] ad, error in
             guard let ad, error == nil else { return }
-            self?.ads[slot] = ad
+            Task { @MainActor in self?.ads[slot] = ad }
         }
     }
 
