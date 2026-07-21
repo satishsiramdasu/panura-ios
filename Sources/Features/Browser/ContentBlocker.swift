@@ -1,49 +1,142 @@
 import WebKit
 
-/// WKWebView content blocker. Uses the same rule engine as Safari content
-/// blockers. This is a compact starter list targeting the ad/tracker networks
-/// and pop-under scripts common on streaming sites — not a full EasyList, but
-/// enough to cut the worst of it. Extend `rulesJSON` as needed.
+/// WKWebView ad/tracker blocker — the iOS port of Android's `AdBlocker`.
+///
+/// iOS has no `shouldInterceptRequest`, so network blocking is done with a
+/// `WKContentRuleList` (Safari's engine) built from the same host + keyword
+/// lists. Cosmetic hiding uses the rule engine's native `css-display-none`
+/// action. The JS pop-neutralization layer lives in `AdBlockScript`.
 enum ContentBlocker {
+
     static func load() async -> WKContentRuleList? {
+        guard let json = rulesJSON() else { return nil }
         let store = WKContentRuleListStore.default()
         return await withCheckedContinuation { cont in
             store?.compileContentRuleList(
                 forIdentifier: "panura-adblock",
-                encodedContentRuleList: rulesJSON
-            ) { list, _ in
+                encodedContentRuleList: json
+            ) { list, error in
+                if let error { print("adblock compile failed: \(error)") }
                 cont.resume(returning: list)
             }
         }
     }
 
-    /// Each rule: block loads whose URL matches `url-filter`. Domains chosen are
-    /// ad/analytics/pop networks; the last rule blocks common popunder query
-    /// params. `unless-domain` is avoided to keep it simple.
-    private static let rulesJSON = #"""
-    [
-      {"trigger":{"url-filter":"doubleclick\\.net"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"googlesyndication\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"googleadservices\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"google-analytics\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"adservice\\.google\\."},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"amazon-adsystem\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"adnxs\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"rubiconproject\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"pubmatic\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"criteo\\."},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"taboola\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"outbrain\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"popads\\.net"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"popcash\\.net"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"propellerads\\."},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"exoclick\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"juicyads\\.com"},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"trafficjunky\\."},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"adsterra\\."},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"hilltopads\\."},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"onclickads\\."},"action":{"type":"block"}},
-      {"trigger":{"url-filter":"mgid\\.com"},"action":{"type":"block"}}
+    /// Build the content-rule-list JSON: one block rule per host, per keyword,
+    /// plus a single css-display-none rule for cosmetic hiding.
+    private static func rulesJSON() -> String? {
+        var rules: [[String: Any]] = []
+
+        for host in blockedHosts {
+            let escaped = host.replacingOccurrences(of: ".", with: "\\.")
+            rules.append([
+                "trigger": ["url-filter": "^https?://([^/]*\\.)?\(escaped)"],
+                "action": ["type": "block"],
+            ])
+        }
+
+        for keyword in blockedKeywords {
+            rules.append([
+                "trigger": ["url-filter": escapeRegex(keyword)],
+                "action": ["type": "block"],
+            ])
+        }
+
+        // Cosmetic: hide ad containers that slip past network blocking.
+        rules.append([
+            "trigger": ["url-filter": ".*"],
+            "action": ["type": "css-display-none", "selector": cosmeticSelector],
+        ])
+
+        guard let data = try? JSONSerialization.data(withJSONObject: rules) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func escapeRegex(_ s: String) -> String {
+        var out = ""
+        for ch in s {
+            if ".?+*()[]{}^$|\\".contains(ch) { out.append("\\") }
+            out.append(ch)
+        }
+        return out
+    }
+
+    /// CSS selector group hidden via `css-display-none` (ported from Android).
+    private static let cosmeticSelector =
+        #"[id^="adngin-"],[id^="google_ads_"],[id^="div-gpt-ad"],ins.adsbygoogle,[class*="adsbygoogle"],"# +
+        #"[id*="ad-container"],[class*="ad-container"],[id*="ad_container"],[class*="ad_container"],"# +
+        #"[id*="banner-ad"],[class*="banner-ad"],[id*="ad-banner"],[class*="ad-banner"],"# +
+        #"[id*="sticky-ad"],[class*="sticky-ad"],[id*="ad-sticky"],[class*="ad-sticky"],"# +
+        #"[id*="video-ad"],[class*="video-ad"],[id*="ad-overlay"],[class*="ad-overlay"],"# +
+        #"[id*="exoclick"],[class*="exoclick"],[id*="popunder"],[class*="popunder"],"# +
+        #"[id*="pop-ad"],[class*="pop-ad"],[class*="overlay-ad"],[id*="overlay-ad"],"# +
+        #"[data-ad],[data-ad-slot],[data-ad-unit],.adsbygoogle,#carbonads,.carbon-ads"#
+
+    // Ported from Android AdBlocker.BLOCKED_HOSTS_BASE (base domains).
+    private static let blockedHosts: [String] = [
+        // Programmatic ad networks
+        "doubleclick.net", "googlesyndication.com", "googletagmanager.com",
+        "googletagservices.com", "googleadservices.com", "adservice.google.com",
+        "adnxs.com", "amazon-adsystem.com", "adsrvr.org", "outbrain.com",
+        "taboola.com", "criteo.com", "rubiconproject.com", "pubmatic.com",
+        "openx.net", "openx.com", "media.net", "indexexchange.com",
+        "sharethrough.com", "spotxchange.com", "spotx.tv", "smartadserver.com",
+        "smaato.net", "sovrn.com", "lijit.com", "contextweb.com",
+        "casalemedia.com", "appnexus.com", "advertising.com", "oath.com",
+        "2mdn.net", "moatads.com", "doubleverify.com", "adsafeprotected.com",
+        "adform.net", "adform.com", "lkqd.net", "springserve.com",
+        "unrulymedia.com", "rhythmone.com", "1rx.io", "yieldlab.net",
+        "improvedigital.com", "teads.tv", "teads.com", "inmobi.com", "turn.com",
+        "freewheel.tv", "freewheel.net", "demdex.net", "omtrdc.net",
+        "bluekai.com", "crwdcntrl.net", "conversantmedia.com", "rlcdn.com",
+        "adition.com", "sizmek.com", "flashtalking.com", "adtng.com",
+        // Pop / redirect ads (streaming sites)
+        "acscdn.com", "acadscdn.com", "displayvertising.com", "newpopads.net",
+        "popads.net", "popcash.net", "popunder.net", "propellerads.com",
+        "exoclick.com", "juicyads.com", "trafficjunky.net", "adsterra.com",
+        "hilltopads.net", "hilltopads.com", "monetag.com", "adcash.com",
+        "clickaine.com", "richpush.co", "pushprofit.com", "a-ads.com",
+        "revcontent.com", "traffic-media.co", "plugrush.com", "adspyglass.com",
+        "cpmstar.com", "adcolony.com", "admaven.com", "clickadu.com",
+        "adtelligent.com", "bidvertiser.com", "mgid.com", "onetag.com",
+        "onetag-sys.com", "oxoad.com", "trafficfactory.biz", "traffichunt.com",
+        "zeroredirect1.com", "adnetwork.net", "liveadexchanger.com",
+        "adxpansion.com", "cpx.to", "popads.com", "etargetnet.com",
+        "tsyndicate.com", "adskeeper.co.uk", "adskeeper.com", "popad.co",
+        "pops.best", "trafficstars.com", "justpremium.com", "primis.tech",
+        "popunders.net", "datamoshi.com", "liveyui.com", "oclaserver.com",
+        // Push notification ads
+        "push.pub", "pushpush.net", "onclicka.com", "onclickads.net",
+        "megapu.sh", "subscribers.com", "izooto.com", "notix.io",
+        "pushground.com", "adpushup.com", "pushads.net", "evadav.com",
+        "push.house", "pushflew.com", "gravitypush.com", "sendpush.net",
+        "web-push.io",
+        // Crypto miners
+        "coinhive.com", "coin-hive.com", "minero.cc", "webminepool.com",
+        "cryptoloot.pro", "authedmine.com", "monerominer.rocks", "jsecoin.com",
+        "coinblind.com", "coinzilla.io",
+        // Link shorteners / ad redirectors
+        "adf.ly", "sh.st", "ouo.io", "bc.vc", "linkbucks.com", "shorte.st",
+        "adfoc.us", "lnkfly.com", "go2link.cc", "skiplink.co", "sub2unlock.com",
+        "sub4unlock.com", "sub2get.com", "shrinkearn.com", "gplinks.co",
+        "shrinkme.io", "shrinkurl.us", "exe.io", "fc.lc", "oke.io",
+        "zshort.gq", "cutpaid.com",
+        // Analytics / trackers
+        "scorecardresearch.com", "quantserve.com", "chartbeat.com",
+        "newrelic.com", "hotjar.com", "mouseflow.com", "logrocket.com",
+        "fullstory.com", "mixpanel.com", "segment.io", "segment.com",
+        "heapanalytics.com", "kissmetrics.com", "intercom.io", "intercom.com",
+        "marketo.com", "pardot.com", "comscore.com", "imrworldwide.com",
+        "nielsen.com", "brandmetrics.com", "tremorhub.com", "iasds01.com",
+        "integral-ad.com", "adscore.com", "ad-score.com", "sentry.io",
+        "bugsnag.com", "nr-data.net",
     ]
-    """#
+
+    // Ported from Android AdBlocker.BLOCKED_URL_KEYWORDS.
+    private static let blockedKeywords: [String] = [
+        "/popunder", "/pop-under", "/clickunder", "/pops/", "/popads",
+        "adserver", "ad_server", "/bannerads/", "/banner_ads/", "tracking.php",
+        "click.php?aid=", "click.php?bid=", "/ads/show", "/serve/ads",
+        "adsense/show",
+    ]
 }

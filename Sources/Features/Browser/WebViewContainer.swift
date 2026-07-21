@@ -17,12 +17,19 @@ struct WebViewContainer: UIViewRepresentable {
         let contentController = WKUserContentController()
         contentController.add(context.coordinator, name: "panura")
 
-        let script = WKUserScript(
+        // Ad/pop neutralization first, at document start, so it beats inline
+        // pop scripts (window.open, aclib, etc.).
+        contentController.addUserScript(WKUserScript(
+            source: AdBlockScript.source,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
+        // Video sniffer at document end.
+        contentController.addUserScript(WKUserScript(
             source: ExtractionScript.source,
             injectionTime: .atDocumentEnd,
             forMainFrameOnly: false
-        )
-        contentController.addUserScript(script)
+        ))
 
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
