@@ -51,12 +51,28 @@ final class LocalVideosModel: ObservableObject {
     private func loadThumbnails(for items: [LocalVideoAsset]) async {
         var updated = items
         let size = CGSize(width: 300, height: 200)
+        // highQualityFormat delivers a single callback; combined with the
+        // resume-once guard this avoids the double-resume crash that
+        // PHImageManager's default (opportunistic) delivery causes.
+        let options = PHImageRequestOptions()
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = true
+
         for (i, item) in items.enumerated() {
             let image: UIImage? = await withCheckedContinuation { cont in
+                var resumed = false
                 imageManager.requestImage(
                     for: item.asset, targetSize: size,
-                    contentMode: .aspectFill, options: nil
-                ) { img, _ in cont.resume(returning: img) }
+                    contentMode: .aspectFill, options: options
+                ) { img, info in
+                    // Ignore the degraded placeholder; only resume once.
+                    let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                    if degraded { return }
+                    guard !resumed else { return }
+                    resumed = true
+                    cont.resume(returning: img)
+                }
             }
             updated[i].thumbnail = image
         }
@@ -65,9 +81,13 @@ final class LocalVideosModel: ObservableObject {
 
     func resolveURL(for item: LocalVideoAsset) async -> URL? {
         await withCheckedContinuation { cont in
+            var resumed = false
             let options = PHVideoRequestOptions()
             options.isNetworkAccessAllowed = true
+            options.deliveryMode = .highQualityFormat
             imageManager.requestAVAsset(forVideo: item.asset, options: options) { avAsset, _, _ in
+                guard !resumed else { return }
+                resumed = true
                 cont.resume(returning: (avAsset as? AVURLAsset)?.url)
             }
         }

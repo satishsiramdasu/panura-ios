@@ -28,20 +28,46 @@ struct WebViewContainer: UIViewRepresentable {
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        // Block the pop-under/new-window ads these sites open on tap.
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
+        webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
         model.attach(webView)
         webView.load(URLRequest(url: URL(string: "https://www.google.com")!))
+
+        // Compile + attach the ad/tracker blocklist, then (re)load.
+        Task { @MainActor in
+            if let list = await ContentBlocker.load() {
+                webView.configuration.userContentController.add(list)
+                webView.reload()
+            }
+        }
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKUIDelegate {
         let model: BrowserModel
         init(model: BrowserModel) { self.model = model }
+
+        // A page tried to open a new window (target=_blank / window.open) — the
+        // usual pop-under ad vector. Load real navigations in the same tab and
+        // never spawn the extra window.
+        func webView(
+            _ webView: WKWebView,
+            createWebViewWith configuration: WKWebViewConfiguration,
+            for navigationAction: WKNavigationAction,
+            windowFeatures: WKWindowFeatures
+        ) -> WKWebView? {
+            if navigationAction.targetFrame == nil, navigationAction.request.url != nil {
+                webView.load(navigationAction.request)
+            }
+            return nil
+        }
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
             model.isLoading = true
