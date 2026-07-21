@@ -26,6 +26,7 @@ jobs:
       - name: Resolve Swift packages
         run: xcodebuild -resolvePackageDependencies -project PanuraPlayer.xcodeproj
 
+      # Compile-check on the simulator.
       - name: Build (unsigned, simulator)
         run: |
           xcodebuild \
@@ -35,3 +36,28 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      # Archive for a real device WITHOUT signing, then hand-package a .ipa.
+      # Sideloadly / AltStore re-sign this on install with a free Apple ID.
+      - name: Archive (device, unsigned)
+        run: |
+          xcodebuild \
+            -project PanuraPlayer.xcodeproj \
+            -scheme PanuraPlayer \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath build/PanuraPlayer.xcarchive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            archive
+
+      - name: Package unsigned .ipa
+        run: |
+          mkdir -p build/Payload
+          cp -R build/PanuraPlayer.xcarchive/Products/Applications/PanuraPlayer.app build/Payload/
+          (cd build && zip -qr PanuraPlayer-unsigned.ipa Payload)
+
+      - name: Upload .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PanuraPlayer-unsigned-ipa
+          path: build/PanuraPlayer-unsigned.ipa
