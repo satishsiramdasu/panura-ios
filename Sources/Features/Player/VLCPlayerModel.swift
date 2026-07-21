@@ -104,8 +104,8 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
     nonisolated func mediaPlayerTimeChanged(_ aNotification: Notification) {
         Task { @MainActor in
             position = player.position
-            elapsed = Self.fmt(player.time.intValue)
-            remaining = Self.fmt(player.remainingTime.intValue)
+            elapsed = Self.fmt(player.time?.intValue ?? 0)
+            remaining = Self.fmt(player.remainingTime?.intValue ?? 0)
             buffering = false
             loadTracksIfNeeded()
         }
