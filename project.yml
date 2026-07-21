@@ -31,6 +31,12 @@ packages:
   SafariConverterLib:
     url: https://github.com/AdguardTeam/SafariConverterLib
     from: "4.3.0"
+  # VLCKit (libVLC) — Infuse-grade playback: every format + reliable HTTP
+  # header support (Referer/User-Agent/Cookie) for gated streams. URL-based
+  # binary xcframework (CI-friendly, no Git LFS).
+  VLCKitSPM:
+    url: https://github.com/tylerjonesio/vlckit-spm
+    exactVersion: "3.6.0"
 
 targets:
   PanuraPlayer:
@@ -68,6 +74,8 @@ targets:
       - package: Swifter
       - package: SafariConverterLib
         product: ContentBlockerConverter
+      - package: VLCKitSPM
+        product: VLCKitSPM
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.panura.player
