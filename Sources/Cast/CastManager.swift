@@ -12,8 +12,10 @@ import GoogleCast
 final class CastManager: NSObject, ObservableObject {
     static let shared = CastManager()
 
-    /// Replace with the Panura receiver app id (or use the default media receiver).
-    private let receiverAppID = kGCKDefaultMediaReceiverApplicationID
+    /// Panura custom receiver (same ID as Android) — hosted at
+    /// panura.pages.dev/cast/receiver.html, re-injects Referer/Cookie/User-Agent
+    /// so header-gated streams play. Registered receiver, shared across platforms.
+    private let receiverAppID = "BE269497"
 
     @Published var isConnected = false
     @Published var connectedDeviceName: String?
@@ -38,6 +40,12 @@ final class CastManager: NSObject, ObservableObject {
         builder.metadata = metadata
         builder.contentType = item.url.absoluteString.contains(".m3u8")
             ? "application/x-mpegURL" : "video/mp4"
+        // Header-gated streams: the BE269497 custom receiver reads
+        // customData.headers and re-injects them on every request — same
+        // contract as the Android sender (ChromecastManager.loadMedia).
+        if !item.headers.isEmpty {
+            builder.customData = ["headers": item.headers]
+        }
 
         let request = GCKMediaLoadRequestDataBuilder()
         request.mediaInformation = builder.build()
