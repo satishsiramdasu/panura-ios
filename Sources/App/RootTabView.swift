@@ -17,9 +17,11 @@ struct RootTabView: View {
                 .tabItem { Label("Browser", systemImage: "globe") }
                 .tag(Tab.browser)
 
-            DownloadsView()
-                .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
-                .tag(Tab.downloads)
+            if FeatureFlags.downloadsEnabled {
+                DownloadsView()
+                    .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
+                    .tag(Tab.downloads)
+            }
 
             StreamView()
                 .tabItem { Label("Stream", systemImage: "link") }

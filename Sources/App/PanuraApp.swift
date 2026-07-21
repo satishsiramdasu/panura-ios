@@ -20,8 +20,10 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        MobileAds.shared.start { _ in
-            Task { @MainActor in AdManager.shared.preloadAll() }
+        if FeatureFlags.adsEnabled {
+            MobileAds.shared.start { _ in
+                Task { @MainActor in AdManager.shared.preloadAll() }
+            }
         }
         CastManager.shared.configure()
         return true

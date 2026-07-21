@@ -39,6 +39,7 @@ final class AdManager: NSObject {
     }
 
     func showInterstitial(_ slot: Slot) {
+        guard FeatureFlags.adsEnabled else { return }
         guard let ad = ads[slot], let root = Self.topViewController() else {
             preload(slot); return
         }
