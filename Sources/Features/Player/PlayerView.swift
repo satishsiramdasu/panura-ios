@@ -159,10 +159,16 @@ struct PlayerView: View {
     private func scheduleHide() {
         hideTask?.cancel()
         hideTask = Task {
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
-            if !scrubbing, model.isPlaying {
-                withAnimation { showControls = false }
+            // `try?` would swallow CancellationError and fall through to the
+            // hide below — so a just-cancelled timer would instantly re-hide
+            // the controls the user only just tapped to show. Bail explicitly.
+            do {
+                try await Task.sleep(nanoseconds: 4_000_000_000)
+            } catch {
+                return
             }
+            guard !Task.isCancelled, showControls, !scrubbing, model.isPlaying else { return }
+            withAnimation { showControls = false }
         }
     }
 }
