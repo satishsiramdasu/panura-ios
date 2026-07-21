@@ -1,0 +1,64 @@
+name: PanuraPlayer
+options:
+  bundleIdPrefix: com.panura
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "3.1"
+    CURRENT_PROJECT_VERSION: "14"
+    SWIFT_VERSION: "5.9"
+    DEVELOPMENT_TEAM: "" # set on CI via env / xcconfig
+    TARGETED_DEVICE_FAMILY: "1,2" # iPhone + iPad
+    CODE_SIGN_STYLE: Automatic
+
+packages:
+  GoogleCast:
+    url: https://github.com/google/CastSDK-Swift-Package
+    from: "4.8.0"
+  GoogleMobileAds:
+    url: https://github.com/googleads/swift-package-manager-google-mobile-ads
+    from: "11.0.0"
+  Swifter:
+    url: https://github.com/httpswift/swifter
+    from: "1.5.0"
+
+targets:
+  PanuraPlayer:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+    resources:
+      - Resources/Assets.xcassets
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Panura
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true # extraction/browser hits arbitrary http hosts
+        NSPhotoLibraryUsageDescription: Panura needs access to your videos to play and cast them.
+        NSLocalNetworkUsageDescription: Panura discovers and casts to TVs on your local network.
+        NSBonjourServices:
+          - _googlecast._tcp
+          - _panuracast._tcp
+        UIBackgroundModes:
+          - audio
+        GADApplicationIdentifier: ca-app-pub-6998555111280991~0000000000 # TODO iOS AdMob app id
+    dependencies:
+      - package: GoogleCast
+        product: GoogleCast
+      - package: GoogleMobileAds
+      - package: Swifter
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.panura.player
