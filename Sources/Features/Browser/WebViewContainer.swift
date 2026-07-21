@@ -45,12 +45,14 @@ struct WebViewContainer: UIViewRepresentable {
         model.attach(webView)
         webView.load(URLRequest(url: URL(string: "https://www.google.com")!))
 
-        // Compile + attach the ad/tracker blocklist, then (re)load.
+        // Compile + attach the ad/tracker rule lists (static base + oisd, plus
+        // the converted EasyList/uBlock lists), then (re)load so they apply.
         Task { @MainActor in
-            if let list = await ContentBlocker.load() {
+            let lists = await FilterListUpdater.current()
+            for list in lists {
                 webView.configuration.userContentController.add(list)
-                webView.reload()
             }
+            if !lists.isEmpty { webView.reload() }
         }
         return webView
     }

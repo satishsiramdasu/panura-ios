@@ -8,26 +8,50 @@ import WebKit
 /// action. The JS pop-neutralization layer lives in `AdBlockScript`.
 enum ContentBlocker {
 
-    static func load() async -> WKContentRuleList? {
-        guard let json = rulesJSON() else { return nil }
+    static let baseIdentifier = "panura-base"
+
+    /// Compile the static base blocklist (+ optional fetched `extraHosts` such as
+    /// oisd domains) into its own rule list.
+    static func compile(
+        identifier: String = baseIdentifier,
+        extraHosts: [String] = []
+    ) async -> WKContentRuleList? {
+        guard let json = rulesJSON(extraHosts: extraHosts) else { return nil }
+        return await compileJSON(identifier: identifier, json: json)
+    }
+
+    /// Compile arbitrary content-blocker JSON (e.g. converted EasyList output).
+    static func compileJSON(identifier: String, json: String) async -> WKContentRuleList? {
         let store = WKContentRuleListStore.default()
         return await withCheckedContinuation { cont in
             store?.compileContentRuleList(
-                forIdentifier: "panura-adblock",
+                forIdentifier: identifier,
                 encodedContentRuleList: json
             ) { list, error in
-                if let error { print("adblock compile failed: \(error)") }
+                if let error { print("adblock compile failed [\(identifier)]: \(error)") }
                 cont.resume(returning: list)
             }
         }
     }
 
+    /// Return an already-compiled list from disk without rebuilding, if present.
+    static func cached(identifier: String = baseIdentifier) async -> WKContentRuleList? {
+        await withCheckedContinuation { cont in
+            WKContentRuleListStore.default()?
+                .lookUpContentRuleList(forIdentifier: identifier) { list, _ in
+                    cont.resume(returning: list)
+                }
+        }
+    }
+
     /// Build the content-rule-list JSON: one block rule per host, per keyword,
     /// plus a single css-display-none rule for cosmetic hiding.
-    private static func rulesJSON() -> String? {
+    private static func rulesJSON(extraHosts: [String]) -> String? {
         var rules: [[String: Any]] = []
 
-        for host in blockedHosts {
+        // Dedupe base + fetched hosts.
+        var seen = Set<String>()
+        for host in blockedHosts + extraHosts where seen.insert(host).inserted {
             let escaped = host.replacingOccurrences(of: ".", with: "\\.")
             rules.append([
                 "trigger": ["url-filter": "^https?://([^/]*\\.)?\(escaped)"],

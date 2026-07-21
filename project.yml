@@ -27,6 +27,10 @@ packages:
   Swifter:
     url: https://github.com/httpswift/swifter
     from: "1.5.0"
+  # Converts EasyList/uBlock ABP filter lists into Safari content-blocker JSON.
+  SafariConverterLib:
+    url: https://github.com/AdguardTeam/SafariConverterLib
+    from: "4.3.0"
 
 targets:
   PanuraPlayer:
@@ -62,6 +66,8 @@ targets:
         product: GoogleCast
       - package: GoogleMobileAds
       - package: Swifter
+      - package: SafariConverterLib
+        product: ContentBlockerConverter
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.panura.player
