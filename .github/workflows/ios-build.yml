@@ -23,8 +23,15 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # VLCKit's binary xcframework (~200 MB) sometimes times out; retry.
       - name: Resolve Swift packages
-        run: xcodebuild -resolvePackageDependencies -project PanuraPlayer.xcodeproj
+        run: |
+          n=0
+          until [ $n -ge 4 ]; do
+            xcodebuild -resolvePackageDependencies -project PanuraPlayer.xcodeproj && exit 0
+            n=$((n+1)); echo "resolve attempt $n failed, retrying in 20s..."; sleep 20
+          done
+          exit 1
 
       # Compile-check on the simulator.
       - name: Build (unsigned, simulator)
