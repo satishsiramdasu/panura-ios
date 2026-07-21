@@ -2,7 +2,7 @@ name: PanuraPlayer
 options:
   bundleIdPrefix: com.panura
   deploymentTarget:
-    iOS: "15.0"
+    iOS: "16.0"
   createIntermediateGroups: true
 
 settings:

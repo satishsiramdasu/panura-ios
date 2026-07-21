@@ -16,7 +16,7 @@ struct HomeView: View {
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { CastButton() }
+                ToolbarItem(placement: .navigationBarTrailing) { CastButton() }
             }
         }
     }
