@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import AVFoundation
+import MediaPlayer
 import VLCKitSPM
 
 /// Wraps VLCMediaPlayer (libVLC) — plays every format AVPlayer can't and, unlike
@@ -22,11 +23,20 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     let player = VLCMediaPlayer()
     private var tracksLoaded = false
+    private var title = ""
+    private var observersAdded = false
+
+    /// User setting — when off, playback pauses as soon as the app leaves the
+    /// foreground (screen lock, home). When on, audio keeps going.
+    private var backgroundPlayEnabled: Bool {
+        UserDefaults.standard.bool(forKey: "background_play")
+    }
 
     func start(item: MediaItem, into view: UIView) {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
 
+        title = item.title
         player.drawable = view
         player.delegate = self
 
@@ -34,6 +44,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         applyHeaders(item.headers, to: media)
         player.media = media
         player.play()
+
+        setupRemoteCommands()
+        observeLifecycle()
     }
 
     /// libVLC honors these per-media options; covers the common gating headers.
@@ -61,10 +74,85 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     }
     func seek(to fraction: Float) { player.position = fraction }
     func setRate(_ r: Float) { player.rate = r; rate = r }
-    func stop() { player.stop() }
+    func stop() {
+        player.stop()
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        NotificationCenter.default.removeObserver(self)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
 
     func selectAudio(_ id: Int) { player.currentAudioTrackIndex = Int32(id) }
     func selectSubtitle(_ id: Int) { player.currentVideoSubTitleIndex = Int32(id) }
+
+    // MARK: lock screen / Control Center
+
+    /// Populate the Now Playing card. VLC (unlike AVPlayer) never does this for
+    /// us, which is why no media notification appeared.
+    private func updateNowPlaying() {
+        let elapsedMs = Int(player.time.intValue)
+        // remainingTime is negative; derive duration without touching media.length.
+        let remainingMs = abs(Int(player.remainingTime?.intValue ?? 0))
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: title.isEmpty ? "Panura" : title,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: Double(elapsedMs) / 1000,
+            MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? Double(player.rate) : 0,
+        ]
+        let durationMs = elapsedMs + remainingMs
+        if durationMs > 0 {
+            info[MPMediaItemPropertyPlaybackDuration] = Double(durationMs) / 1000
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func setupRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.player.play() }; return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.player.pause() }; return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.togglePlay() }; return .success
+        }
+        center.skipForwardCommand.preferredIntervals = [10]
+        center.skipBackwardCommand.preferredIntervals = [10]
+        center.skipForwardCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.skip(10) }; return .success
+        }
+        center.skipBackwardCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.skip(-10) }; return .success
+        }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let e = event as? MPChangePlaybackPositionCommandEvent else {
+                return .commandFailed
+            }
+            Task { @MainActor in
+                guard let self else { return }
+                let elapsed = Int(self.player.time.intValue)
+                let total = elapsed + abs(Int(self.player.remainingTime?.intValue ?? 0))
+                if total > 0 {
+                    self.seek(to: Float(e.positionTime * 1000 / Double(total)))
+                }
+            }
+            return .success
+        }
+    }
+
+    // MARK: background behaviour
+
+    private func observeLifecycle() {
+        guard !observersAdded else { return }
+        observersAdded = true
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.backgroundPlayEnabled else { return }
+                self.player.pause()
+            }
+        }
+    }
 
     // MARK: helpers
 
@@ -98,6 +186,7 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
             case .playing: buffering = false; loadTracksIfNeeded()
             default: break
             }
+            updateNowPlaying()
         }
     }
 
@@ -108,6 +197,7 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
             remaining = Self.fmt(player.remainingTime?.intValue ?? 0)
             buffering = false
             loadTracksIfNeeded()
+            updateNowPlaying()
         }
     }
 }

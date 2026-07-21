@@ -18,6 +18,13 @@ struct PlayerView: View {
 
             VLCVideoView(model: model, item: item)
                 .ignoresSafeArea()
+
+            // libVLC adds its own subviews to the drawable UIView and they
+            // swallow hit-testing, so the tap target must live ABOVE the video
+            // rather than on it — otherwise controls never come back.
+            Color.clear
+                .contentShape(Rectangle())
+                .ignoresSafeArea()
                 .onTapGesture { toggleControls() }
 
             if model.buffering {
@@ -38,7 +45,11 @@ struct PlayerView: View {
 
     private var controlsOverlay: some View {
         ZStack {
-            Color.black.opacity(0.35).ignoresSafeArea()
+            // Tapping the dimmed backdrop hides the controls again.
+            Color.black.opacity(0.35)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { toggleControls() }
 
             VStack {
                 topBar

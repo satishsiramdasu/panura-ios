@@ -1,11 +1,19 @@
 import SwiftUI
 
 struct SettingsView: View {
+    /// Read by VLCPlayerModel; when off, playback pauses on lock/background.
+    @AppStorage("background_play") private var backgroundPlay = false
+
     var body: some View {
         NavigationStack {
             List {
-                Section("Playback") {
+                Section {
+                    Toggle("Background playback", isOn: $backgroundPlay)
                     NavigationLink("Cast to TV") { CastDevicesView() }
+                } header: {
+                    Text("Playback")
+                } footer: {
+                    Text("Keep audio playing when you lock the screen or leave the app. Off by default.")
                 }
                 Section("Community") {
                     Link(destination: URL(string: "https://t.me/")!) {
