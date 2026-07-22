@@ -191,11 +191,14 @@ struct BrowserView: View {
                     Section {
                         ForEach(model.debugLog) { entry in
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(entry.verdict)
+                                Text("\(entry.source) → \(entry.verdict)")
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(
                                         entry.verdict.hasPrefix("emitted") ? Color.green : .secondary
                                     )
+                                Text(entry.host)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
                                 Text(entry.url)
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)

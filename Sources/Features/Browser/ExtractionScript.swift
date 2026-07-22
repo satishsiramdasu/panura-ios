@@ -149,42 +149,48 @@ enum ExtractionScript {
         });
       }
 
+      // Diagnostics: record the verdict for anything media-shaped, so a URL that
+      // never reaches the list can be told apart from one that was filtered.
+      // Always sent — a flag injected at web-view creation cannot be toggled
+      // later and never reaches cross-origin iframes. The native side decides
+      // whether to keep these, and the media-shape filter keeps volume low.
+      function dbg(url, verdict, src) {
+        try {
+          var s = String(url);
+          if (!/\/hls\/|\/dash\/|\.m3u8|\.mpd|\.mp4|\.ts|\.m4s|seg|chunk|frag/i.test(s)) return;
+          post({
+            kind: 'debug', url: s.slice(0, 400), verdict: verdict,
+            host: location.hostname, src: src || 'dom'
+          });
+        } catch (e) {}
+      }
+
       // `proven` = the body came back starting with #EXTM3U, so this URL is a
       // manifest as a matter of fact. Proof outranks every URL-shape rule and
       // outranks strict mode: a stale `stream` pattern must not hide a real
       // stream we have already confirmed.
-      // Diagnostics: record the verdict for anything media-shaped, so a URL that
-      // never reaches the list can be told apart from one that was filtered.
-      // Off unless the Settings toggle injected __panuraDebug.
-      function dbg(url, verdict) {
+      // `src` names the hook that saw the URL — without it the log says what was
+      // decided but not which layer (if any) ever observed the request.
+      function report(url, title, proven, src) {
         try {
-          if (!window.__panuraDebug) return;
-          var s = String(url);
-          if (!/\/hls\/|\/dash\/|\.m3u8|\.mpd|\.mp4|\.ts|\.m4s|seg|chunk|frag/i.test(s)) return;
-          post({ kind: 'debug', url: s.slice(0, 400), verdict: verdict, host: location.hostname });
-        } catch (e) {}
-      }
-
-      function report(url, title, proven) {
-        try {
-          if (!proven && !isVideoUrl(url)) { dbg(url, 'rejected: not video'); return; }
+          if (!proven && !isVideoUrl(url)) { dbg(url, 'rejected: not video', src); return; }
           var abs = absolute(url);
-          if (!proven && isSegmentUrl(abs)) { dbg(abs, 'rejected: segment'); return; }
+          if (!proven && isSegmentUrl(abs)) { dbg(abs, 'rejected: segment', src); return; }
           if (reported[abs]) return;
           reported[abs] = true;
 
           var site = matchedSite();
           var strict = !!(site && site.stream);
 
-          if (!strict) { dbg(abs, 'emitted (no rule)'); emit(abs, title, site); return; }
+          if (!strict) { dbg(abs, 'emitted (no rule)', src); emit(abs, title, site); return; }
 
           if (proven || matchesStream(site, abs)) {
             strictSatisfied = true;
             pending = [];               // the real stream won; drop the noise
-            dbg(abs, proven ? 'emitted (proven manifest)' : 'emitted (rule match)');
+            dbg(abs, proven ? 'emitted (proven manifest)' : 'emitted (rule match)', src);
             emit(abs, title, site);
           } else {
-            dbg(abs, 'held: no rule match');
+            dbg(abs, 'held: no rule match', src);
             pending.push([abs, title]);
           }
         } catch (e) {}
@@ -199,7 +205,7 @@ enum ExtractionScript {
           var head = text.slice(0, 512).replace(/^﻿/, '');
           if (head.replace(/^\s+/, '').lastIndexOf('#EXTM3U', 0) !== 0) return;
 
-          if (sourceUrl) report(sourceUrl, '', true);
+          if (sourceUrl) report(sourceUrl, '', true, 'playlist-body');
 
           var lines = text.split(/\r?\n/);
           var expectSegment = false;
@@ -306,7 +312,7 @@ enum ExtractionScript {
       try {
         var origOpen = XMLHttpRequest.prototype.open;
         XMLHttpRequest.prototype.open = function (method, url) {
-          try { report(String(url)); reportSub(String(url), '', ''); } catch (e) {}
+          try { report(String(url), '', false, 'xhr'); reportSub(String(url), '', ''); } catch (e) {}
           return origOpen.apply(this, arguments);
         };
         var origSend = XMLHttpRequest.prototype.send;
@@ -323,7 +329,7 @@ enum ExtractionScript {
                 // a redirecting front-end URL.
                 var finalUrl = xhr.responseURL || '';
                 scanPlaylist(body, finalUrl);
-                if (finalUrl) report(finalUrl);
+                if (finalUrl) report(finalUrl, '', false, 'xhr-response');
                 scanSubsInText(body);
               } catch (e) {}
             }, false);
@@ -338,7 +344,7 @@ enum ExtractionScript {
           window.fetch = function (resource) {
             try {
               var u = typeof resource === 'string' ? resource : (resource && resource.url) ? resource.url : '';
-              if (u) { report(u); reportSub(u, '', ''); }
+              if (u) { report(u, '', false, 'fetch'); reportSub(u, '', ''); }
             } catch (e) {}
             return origFetch.apply(this, arguments).then(function (response) {
               // Clone so the page still consumes its own body normally.
@@ -347,7 +353,7 @@ enum ExtractionScript {
                 var finalUrl = response.url || '';
                 response.clone().text().then(function (body) {
                   scanPlaylist(body, finalUrl);
-                  if (finalUrl) report(finalUrl);
+                  if (finalUrl) report(finalUrl, '', false, 'fetch-response');
                   scanSubsInText(body);
                 }).catch(function () {});
               } catch (e) {}
@@ -363,7 +369,7 @@ enum ExtractionScript {
           var d = Object.getOwnPropertyDescriptor(proto, 'src');
           if (d && d.set) {
             Object.defineProperty(proto, 'src', {
-              set: function (v) { try { if (v) report(String(v)); } catch (e) {} return d.set.call(this, v); },
+              set: function (v) { try { if (v) report(String(v), '', false, 'src-setter'); } catch (e) {} return d.set.call(this, v); },
               get: d.get, configurable: true
             });
           }
@@ -383,7 +389,7 @@ enum ExtractionScript {
             var n = String(name).toLowerCase();
             if (value && (n === 'src' || n === 'data-src')) {
               var tag = (this.tagName || '').toUpperCase();
-              if (tag === 'VIDEO' || tag === 'SOURCE' || tag === 'AUDIO') report(String(value));
+              if (tag === 'VIDEO' || tag === 'SOURCE' || tag === 'AUDIO') report(String(value), '', false, 'setAttribute');
             }
           } catch (e) {}
           return origSetAttr.apply(this, arguments);
@@ -403,7 +409,7 @@ enum ExtractionScript {
                 var tag = t.tagName.toUpperCase();
                 if (tag !== 'VIDEO' && tag !== 'AUDIO' && tag !== 'SOURCE') return;
                 var s = t.currentSrc || t.src || t.getAttribute('src');
-                if (s) report(s);
+                if (s) report(s, '', false, 'media-event:' + ev);
               } catch (e2) {}
             }, true);
           });
@@ -416,7 +422,7 @@ enum ExtractionScript {
           var r = origLoad.apply(this, arguments);
           try {
             var s = this.currentSrc || this.src;
-            if (s) report(s);
+            if (s) report(s, '', false, 'load()');
           } catch (e) {}
           return r;
         };
@@ -442,7 +448,7 @@ enum ExtractionScript {
         HTMLMediaElement.prototype.play = function () {
           try {
             var s = this.currentSrc || this.src;
-            if (s) report(s);
+            if (s) report(s, '', false, 'play()');
           } catch (e) {}
           return origPlay.apply(this, arguments);
         };
@@ -493,7 +499,7 @@ enum ExtractionScript {
       function scanElement(el) {
         try {
           var s = el.currentSrc || el.src || el.getAttribute('src');
-          if (s) report(s);
+          if (s) report(s, '', false, 'dom-scan');
         } catch (e) {}
       }
 
@@ -501,7 +507,7 @@ enum ExtractionScript {
         try {
           if (window.jwplayer) {
             var pl = jwplayer().getPlaylist();
-            if (pl && pl[0] && pl[0].sources) pl[0].sources.forEach(function (s) { report(s.file); });
+            if (pl && pl[0] && pl[0].sources) pl[0].sources.forEach(function (s) { report(s.file, '', false, 'jwplayer'); });
           }
         } catch (e) {}
         try { document.querySelectorAll('video, source').forEach(scanElement); } catch (e) {}
@@ -513,7 +519,7 @@ enum ExtractionScript {
             scriptPatterns.forEach(function (pat) {
               pat.lastIndex = 0;
               var m;
-              while ((m = pat.exec(text)) !== null && m[1]) report(m[1]);
+              while ((m = pat.exec(text)) !== null && m[1]) report(m[1], '', false, 'inline-script');
             });
             scanSubsInText(text);
           });

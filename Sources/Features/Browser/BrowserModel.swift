@@ -25,6 +25,8 @@ final class BrowserModel: ObservableObject {
         let url: String
         let verdict: String
         let host: String
+        /// Which hook saw it — xhr, fetch, setAttribute, media-event, dom-scan…
+        let source: String
     }
 
     private weak var webView: WKWebView?
@@ -67,14 +69,16 @@ final class BrowserModel: ObservableObject {
         debugLog.removeAll()
     }
 
-    func reportDebug(url: String, verdict: String, host: String) {
+    func reportDebug(url: String, verdict: String, host: String, source: String) {
         guard debugLog.count < 400 else { return }   // a busy page can flood
-        debugLog.append(DebugEntry(url: url, verdict: verdict, host: host))
+        debugLog.append(DebugEntry(url: url, verdict: verdict, host: host, source: source))
     }
 
     /// The whole log as text, for pasting into a bug report.
     var debugLogText: String {
-        debugLog.map { "[\($0.host)] \($0.verdict)\n\($0.url)" }.joined(separator: "\n\n")
+        debugLog
+            .map { "[\($0.host)] \($0.source) -> \($0.verdict)\n\($0.url)" }
+            .joined(separator: "\n\n")
     }
 
     // MARK: detection

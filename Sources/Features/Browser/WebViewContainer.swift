@@ -17,14 +17,6 @@ struct WebViewContainer: UIViewRepresentable {
         let contentController = WKUserContentController()
         contentController.add(context.coordinator, name: "panura")
 
-        // Diagnostics flag must exist before the sniffer runs.
-        if UserDefaults.standard.bool(forKey: "debug_detection") {
-            contentController.addUserScript(WKUserScript(
-                source: "window.__panuraDebug = true;",
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            ))
-        }
         // Ad/pop neutralization first, at document start, so it beats inline
         // pop scripts (window.open, aclib, etc.).
         contentController.addUserScript(WKUserScript(
@@ -218,10 +210,14 @@ struct WebViewContainer: UIViewRepresentable {
                 }
                 return
             case "debug":
+                // Always collected, shown only when the Diagnostics setting is
+                // on — so turning it on reveals the log already captured rather
+                // than requiring a reload.
                 model.reportDebug(
                     url: dict["url"] as? String ?? "",
                     verdict: dict["verdict"] as? String ?? "",
-                    host: dict["host"] as? String ?? ""
+                    host: dict["host"] as? String ?? "",
+                    source: dict["src"] as? String ?? ""
                 )
                 return
             default:
