@@ -15,6 +15,17 @@ final class BrowserModel: ObservableObject {
     @Published var foundSubtitles: [SubtitleTrack] = []
     /// Title/artwork the site published via MediaSession, when available.
     @Published var mediaSessionTitle = ""
+    /// Every media-shaped URL the sniffer saw and what it decided, so a URL that
+    /// never reaches `foundVideos` can be told apart from one that was filtered.
+    /// Only populated when the Diagnostics setting is on.
+    @Published var debugLog: [DebugEntry] = []
+
+    struct DebugEntry: Identifiable, Hashable {
+        let id = UUID()
+        let url: String
+        let verdict: String
+        let host: String
+    }
 
     private weak var webView: WKWebView?
     private var seen = Set<String>()
@@ -53,6 +64,17 @@ final class BrowserModel: ObservableObject {
         mediaSessionTitle = ""
         seen.removeAll()
         seenSubs.removeAll()
+        debugLog.removeAll()
+    }
+
+    func reportDebug(url: String, verdict: String, host: String) {
+        guard debugLog.count < 400 else { return }   // a busy page can flood
+        debugLog.append(DebugEntry(url: url, verdict: verdict, host: host))
+    }
+
+    /// The whole log as text, for pasting into a bug report.
+    var debugLogText: String {
+        debugLog.map { "[\($0.host)] \($0.verdict)\n\($0.url)" }.joined(separator: "\n\n")
     }
 
     // MARK: detection

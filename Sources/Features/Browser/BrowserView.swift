@@ -7,6 +7,7 @@ struct BrowserView: View {
     @State private var playItem: MediaItem?
     @State private var showFoundSheet = false
     @State private var editingAddress = false
+    @AppStorage("debug_detection") private var debugDetection = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -24,7 +25,11 @@ struct BrowserView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if !model.foundVideos.isEmpty { foundBar }
+            // With diagnostics on the bar must also open when nothing was
+            // detected — that is precisely the case worth inspecting.
+            if !model.foundVideos.isEmpty || (debugDetection && !model.debugLog.isEmpty) {
+                foundBar
+            }
         }
         .fullScreenCover(item: $playItem) { PlayerView(item: $0) }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
@@ -126,9 +131,13 @@ struct BrowserView: View {
     private var foundBar: some View {
         Button { showFoundSheet = true } label: {
             HStack(spacing: 10) {
-                Image(systemName: "play.rectangle.fill")
-                Text("\(model.foundVideos.count) video\(model.foundVideos.count == 1 ? "" : "s") found")
-                    .fontWeight(.medium)
+                Image(systemName: model.foundVideos.isEmpty ? "ladybug.fill" : "play.rectangle.fill")
+                Text(
+                    model.foundVideos.isEmpty
+                        ? "Sniffer log (\(model.debugLog.count))"
+                        : "\(model.foundVideos.count) video\(model.foundVideos.count == 1 ? "" : "s") found"
+                )
+                .fontWeight(.medium)
                 Spacer()
                 Image(systemName: "chevron.up").font(.footnote)
             }
@@ -143,7 +152,8 @@ struct BrowserView: View {
 
     private var foundSheet: some View {
         NavigationStack {
-            List(model.foundVideos) { video in
+            List {
+                ForEach(model.foundVideos) { video in
                 VStack(alignment: .leading, spacing: 8) {
                     Text(video.title.isEmpty ? "Video" : video.title)
                         .font(.subheadline.weight(.medium))
@@ -175,8 +185,38 @@ struct BrowserView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                }
+
+                if debugDetection {
+                    Section {
+                        ForEach(model.debugLog) { entry in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(entry.verdict)
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(
+                                        entry.verdict.hasPrefix("emitted") ? Color.green : .secondary
+                                    )
+                                Text(entry.url)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(4)
+                            }
+                            .padding(.vertical, 2)
+                        }
+                    } header: {
+                        HStack {
+                            Text("Sniffer log (\(model.debugLog.count))")
+                            Spacer()
+                            Button("Copy") {
+                                UIPasteboard.general.string = model.debugLogText
+                            }
+                            .font(.caption)
+                        }
+                    } footer: {
+                        Text("Every media-shaped URL the page requested and what the sniffer decided. Turn off in Settings.")
+                    }
+                }
             }
-            .listStyle(.plain)
             .navigationTitle("Detected videos")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

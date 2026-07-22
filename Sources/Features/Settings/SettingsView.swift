@@ -4,6 +4,8 @@ struct SettingsView: View {
     /// Read by VLCPlayerModel; when off, playback pauses on lock/background.
     @AppStorage("background_play") private var backgroundPlay = false
     @State private var rulesRefreshed = false
+    /// Read by WebViewContainer at web-view creation and by the found-videos sheet.
+    @AppStorage("debug_detection") private var debugDetection = false
 
     var body: some View {
         NavigationStack {
@@ -27,10 +29,11 @@ struct SettingsView: View {
                         )
                     }
                     .disabled(rulesRefreshed)
+                    Toggle("Diagnostics", isOn: $debugDetection)
                 } header: {
                     Text("Detection")
                 } footer: {
-                    Text("Re-downloads the site detection rules. Reopen the Browser tab afterwards to apply them.")
+                    Text("Re-downloads the site detection rules. Reopen the Browser tab afterwards to apply them.\n\nDiagnostics logs every media URL a page requests and why it was kept or filtered, shown under the detected-videos sheet.")
                 }
 
                 Section("Community") {

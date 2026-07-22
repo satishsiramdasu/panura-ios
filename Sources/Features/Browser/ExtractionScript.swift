@@ -153,24 +153,38 @@ enum ExtractionScript {
       // manifest as a matter of fact. Proof outranks every URL-shape rule and
       // outranks strict mode: a stale `stream` pattern must not hide a real
       // stream we have already confirmed.
+      // Diagnostics: record the verdict for anything media-shaped, so a URL that
+      // never reaches the list can be told apart from one that was filtered.
+      // Off unless the Settings toggle injected __panuraDebug.
+      function dbg(url, verdict) {
+        try {
+          if (!window.__panuraDebug) return;
+          var s = String(url);
+          if (!/\/hls\/|\/dash\/|\.m3u8|\.mpd|\.mp4|\.ts|\.m4s|seg|chunk|frag/i.test(s)) return;
+          post({ kind: 'debug', url: s.slice(0, 400), verdict: verdict, host: location.hostname });
+        } catch (e) {}
+      }
+
       function report(url, title, proven) {
         try {
-          if (!proven && !isVideoUrl(url)) return;
+          if (!proven && !isVideoUrl(url)) { dbg(url, 'rejected: not video'); return; }
           var abs = absolute(url);
-          if (!proven && isSegmentUrl(abs)) return;
+          if (!proven && isSegmentUrl(abs)) { dbg(abs, 'rejected: segment'); return; }
           if (reported[abs]) return;
           reported[abs] = true;
 
           var site = matchedSite();
           var strict = !!(site && site.stream);
 
-          if (!strict) { emit(abs, title, site); return; }
+          if (!strict) { dbg(abs, 'emitted (no rule)'); emit(abs, title, site); return; }
 
           if (proven || matchesStream(site, abs)) {
             strictSatisfied = true;
             pending = [];               // the real stream won; drop the noise
+            dbg(abs, proven ? 'emitted (proven manifest)' : 'emitted (rule match)');
             emit(abs, title, site);
           } else {
+            dbg(abs, 'held: no rule match');
             pending.push([abs, title]);
           }
         } catch (e) {}
@@ -358,6 +372,56 @@ enum ExtractionScript {
       hookSrc(HTMLMediaElement.prototype);
       hookSrc(HTMLSourceElement.prototype);
 
+      // setAttribute('src', …) writes straight past the property setter above.
+      // This is the common path on iOS: Safari plays HLS natively, so sites skip
+      // hls.js entirely and hand the URL to a <video> — a request AVFoundation
+      // makes, which no XHR/fetch hook can ever observe.
+      try {
+        var origSetAttr = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function (name, value) {
+          try {
+            var n = String(name).toLowerCase();
+            if (value && (n === 'src' || n === 'data-src')) {
+              var tag = (this.tagName || '').toUpperCase();
+              if (tag === 'VIDEO' || tag === 'SOURCE' || tag === 'AUDIO') report(String(value));
+            }
+          } catch (e) {}
+          return origSetAttr.apply(this, arguments);
+        };
+      } catch (e) {}
+
+      // Media events are the backstop: they fire the moment an element starts
+      // fetching, with currentSrc already resolved, no matter how the src was
+      // set or how late it happened. Capture phase so we see them in any subtree.
+      try {
+        ['loadstart', 'loadedmetadata', 'durationchange', 'canplay', 'playing']
+          .forEach(function (ev) {
+            document.addEventListener(ev, function (e) {
+              try {
+                var t = e.target;
+                if (!t || !t.tagName) return;
+                var tag = t.tagName.toUpperCase();
+                if (tag !== 'VIDEO' && tag !== 'AUDIO' && tag !== 'SOURCE') return;
+                var s = t.currentSrc || t.src || t.getAttribute('src');
+                if (s) report(s);
+              } catch (e2) {}
+            }, true);
+          });
+      } catch (e) {}
+
+      // load() resolves <source> children into currentSrc.
+      try {
+        var origLoad = HTMLMediaElement.prototype.load;
+        HTMLMediaElement.prototype.load = function () {
+          var r = origLoad.apply(this, arguments);
+          try {
+            var s = this.currentSrc || this.src;
+            if (s) report(s);
+          } catch (e) {}
+          return r;
+        };
+      } catch (e) {}
+
       try {
         var trkDesc = Object.getOwnPropertyDescriptor(HTMLTrackElement.prototype, 'src');
         if (trkDesc && trkDesc.set) {
@@ -461,6 +525,9 @@ enum ExtractionScript {
         if (!window.__panura_observer) {
           window.__panura_observer = new MutationObserver(function (muts) {
             muts.forEach(function (m) {
+              // An existing <video> getting a new src is an attribute mutation,
+              // not a childList one — invisible without this.
+              if (m.type === 'attributes') { scanElement(m.target); return; }
               m.addedNodes.forEach(function (n) {
                 if (!n.tagName) return;
                 var tag = n.tagName.toUpperCase();
@@ -474,7 +541,8 @@ enum ExtractionScript {
             });
           });
           window.__panura_observer.observe(
-            document.documentElement || document, { childList: true, subtree: true }
+            document.documentElement || document,
+            { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] }
           );
         }
       } catch (e) {}
@@ -483,7 +551,12 @@ enum ExtractionScript {
         document.addEventListener('DOMContentLoaded', scan, false);
       }
       scan();
-      var n = 0, iv = setInterval(function () { scan(); if (++n > 20) clearInterval(iv); }, 1000);
+      // Keep watching after the first 30s, just less often: the user may press
+      // play at any point, and a stopped scanner sees nothing.
+      var n = 0, iv = setInterval(function () {
+        scan();
+        if (++n > 30) { clearInterval(iv); setInterval(scan, 3000); }
+      }, 1000);
     })();
     """#
 }
