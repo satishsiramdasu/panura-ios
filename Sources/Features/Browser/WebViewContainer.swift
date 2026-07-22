@@ -207,6 +207,11 @@ struct WebViewContainer: UIViewRepresentable {
                     model.mediaSessionTitle = t
                 }
                 return
+            case "confirm":
+                if let s = dict["url"] as? String, let u = URL(string: s) {
+                    model.confirmType(url: u, type: dict["type"] as? String ?? "hls")
+                }
+                return
             case "retract":
                 if let s = dict["url"] as? String, let u = URL(string: s) {
                     model.retract(url: u)

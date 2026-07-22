@@ -27,6 +27,8 @@ enum ExtractionScript {
       window.__panura_sniffer = true;
       var reported = window.__panura_reported = window.__panura_reported || {};
       var subsReported = window.__panura_subs_reported = window.__panura_subs_reported || {};
+      // URLs whose body proved them to be an HLS manifest.
+      var confirmed = window.__panura_confirmed = window.__panura_confirmed || {};
 
       function post(payload) {
         try { window.webkit.messageHandlers.panura.postMessage(payload); } catch (e) {}
@@ -134,7 +136,7 @@ enum ExtractionScript {
       var strictSatisfied = false;
       var FALLBACK_MS = 8000;
 
-      function emit(abs, title, site) {
+      function emit(abs, title, site, proven) {
         post({
           kind: 'video',
           url: abs,
@@ -143,7 +145,10 @@ enum ExtractionScript {
           origin: location.origin,
           ua: navigator.userAgent,
           cookie: document.cookie || '',
-          type: (site && site.type) || '',
+          // A proven body IS an HLS manifest, so say so even with no site rule.
+          // The player needs this: an extensionless or .txt playlist served as
+          // text/plain gives libVLC nothing to identify it by.
+          type: (site && site.type) || (proven ? 'hls' : ''),
           siteId: (site && site.id) || '',
           headers: (site && site.headers) || null
         });
@@ -176,19 +181,30 @@ enum ExtractionScript {
           if (!proven && !isVideoUrl(url)) { dbg(url, 'rejected: not video', src); return; }
           var abs = absolute(url);
           if (!proven && isSegmentUrl(abs)) { dbg(abs, 'rejected: segment', src); return; }
-          if (reported[abs]) return;
+          if (reported[abs]) {
+            // Nearly always the URL was seen at request time and only proved to
+            // be a manifest when its body arrived. Upgrade the existing entry
+            // rather than dropping the proof on the floor.
+            if (proven && !confirmed[abs]) {
+              confirmed[abs] = true;
+              post({ kind: 'confirm', url: abs, type: 'hls' });
+              dbg(abs, 'confirmed: hls manifest', src);
+            }
+            return;
+          }
           reported[abs] = true;
+          if (proven) confirmed[abs] = true;
 
           var site = matchedSite();
           var strict = !!(site && site.stream);
 
-          if (!strict) { dbg(abs, 'emitted (no rule)', src); emit(abs, title, site); return; }
+          if (!strict) { dbg(abs, 'emitted (no rule)', src); emit(abs, title, site, proven); return; }
 
           if (proven || matchesStream(site, abs)) {
             strictSatisfied = true;
             pending = [];               // the real stream won; drop the noise
             dbg(abs, proven ? 'emitted (proven manifest)' : 'emitted (rule match)', src);
-            emit(abs, title, site);
+            emit(abs, title, site, proven);
           } else {
             dbg(abs, 'held: no rule match', src);
             pending.push([abs, title]);
@@ -237,7 +253,7 @@ enum ExtractionScript {
         try {
           if (strictSatisfied || !pending.length) return;
           var site = matchedSite();
-          for (var i = 0; i < pending.length; i++) emit(pending[i][0], pending[i][1], site);
+          for (var i = 0; i < pending.length; i++) emit(pending[i][0], pending[i][1], site, false);
           pending = [];
         } catch (e) {}
       }, FALLBACK_MS);

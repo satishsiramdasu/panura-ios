@@ -104,6 +104,14 @@ final class BrowserModel: ObservableObject {
         foundVideos.removeAll { $0.url == url }
     }
 
+    /// A URL reported at request time, whose body later proved it a manifest.
+    /// Without this the type stays empty and the player cannot tell libVLC what
+    /// a `.txt` playlist served as text/plain actually is.
+    func confirmType(url: URL, type: String) {
+        guard let i = foundVideos.firstIndex(where: { $0.url == url }) else { return }
+        foundVideos[i].contentType = type
+    }
+
     func reportSubtitle(url: URL, label: String, language: String) {
         let key = url.absoluteString
         guard !seenSubs.contains(key) else { return }
