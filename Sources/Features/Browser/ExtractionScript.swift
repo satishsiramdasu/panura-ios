@@ -218,7 +218,16 @@ enum ExtractionScript {
             }
             // Variant / audio playlists aren't emitted here: hls.js fetches them
             // next and they arrive proven, with their own post-redirect URL.
-            if (expectSegment) knownSegments[resolveAgainst(line, sourceUrl)] = true;
+            if (expectSegment) {
+              var segAbs = resolveAgainst(line, sourceUrl);
+              knownSegments[segAbs] = true;
+              // Reading the body is asynchronous, so the player can request the
+              // first segment before we know it is one. Take it back.
+              if (reported[segAbs]) {
+                post({ kind: 'retract', url: segAbs });
+                dbg(segAbs, 'retracted: segment', 'playlist-body');
+              }
+            }
             expectSegment = false;
           }
         } catch (e) {}

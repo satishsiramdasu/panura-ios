@@ -98,6 +98,12 @@ final class BrowserModel: ObservableObject {
         )
     }
 
+    /// Drop a hit later proven to be a segment. It stays in `seen` so the same
+    /// URL cannot be re-added by a subsequent sighting.
+    func retract(url: URL) {
+        foundVideos.removeAll { $0.url == url }
+    }
+
     func reportSubtitle(url: URL, label: String, language: String) {
         let key = url.absoluteString
         guard !seenSubs.contains(key) else { return }

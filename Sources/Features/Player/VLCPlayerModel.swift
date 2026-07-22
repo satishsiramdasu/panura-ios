@@ -40,12 +40,16 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         player.drawable = view
         player.delegate = self
 
-        // Gated streams go through the local relay so the FULL captured header
-        // set is replayed (VLC itself can only send referer/UA/cookie — an
-        // Origin check, for example, would fail without this).
-        let playURL = item.headers.isEmpty
-            ? item.url
-            : StreamProxy.shared.proxied(url: item.url, headers: item.headers)
+        // The relay exists for headers VLC cannot send — Origin and anything
+        // else we captured. Referer/UA/cookie it sets natively, so routing those
+        // through the relay would buffer every segment through a local socket
+        // for nothing. Use it only when a header actually demands it.
+        let needsRelay = item.headers.keys.contains {
+            !Self.vlcNativeHeaders.contains($0.lowercased())
+        }
+        let playURL = needsRelay
+            ? StreamProxy.shared.proxied(url: item.url, headers: item.headers)
+            : item.url
 
         let media = VLCMedia(url: playURL)
         // Harmless belt-and-braces for the direct (unproxied) path.
@@ -62,6 +66,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         setupRemoteCommands()
         observeLifecycle()
     }
+
+    /// Headers libVLC can set itself, via the options in `applyHeaders`.
+    private static let vlcNativeHeaders: Set<String> = ["referer", "user-agent", "cookie"]
 
     /// libVLC honors these per-media options; covers the common gating headers.
     private func applyHeaders(_ headers: [String: String], to media: VLCMedia) {

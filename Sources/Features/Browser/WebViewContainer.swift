@@ -209,6 +209,11 @@ struct WebViewContainer: UIViewRepresentable {
                     model.mediaSessionTitle = t
                 }
                 return
+            case "retract":
+                if let s = dict["url"] as? String, let u = URL(string: s) {
+                    model.retract(url: u)
+                }
+                return
             case "debug":
                 // Always collected, shown only when the Diagnostics setting is
                 // on — so turning it on reveals the log already captured rather

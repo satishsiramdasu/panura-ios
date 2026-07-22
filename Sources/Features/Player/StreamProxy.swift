@@ -18,8 +18,18 @@ final class StreamProxy {
     private let server = HttpServer()
     private var started = false
     private var port: UInt16 = 0
-    /// token → header set captured at detection time.
+    /// session → header set captured at detection time.
     private var sessions: [String: [String: String]] = [:]
+    /// id → upstream URL. The URL is kept HERE rather than encoded into the
+    /// proxy URL: base64 of a real segment URL routinely contains `/` and `=`,
+    /// and query-string parsing mangles both (`+` also decodes to a space), so
+    /// every segment request failed while the shorter playlist URL happened to
+    /// survive. An opaque id in the path has nothing to misparse.
+    private var targets: [String: (url: URL, session: String)] = [:]
+    /// "session|url" → id, so a URL repeated in a playlist reuses its id.
+    private var targetIDs: [String: String] = [:]
+    private var currentSession: String?
+    private var counter = 0
     private let lock = NSLock()
 
     private init() { route() }
@@ -30,9 +40,19 @@ final class StreamProxy {
     /// Falls back to the original URL if the server can't start.
     func proxied(url: URL, headers: [String: String]) -> URL {
         guard start() else { return url }
-        let token = UUID().uuidString
-        lock.lock(); sessions[token] = headers; lock.unlock()
-        return proxyURL(for: url, token: token) ?? url
+        let session = UUID().uuidString
+        lock.lock()
+        // Starting a new item retires the previous one's registry — a long VOD
+        // playlist can register thousands of segments.
+        if let old = currentSession {
+            sessions[old] = nil
+            targets = targets.filter { $0.value.session != old }
+            targetIDs = targetIDs.filter { !$0.key.hasPrefix("\(old)|") }
+        }
+        currentSession = session
+        sessions[session] = headers
+        lock.unlock()
+        return proxyURL(for: url, session: session) ?? url
     }
 
     // MARK: server
@@ -51,30 +71,37 @@ final class StreamProxy {
         }
     }
 
-    private func proxyURL(for target: URL, token: String) -> URL? {
-        let encoded = Data(target.absoluteString.utf8).base64EncodedString()
-        var comps = URLComponents()
-        comps.scheme = "http"
-        comps.host = "127.0.0.1"
-        comps.port = Int(port)
-        comps.path = "/p/\(token)"
-        comps.queryItems = [URLQueryItem(name: "u", value: encoded)]
-        return comps.url
+    /// Register `target` and return its localhost URL. Both path components are
+    /// a UUID and a base-36 counter, so nothing needs escaping.
+    private func proxyURL(for target: URL, session: String) -> URL? {
+        let key = "\(session)|\(target.absoluteString)"
+        lock.lock()
+        let id: String
+        if let existing = targetIDs[key] {
+            id = existing
+        } else {
+            counter += 1
+            id = String(counter, radix: 36)
+            targets[id] = (target, session)
+            targetIDs[key] = id
+        }
+        lock.unlock()
+        return URL(string: "http://127.0.0.1:\(port)/p/\(session)/\(id)")
     }
 
     private func route() {
-        server["/p/:token"] = { [weak self] request in
+        server["/p/:session/:id"] = { [weak self] request in
             guard let self,
-                  let token = request.params[":token"],
-                  let encoded = request.queryParams.first(where: { $0.0 == "u" })?.1,
-                  let data = Data(base64Encoded: encoded),
-                  let urlString = String(data: data, encoding: .utf8),
-                  let target = URL(string: urlString)
+                  let session = request.params[":session"],
+                  let id = request.params[":id"]
             else { return .badRequest(nil) }
 
             self.lock.lock()
-            let headers = self.sessions[token] ?? [:]
+            let headers = self.sessions[session] ?? [:]
+            let target = self.targets[id]?.url
             self.lock.unlock()
+
+            guard let target else { return .badRequest(nil) }
 
             // Pass the client's Range through so seeking works on progressive files.
             let range = request.headers["range"]
@@ -83,7 +110,7 @@ final class StreamProxy {
             }
 
             if self.isPlaylist(target: target, mime: result.mime, body: result.body) {
-                let rewritten = self.rewritePlaylist(result.body, base: target, token: token)
+                let rewritten = self.rewritePlaylist(result.body, base: target, session: session)
                 return .ok(.data(rewritten, contentType: "application/vnd.apple.mpegurl"))
             }
 
@@ -142,7 +169,7 @@ final class StreamProxy {
     }
 
     /// Point every URI in the playlist back at this proxy, resolved absolutely.
-    private func rewritePlaylist(_ data: Data, base: URL, token: String) -> Data {
+    private func rewritePlaylist(_ data: Data, base: URL, session: String) -> Data {
         guard let text = String(data: data, encoding: .utf8) else { return data }
 
         let lines = text.components(separatedBy: .newlines).map { line -> String in
@@ -151,23 +178,23 @@ final class StreamProxy {
 
             if trimmed.hasPrefix("#") {
                 // Rewrite URI="…" (EXT-X-KEY, EXT-X-MEDIA audio/subtitle renditions).
-                return rewriteURIAttribute(in: line, base: base, token: token)
+                return rewriteURIAttribute(in: line, base: base, session: session)
             }
             // A bare line is a segment or variant playlist.
             guard let abs = URL(string: trimmed, relativeTo: base)?.absoluteURL,
-                  let proxied = proxyURL(for: abs, token: token) else { return line }
+                  let proxied = proxyURL(for: abs, session: session) else { return line }
             return proxied.absoluteString
         }
         return Data(lines.joined(separator: "\n").utf8)
     }
 
-    private func rewriteURIAttribute(in line: String, base: URL, token: String) -> String {
+    private func rewriteURIAttribute(in line: String, base: URL, session: String) -> String {
         guard let start = line.range(of: "URI=\"") else { return line }
         let after = line[start.upperBound...]
         guard let end = after.range(of: "\"") else { return line }
         let uri = String(after[..<end.lowerBound])
         guard let abs = URL(string: uri, relativeTo: base)?.absoluteURL,
-              let proxied = proxyURL(for: abs, token: token) else { return line }
+              let proxied = proxyURL(for: abs, session: session) else { return line }
         return line.replacingOccurrences(of: "URI=\"\(uri)\"", with: "URI=\"\(proxied.absoluteString)\"")
     }
 }
