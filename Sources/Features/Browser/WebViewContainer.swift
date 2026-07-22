@@ -60,14 +60,21 @@ struct WebViewContainer: UIViewRepresentable {
         context.coordinator.observe(webView)
         webView.load(URLRequest(url: URL(string: "https://www.google.com")!))
 
-        // Compile + attach the ad/tracker rule lists (static base + oisd, plus
-        // the converted EasyList/uBlock lists), then (re)load so they apply.
+        // Remote stream patterns + ad/tracker rule lists, then one reload so
+        // both apply to the current page.
         Task { @MainActor in
+            if let json = await ManifestStore.streamPatternsJSON() {
+                webView.configuration.userContentController.addUserScript(WKUserScript(
+                    source: "window.__panuraStreamPatternMap = \(json);",
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: false
+                ))
+            }
             let lists = await FilterListUpdater.current()
             for list in lists {
                 webView.configuration.userContentController.add(list)
             }
-            if !lists.isEmpty { webView.reload() }
+            webView.reload()
         }
         return webView
     }

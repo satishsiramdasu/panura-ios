@@ -51,9 +51,26 @@ enum ExtractionScript {
         if (lower.indexOf('.m3u8') !== -1 || lower.indexOf('.mpd') !== -1 ||
             lower.indexOf('.mp4') !== -1) return true;
         // Extra regexes pushed from the remote manifest.
-        return (window.__panuraStreamPatterns || []).some(function (p) {
+        return streamPatterns().some(function (p) {
           try { return new RegExp(p).test(url); } catch (e) { return false; }
         });
+      }
+
+      // Patterns for THIS frame's host (or its parent domain). Resolved on each
+      // call rather than memoized, because the manifest is injected
+      // asynchronously and may land after the first URL is classified.
+      function streamPatterns() {
+        var out = window.__panuraStreamPatterns || [];
+        try {
+          var map = window.__panuraStreamPatternMap;
+          if (map) {
+            var h = location.hostname.replace(/^www\./, '');
+            var parent = h.indexOf('.') !== -1 ? h.substring(h.indexOf('.') + 1) : '';
+            var hit = map[h] || (parent ? map[parent] : null);
+            if (hit) out = out.concat([hit]);
+          }
+        } catch (e) {}
+        return out;
       }
 
       function report(url, title) {
