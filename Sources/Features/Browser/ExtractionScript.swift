@@ -21,16 +21,33 @@ enum ExtractionScript {
         try { return new URL(u, location.href).href; } catch (e) { return u; }
       }
 
+      // Mirrors Android isBrowserVideoUrl — many manifests have NO extension
+      // (e.g. https://host/hls/<token>/<token>), so path shape matters as much
+      // as suffix.
       function isPlayable(u) {
         if (!u || typeof u !== 'string') return false;
         var l = u.toLowerCase();
         // blob:/data: only exist inside this page — useless to an external player.
         if (l.indexOf('blob:') === 0 || l.indexOf('data:') === 0) return false;
-        if (l.indexOf('.m3u8') !== -1) return true;
-        if (l.indexOf('.mpd') !== -1) return true;
-        // Whole-file mp4 only; skip fMP4/HLS segments which are just noise.
-        if (l.indexOf('.m4s') !== -1 || l.indexOf('.ts?') !== -1) return false;
-        return /\.mp4($|\?|#)/.test(l);
+        var path = l.split('?')[0];
+
+        // DASH byte-range segments: partial content, not standalone playable.
+        if (l.indexOf('bytestart=') !== -1 && l.indexOf('byteend=') !== -1) return false;
+        if (/\.(ts|m4s)$/.test(path)) return false;
+        if (/\.(js|mjs|css|json)$/.test(path)) return false;
+        if (/\.(gif|png|jpg|jpeg|ico|svg|webp|xml)$/.test(path)) return false;
+
+        if (/\.(m3u8|mpd|mp4|webm|mkv)$/.test(path)) return true;
+        // Extensionless HLS endpoints.
+        if (path.indexOf('/hls/') !== -1) return true;
+        // Playlists served as .txt (cf-master.*.txt, index.*.txt …).
+        if (/\.txt$/.test(path) && (path.indexOf('master') !== -1 ||
+            path.indexOf('index') !== -1 || path.indexOf('/v4/') !== -1 ||
+            path.indexOf('/hls') !== -1 || path.indexOf('playlist') !== -1)) return true;
+        // Extension hidden in a query param (proxy/passthrough URLs).
+        if (l.indexOf('.m3u8') !== -1 || l.indexOf('.mpd') !== -1) return true;
+        if (/[?&]url=https?%3a%2f%2f[^&]*%2f[^&]*\.(mp4|webm|mkv|m3u8|mpd)/.test(l)) return true;
+        return false;
       }
 
       function report(url, title) {

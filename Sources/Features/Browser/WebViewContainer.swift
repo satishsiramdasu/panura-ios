@@ -203,11 +203,35 @@ struct WebViewContainer: UIViewRepresentable {
     }
 }
 
+/// Mirrors Android `isBrowserVideoUrl` / the JS `isPlayable` in ExtractionScript.
+/// Extension alone is not enough — plenty of manifests are extensionless
+/// (`/hls/<token>/<token>`) or masquerade as `.txt`.
 enum VideoURL {
+    private static let rejectedSuffixes = [
+        ".ts", ".m4s", ".js", ".mjs", ".css", ".json",
+        ".gif", ".png", ".jpg", ".jpeg", ".ico", ".svg", ".webp", ".xml",
+    ]
+    private static let acceptedSuffixes = [".m3u8", ".mpd", ".mp4", ".webm", ".mkv"]
+
     static func looksLikeVideo(_ url: URL) -> Bool {
         let s = url.absoluteString.lowercased()
         // blob:/data: are in-page handles no external player can resolve.
         guard !s.hasPrefix("blob:"), !s.hasPrefix("data:") else { return false }
-        return s.contains(".m3u8") || s.contains(".mp4") || s.contains(".mpd")
+        let path = s.components(separatedBy: "?").first ?? s
+
+        // DASH byte-range segments aren't standalone playable.
+        if s.contains("bytestart="), s.contains("byteend=") { return false }
+        if rejectedSuffixes.contains(where: path.hasSuffix) { return false }
+        if acceptedSuffixes.contains(where: path.hasSuffix) { return true }
+
+        // Extensionless HLS endpoints.
+        if path.contains("/hls/") { return true }
+        // Playlists served as .txt.
+        if path.hasSuffix(".txt"),
+           ["master", "index", "/v4/", "/hls", "playlist"].contains(where: path.contains) {
+            return true
+        }
+        // Extension hidden in a query param.
+        return s.contains(".m3u8") || s.contains(".mpd")
     }
 }
