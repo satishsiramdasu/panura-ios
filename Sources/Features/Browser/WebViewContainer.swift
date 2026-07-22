@@ -94,11 +94,24 @@ struct WebViewContainer: UIViewRepresentable {
         ) async -> WKNavigationActionPolicy {
             if let url = navigationAction.request.url,
                VideoURL.looksLikeVideo(url) {
-                model.report(url: url, title: webView.title ?? "", headers: [:])
+                // Same context capture as the JS path: the page we're leaving
+                // is the Referer the CDN expects.
+                var headers: [String: String] = [:]
+                if let page = webView.url {
+                    headers["Referer"] = page.absoluteString
+                    if let scheme = page.scheme, let host = page.host {
+                        headers["Origin"] = "\(scheme)://\(host)"
+                    }
+                }
+                if let ua = lastUserAgent { headers["User-Agent"] = ua }
+                model.report(url: url, title: webView.title ?? "", headers: headers)
                 return .cancel
             }
             return .allow
         }
+
+        /// UA captured from the page, reused for hits found via navigation.
+        private var lastUserAgent: String?
 
         // Hits posted from the injected extraction script.
         func userContentController(
@@ -110,7 +123,23 @@ struct WebViewContainer: UIViewRepresentable {
                   let urlString = dict["url"] as? String,
                   let url = URL(string: urlString) else { return }
             let title = dict["title"] as? String ?? ""
-            model.report(url: url, title: title, headers: [:])
+
+            // Replay the exact context the page used, or the CDN rejects us.
+            var headers: [String: String] = [:]
+            if let referer = dict["referer"] as? String, !referer.isEmpty {
+                headers["Referer"] = referer
+            }
+            if let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
+                headers["Origin"] = origin
+            }
+            if let ua = dict["ua"] as? String, !ua.isEmpty {
+                headers["User-Agent"] = ua
+                lastUserAgent = ua
+            }
+            if let cookie = dict["cookie"] as? String, !cookie.isEmpty {
+                headers["Cookie"] = cookie
+            }
+            model.report(url: url, title: title, headers: headers)
         }
     }
 }

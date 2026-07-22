@@ -15,8 +15,16 @@ enum ExtractionScript {
         if (!url || seen[url]) return;
         seen[url] = true;
         try {
+          // Capture the gating context WITH the hit. This script runs in every
+          // frame, so inside an embed iframe location.href is the embed page —
+          // which is exactly the Referer the CDN checks.
           window.webkit.messageHandlers.panura.postMessage({
-            url: url, title: title || document.title || ''
+            url: url,
+            title: title || document.title || '',
+            referer: location.href,
+            origin: location.origin,
+            ua: navigator.userAgent,
+            cookie: document.cookie || ''
           });
         } catch (e) {}
       }
