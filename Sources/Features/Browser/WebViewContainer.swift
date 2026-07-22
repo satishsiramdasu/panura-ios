@@ -24,10 +24,13 @@ struct WebViewContainer: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         ))
-        // Video sniffer at document end.
+        // Video sniffer, also at document start: its fetch/XHR hooks must be
+        // installed before page scripts fire their requests, or MSE sites slip
+        // through (their DOM only ever exposes a blob: URL). The DOM scan runs
+        // on a repeating timer, so starting early costs nothing.
         contentController.addUserScript(WKUserScript(
             source: ExtractionScript.source,
-            injectionTime: .atDocumentEnd,
+            injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         ))
 
@@ -203,6 +206,8 @@ struct WebViewContainer: UIViewRepresentable {
 enum VideoURL {
     static func looksLikeVideo(_ url: URL) -> Bool {
         let s = url.absoluteString.lowercased()
+        // blob:/data: are in-page handles no external player can resolve.
+        guard !s.hasPrefix("blob:"), !s.hasPrefix("data:") else { return false }
         return s.contains(".m3u8") || s.contains(".mp4") || s.contains(".mpd")
     }
 }
