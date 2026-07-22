@@ -44,9 +44,7 @@ struct WebViewContainer: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        // Our own edge gestures drive back/forward, so leave WebKit's off to
-        // avoid the two fighting over the same swipe.
-        webView.allowsBackForwardNavigationGestures = false
+        webView.allowsBackForwardNavigationGestures = true
         model.attach(webView)
 
         // Pull to refresh, like the Android SwipeRefreshLayout.

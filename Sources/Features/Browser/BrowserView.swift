@@ -13,16 +13,7 @@ struct BrowserView: View {
         VStack(spacing: 0) {
             addressBar
             progressBar
-            ZStack {
-                WebViewContainer(model: model)
-                // Edge-drag back/forward, layered above the page.
-                BrowserGestureNav(
-                    canGoBack: model.canGoBack,
-                    canGoForward: model.canGoForward,
-                    onBack: model.goBack,
-                    onForward: model.goForward
-                )
-            }
+            WebViewContainer(model: model)
         }
         .safeAreaInset(edge: .bottom) {
             // With diagnostics on the bar must also open when nothing was
