@@ -11,6 +11,8 @@ struct MediaItem: Identifiable, Hashable {
     /// Headers captured during extraction (Referer, cookies, etc.) needed to
     /// replay gated streams — mirrors the Android "full header set" rule.
     var headers: [String: String] = [:]
+    /// Sidecar subtitles sniffed from the page, sideloaded into the player.
+    var subtitles: [SubtitleTrack] = []
 
     init(
         id: String = UUID().uuidString,
@@ -19,7 +21,8 @@ struct MediaItem: Identifiable, Hashable {
         isLocal: Bool = false,
         durationSeconds: Double? = nil,
         thumbnailURL: URL? = nil,
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        subtitles: [SubtitleTrack] = []
     ) {
         self.id = id
         self.title = title
@@ -28,6 +31,7 @@ struct MediaItem: Identifiable, Hashable {
         self.durationSeconds = durationSeconds
         self.thumbnailURL = thumbnailURL
         self.headers = headers
+        self.subtitles = subtitles
     }
 }
 
@@ -38,4 +42,19 @@ struct ExtractedVideo: Identifiable, Hashable {
     let url: URL
     let title: String
     let headers: [String: String]
+}
+
+/// A sidecar subtitle track sniffed from the page (`onSubtitleFound`).
+struct SubtitleTrack: Identifiable, Hashable {
+    let id = UUID()
+    let url: URL
+    let label: String
+    let language: String
+
+    /// Best available display name.
+    var displayName: String {
+        if !label.isEmpty { return label }
+        if !language.isEmpty { return language.uppercased() }
+        return url.lastPathComponent
+    }
 }

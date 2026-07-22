@@ -178,8 +178,28 @@ struct WebViewContainer: UIViewRepresentable {
             didReceive message: WKScriptMessage
         ) {
             guard message.name == "panura",
-                  let dict = message.body as? [String: Any],
-                  let urlString = dict["url"] as? String,
+                  let dict = message.body as? [String: Any] else { return }
+
+            switch dict["kind"] as? String {
+            case "subtitle":
+                if let s = dict["url"] as? String, let u = URL(string: s) {
+                    model.reportSubtitle(
+                        url: u,
+                        label: dict["label"] as? String ?? "",
+                        language: dict["lang"] as? String ?? ""
+                    )
+                }
+                return
+            case "meta":
+                if let t = dict["title"] as? String, !t.isEmpty {
+                    model.mediaSessionTitle = t
+                }
+                return
+            default:
+                break // "video"
+            }
+
+            guard let urlString = dict["url"] as? String,
                   let url = URL(string: urlString) else { return }
             let title = dict["title"] as? String ?? ""
 

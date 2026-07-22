@@ -53,6 +53,12 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         player.media = media
         player.play()
 
+        // Sidecar subtitles sniffed from the page — the stream itself usually
+        // carries none, so without these there are no captions at all.
+        for track in item.subtitles {
+            player.addPlaybackSlave(track.url, type: .subtitle, enforce: false)
+        }
+
         setupRemoteCommands()
         observeLifecycle()
     }

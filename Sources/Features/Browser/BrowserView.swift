@@ -156,9 +156,7 @@ struct BrowserView: View {
                     HStack(spacing: 10) {
                         Button {
                             showFoundSheet = false
-                            playItem = MediaItem(
-                                title: video.title, url: video.url, headers: video.headers
-                            )
+                            playItem = model.playable(video)
                         } label: {
                             Label("Play", systemImage: "play.fill")
                         }
@@ -168,9 +166,7 @@ struct BrowserView: View {
                         if cast.isConnected {
                             Button {
                                 showFoundSheet = false
-                                cast.cast(MediaItem(
-                                    title: video.title, url: video.url, headers: video.headers
-                                ))
+                                cast.cast(model.playable(video))
                             } label: {
                                 Label("Cast", systemImage: "tv")
                             }

@@ -11,9 +11,14 @@ final class BrowserModel: ObservableObject {
     @Published var canGoForward = false
     @Published var desktopMode = false
     @Published var foundVideos: [ExtractedVideo] = []
+    /// Sidecar subtitles sniffed from the page; attached to whatever the user plays.
+    @Published var foundSubtitles: [SubtitleTrack] = []
+    /// Title/artwork the site published via MediaSession, when available.
+    @Published var mediaSessionTitle = ""
 
     private weak var webView: WKWebView?
     private var seen = Set<String>()
+    private var seenSubs = Set<String>()
 
     /// Desktop UA so sites serve the full site (parity with Android's toggle).
     private static let desktopUA =
@@ -44,7 +49,10 @@ final class BrowserModel: ObservableObject {
     /// Findings belong to a page — drop them whenever we navigate.
     func clearFindings() {
         foundVideos.removeAll()
+        foundSubtitles.removeAll()
+        mediaSessionTitle = ""
         seen.removeAll()
+        seenSubs.removeAll()
     }
 
     // MARK: detection
@@ -53,7 +61,25 @@ final class BrowserModel: ObservableObject {
         let key = url.absoluteString
         guard !seen.contains(key) else { return }
         seen.insert(key)
-        foundVideos.append(ExtractedVideo(url: url, title: title, headers: headers))
+        let name = title.isEmpty ? mediaSessionTitle : title
+        foundVideos.append(ExtractedVideo(url: url, title: name, headers: headers))
+    }
+
+    func reportSubtitle(url: URL, label: String, language: String) {
+        let key = url.absoluteString
+        guard !seenSubs.contains(key) else { return }
+        seenSubs.insert(key)
+        foundSubtitles.append(SubtitleTrack(url: url, label: label, language: language))
+    }
+
+    /// Build the playable item for a detection, carrying page subtitles with it.
+    func playable(_ video: ExtractedVideo) -> MediaItem {
+        MediaItem(
+            title: video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title,
+            url: video.url,
+            headers: video.headers,
+            subtitles: foundSubtitles
+        )
     }
 
     /// Turn a raw address-bar string into a URL, defaulting to a web search.
