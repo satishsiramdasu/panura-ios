@@ -26,8 +26,6 @@ final class StreamProxy {
     private var port: UInt16 = 0
     /// session → header set captured at detection time.
     private var sessions: [String: [String: String]] = [:]
-    /// session → whether segment/variant URIs must come back through the relay.
-    private var relayChildrenBySession: [String: Bool] = [:]
     /// id → upstream URL. The URL is kept HERE rather than encoded into the
     /// proxy URL: base64 of a real segment URL routinely contains `/` and `=`,
     /// and query-string parsing mangles both (`+` also decodes to a space), so
@@ -51,18 +49,7 @@ final class StreamProxy {
     /// demuxer from the extension as well as the MIME type, and these CDNs give
     /// it neither — so the hint plus the relay's corrected Content-Type make
     /// both agree that this is HLS.
-    ///
-    /// `relayChildren` is false when VLC can send every captured header itself.
-    /// Then only the playlist needs us — its URIs are rewritten to absolute
-    /// upstream URLs (mandatory: they are relative to a 127.0.0.1 document now)
-    /// and VLC fetches the segments directly, instead of buffering thousands of
-    /// them through a local socket.
-    func proxied(
-        url: URL,
-        headers: [String: String],
-        playlistHint: Bool = false,
-        relayChildren: Bool = true
-    ) -> URL {
+    func proxied(url: URL, headers: [String: String], playlistHint: Bool = false) -> URL {
         guard start() else { return url }
         let session = UUID().uuidString
         lock.lock()
@@ -70,13 +57,11 @@ final class StreamProxy {
         // playlist can register thousands of segments.
         if let old = currentSession {
             sessions[old] = nil
-            relayChildrenBySession[old] = nil
             targets = targets.filter { $0.value.session != old }
             targetIDs = targetIDs.filter { !$0.key.hasPrefix("\(old)|") }
         }
         currentSession = session
         sessions[session] = headers
-        relayChildrenBySession[session] = relayChildren
         lock.unlock()
         return proxyURL(for: url, session: session, suffix: playlistHint ? ".m3u8" : "") ?? url
     }
@@ -126,7 +111,6 @@ final class StreamProxy {
             let key = id.hasSuffix(".m3u8") ? String(id.dropLast(5)) : id
             self.lock.lock()
             let headers = self.sessions[session] ?? [:]
-            let relayChildren = self.relayChildrenBySession[session] ?? true
             let target = self.targets[key]?.url
             self.lock.unlock()
 
@@ -139,16 +123,17 @@ final class StreamProxy {
             }
 
             if self.isPlaylist(target: target, mime: result.mime, body: result.body) {
-                let rewritten = self.rewritePlaylist(
-                    result.body, base: target, session: session, relayChildren: relayChildren
-                )
+                let rewritten = self.rewritePlaylist(result.body, base: target, session: session)
                 return .ok(.data(rewritten, contentType: "application/vnd.apple.mpegurl"))
             }
+
+            // Only safe on a whole-body response: stripping bytes would
+            // invalidate the offsets a ranged request was answered with.
+            let body = range == nil ? Self.stripDecoyHeader(result.body) : result.body
 
             var out = ["Content-Type": result.mime ?? "application/octet-stream"]
             result.contentRange.map { out["Content-Range"] = $0 }
             out["Accept-Ranges"] = "bytes"
-            let body = result.body
             return .raw(result.status, result.status == 206 ? "Partial Content" : "OK", out) { writer in
                 try writer.write(body)
             }
@@ -189,6 +174,46 @@ final class StreamProxy {
         return result
     }
 
+    // MARK: decoy headers
+
+    /// Some CDNs glue a small valid image (commonly a 69-byte PNG) to the front
+    /// of every MPEG-TS segment to disguise it. FFmpeg-based players survive
+    /// this because their TS demuxer hunts for the 0x47 sync byte; libVLC probes
+    /// the first bytes, sees an image, and refuses the stream — so it never
+    /// plays at all. Strip the decoy so what we serve starts at a packet.
+    ///
+    /// Content-driven, not per-site: it only fires when the body opens with an
+    /// image magic AND a real 188-byte TS lock is found behind it, so genuine
+    /// media (and genuine images) pass through untouched.
+    static func stripDecoyHeader(_ body: Data) -> Data {
+        let imageMagics: [[UInt8]] = [
+            [0x89, 0x50, 0x4E, 0x47],   // PNG
+            [0xFF, 0xD8, 0xFF],         // JPEG
+            [0x47, 0x49, 0x46, 0x38],   // GIF
+            [0x52, 0x49, 0x46, 0x46],   // RIFF/WEBP
+        ]
+        let bytes = [UInt8](body.prefix(8192))
+        guard bytes.count > 8,
+              imageMagics.contains(where: { bytes.starts(with: $0) })
+        else { return body }
+
+        let total = body.count
+        for offset in 0..<bytes.count where bytes[offset] == 0x47 {
+            let available = min(20, (total - offset) / 188)
+            guard available >= 2 else { break }
+            var locked = 0
+            var i = offset
+            while locked < available, i < total, body[body.startIndex + i] == 0x47 {
+                locked += 1
+                i += 188
+            }
+            if locked == available {
+                return body.subdata(in: (body.startIndex + offset)..<body.endIndex)
+            }
+        }
+        return body
+    }
+
     // MARK: HLS rewriting
 
     private func isPlaylist(target: URL, mime: String?, body: Data) -> Bool {
@@ -200,9 +225,7 @@ final class StreamProxy {
     }
 
     /// Point every URI in the playlist back at this proxy, resolved absolutely.
-    private func rewritePlaylist(
-        _ data: Data, base: URL, session: String, relayChildren: Bool
-    ) -> Data {
+    private func rewritePlaylist(_ data: Data, base: URL, session: String) -> Data {
         guard let text = String(data: data, encoding: .utf8) else { return data }
 
         let lines = text.components(separatedBy: .newlines).map { line -> String in
@@ -211,36 +234,23 @@ final class StreamProxy {
 
             if trimmed.hasPrefix("#") {
                 // Rewrite URI="…" (EXT-X-KEY, EXT-X-MEDIA audio/subtitle renditions).
-                return rewriteURIAttribute(
-                    in: line, base: base, session: session, relayChildren: relayChildren
-                )
+                return rewriteURIAttribute(in: line, base: base, session: session)
             }
             // A bare line is a segment or variant playlist.
-            guard let abs = URL(string: trimmed, relativeTo: base)?.absoluteURL else { return line }
-            // Absolute either way — the playlist now lives on 127.0.0.1, so a
-            // relative URI would resolve against the proxy.
-            guard relayChildren else { return abs.absoluteString }
-            guard let proxied = proxyURL(for: abs, session: session) else { return line }
+            guard let abs = URL(string: trimmed, relativeTo: base)?.absoluteURL,
+                  let proxied = proxyURL(for: abs, session: session) else { return line }
             return proxied.absoluteString
         }
         return Data(lines.joined(separator: "\n").utf8)
     }
 
-    private func rewriteURIAttribute(
-        in line: String, base: URL, session: String, relayChildren: Bool
-    ) -> String {
+    private func rewriteURIAttribute(in line: String, base: URL, session: String) -> String {
         guard let start = line.range(of: "URI=\"") else { return line }
         let after = line[start.upperBound...]
         guard let end = after.range(of: "\"") else { return line }
         let uri = String(after[..<end.lowerBound])
-        guard let abs = URL(string: uri, relativeTo: base)?.absoluteURL else { return line }
-        let replacement: String
-        if relayChildren {
-            guard let proxied = proxyURL(for: abs, session: session) else { return line }
-            replacement = proxied.absoluteString
-        } else {
-            replacement = abs.absoluteString
-        }
-        return line.replacingOccurrences(of: "URI=\"\(uri)\"", with: "URI=\"\(replacement)\"")
+        guard let abs = URL(string: uri, relativeTo: base)?.absoluteURL,
+              let proxied = proxyURL(for: abs, session: session) else { return line }
+        return line.replacingOccurrences(of: "URI=\"\(uri)\"", with: "URI=\"\(proxied.absoluteString)\"")
     }
 }

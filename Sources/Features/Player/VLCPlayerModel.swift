@@ -61,8 +61,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             ? StreamProxy.shared.proxied(
                 url: item.url,
                 headers: item.headers,
-                playlistHint: needsTypeRelay,
-                relayChildren: needsHeaderRelay
+                playlistHint: needsTypeRelay
               )
             : item.url
 
