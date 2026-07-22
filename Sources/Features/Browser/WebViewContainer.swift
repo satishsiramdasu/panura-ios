@@ -41,8 +41,20 @@ struct WebViewContainer: UIViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        webView.allowsBackForwardNavigationGestures = true
+        // Our own edge gestures drive back/forward, so leave WebKit's off to
+        // avoid the two fighting over the same swipe.
+        webView.allowsBackForwardNavigationGestures = false
         model.attach(webView)
+
+        // Pull to refresh, like the Android SwipeRefreshLayout.
+        let refresh = UIRefreshControl()
+        refresh.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.handleRefresh(_:)),
+            for: .valueChanged
+        )
+        webView.scrollView.refreshControl = refresh
+        context.coordinator.observe(webView)
         webView.load(URLRequest(url: URL(string: "https://www.google.com")!))
 
         // Compile + attach the ad/tracker rule lists (static base + oisd, plus
@@ -63,6 +75,33 @@ struct WebViewContainer: UIViewRepresentable {
         let model: BrowserModel
         init(model: BrowserModel) { self.model = model }
 
+        private var observations: [NSKeyValueObservation] = []
+        private weak var webView: WKWebView?
+
+        /// Mirror WebKit's navigation state into the model so the toolbar and
+        /// the edge gestures know whether back/forward are available.
+        func observe(_ webView: WKWebView) {
+            self.webView = webView
+            observations = [
+                webView.observe(\.canGoBack, options: [.initial, .new]) { [weak self] wv, _ in
+                    Task { @MainActor in self?.model.canGoBack = wv.canGoBack }
+                },
+                webView.observe(\.canGoForward, options: [.initial, .new]) { [weak self] wv, _ in
+                    Task { @MainActor in self?.model.canGoForward = wv.canGoForward }
+                },
+                webView.observe(\.estimatedProgress, options: [.new]) { [weak self] wv, _ in
+                    Task { @MainActor in self?.model.progress = wv.estimatedProgress }
+                },
+                webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
+                    Task { @MainActor in self?.model.pageTitle = wv.title ?? "" }
+                },
+            ]
+        }
+
+        @objc func handleRefresh(_ sender: UIRefreshControl) {
+            webView?.reload()
+        }
+
         // A page tried to open a new window (target=_blank / window.open) — the
         // usual pop-under ad vector. Load real navigations in the same tab and
         // never spawn the extra window.
@@ -80,11 +119,28 @@ struct WebViewContainer: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
             model.isLoading = true
+            // Main-frame navigation: findings belong to the page we're leaving.
+            model.clearFindings()
         }
 
         func webView(_ webView: WKWebView, didFinish nav: WKNavigation!) {
             model.isLoading = false
             model.currentURL = webView.url
+            webView.scrollView.refreshControl?.endRefreshing()
+        }
+
+        func webView(_ webView: WKWebView, didFail nav: WKNavigation!, withError error: Error) {
+            model.isLoading = false
+            webView.scrollView.refreshControl?.endRefreshing()
+        }
+
+        func webView(
+            _ webView: WKWebView,
+            didFailProvisionalNavigation nav: WKNavigation!,
+            withError error: Error
+        ) {
+            model.isLoading = false
+            webView.scrollView.refreshControl?.endRefreshing()
         }
 
         // Catch direct video navigations the JS scan would miss.
