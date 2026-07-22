@@ -40,7 +40,15 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         player.drawable = view
         player.delegate = self
 
-        let media = VLCMedia(url: item.url)
+        // Gated streams go through the local relay so the FULL captured header
+        // set is replayed (VLC itself can only send referer/UA/cookie — an
+        // Origin check, for example, would fail without this).
+        let playURL = item.headers.isEmpty
+            ? item.url
+            : StreamProxy.shared.proxied(url: item.url, headers: item.headers)
+
+        let media = VLCMedia(url: playURL)
+        // Harmless belt-and-braces for the direct (unproxied) path.
         applyHeaders(item.headers, to: media)
         player.media = media
         player.play()
