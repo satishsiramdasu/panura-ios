@@ -13,6 +13,9 @@ struct MediaItem: Identifiable, Hashable {
     var headers: [String: String] = [:]
     /// Sidecar subtitles sniffed from the page, sideloaded into the player.
     var subtitles: [SubtitleTrack] = []
+    /// `hls` | `mp4` | `dash` hint from the manifest rule; drives the cast MIME
+    /// type, which cannot be guessed from an extensionless URL.
+    var contentType: String?
 
     init(
         id: String = UUID().uuidString,
@@ -22,7 +25,8 @@ struct MediaItem: Identifiable, Hashable {
         durationSeconds: Double? = nil,
         thumbnailURL: URL? = nil,
         headers: [String: String] = [:],
-        subtitles: [SubtitleTrack] = []
+        subtitles: [SubtitleTrack] = [],
+        contentType: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -32,6 +36,7 @@ struct MediaItem: Identifiable, Hashable {
         self.thumbnailURL = thumbnailURL
         self.headers = headers
         self.subtitles = subtitles
+        self.contentType = contentType
     }
 }
 
@@ -42,6 +47,9 @@ struct ExtractedVideo: Identifiable, Hashable {
     let url: URL
     let title: String
     let headers: [String: String]
+    /// `hls` | `mp4` | `dash` from the manifest rule, when one matched.
+    /// Extensionless manifests can't be identified from the URL alone.
+    var contentType: String?
 }
 
 /// A sidecar subtitle track sniffed from the page (`onSubtitleFound`).

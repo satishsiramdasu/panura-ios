@@ -39,6 +39,28 @@ enum ManifestStore {
         return json
     }
 
+    /// The `sites` array verbatim, serialized for injection into the page.
+    /// Order is preserved — the sniffer takes the first host match.
+    static func sitesJSON() async -> String? {
+        guard let data = await load(),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sites = root["sites"] as? [[String: Any]],
+              !sites.isEmpty,
+              let out = try? JSONSerialization.data(withJSONObject: sites),
+              let json = String(data: out, encoding: .utf8) else { return nil }
+        return json
+    }
+
+    /// Drop the cached manifest so the next read refetches. Without this,
+    /// testing a rule change means waiting out the 6h TTL.
+    static func clearCache() {
+        UserDefaults.standard.removeObject(forKey: lastFetchKey)
+        let url = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(cacheFile)
+        try? FileManager.default.removeItem(at: url)
+    }
+
     // MARK: fetch + cache
 
     private static func load() async -> Data? {

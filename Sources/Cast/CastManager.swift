@@ -38,8 +38,18 @@ final class CastManager: NSObject, ObservableObject {
         let builder = GCKMediaInformationBuilder(contentURL: item.url)
         builder.streamType = .buffered
         builder.metadata = metadata
-        builder.contentType = item.url.absoluteString.contains(".m3u8")
-            ? "application/x-mpegURL" : "video/mp4"
+        // Prefer the manifest rule's hint: an extensionless manifest
+        // (/hls/<token>/<token>) would otherwise be sent as video/mp4 and fail.
+        switch item.contentType {
+        case "hls":  builder.contentType = "application/x-mpegURL"
+        case "dash": builder.contentType = "application/dash+xml"
+        case "mp4":  builder.contentType = "video/mp4"
+        default:
+            let url = item.url.absoluteString
+            builder.contentType = (url.contains(".m3u8") || url.contains("/hls/"))
+                ? "application/x-mpegURL"
+                : (url.contains(".mpd") ? "application/dash+xml" : "video/mp4")
+        }
         // Header-gated streams: the BE269497 custom receiver reads
         // customData.headers and re-injects them on every request — same
         // contract as the Android sender (ChromecastManager.loadMedia).

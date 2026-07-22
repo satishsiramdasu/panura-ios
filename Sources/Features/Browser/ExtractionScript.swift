@@ -50,10 +50,45 @@ enum ExtractionScript {
         if (l.indexOf('/hls/') !== -1 || l.indexOf('/dash/') !== -1) return true;
         if (lower.indexOf('.m3u8') !== -1 || lower.indexOf('.mpd') !== -1 ||
             lower.indexOf('.mp4') !== -1) return true;
+        // A site rule's stream pattern is authoritative — it may well point at a
+        // URL none of the generic rules above would accept.
+        if (matchesStream(matchedSite(), url)) return true;
         // Extra regexes pushed from the remote manifest.
         return streamPatterns().some(function (p) {
           try { return new RegExp(p).test(url); } catch (e) { return false; }
         });
+      }
+
+      // ── Manifest site rules ────────────────────────────────────────────────
+      // First entry whose host regex matches THIS frame's hostname. Resolved on
+      // each call (the manifest is injected asynchronously and may land after
+      // the first URL is classified).
+      function matchedSite() {
+        try {
+          var sites = window.__panuraSites;
+          if (!sites || !sites.length) return null;
+          var h = location.hostname;
+          for (var i = 0; i < sites.length; i++) {
+            var s = sites[i];
+            if (!s || !s.host) continue;
+            try { if (new RegExp(s.host).test(h)) return s; } catch (e) {}
+          }
+        } catch (e) {}
+        return null;
+      }
+
+      function matchesStream(site, url) {
+        if (!site || !site.stream) return false;
+        try { return new RegExp(site.stream).test(url); } catch (e) { return false; }
+      }
+
+      // Referer exactly as the rule requires — the form matters: some CDNs are
+      // validated against the origin root, not the full page URL.
+      function refererFor(site) {
+        var mode = (site && site.referer) || 'page';
+        if (mode === 'none') return '';
+        if (mode === 'origin') return location.origin + '/';
+        return location.href;
       }
 
       // Patterns for THIS frame's host (or its parent domain). Resolved on each
@@ -73,23 +108,59 @@ enum ExtractionScript {
         return out;
       }
 
+      // Strict mode: when the matched rule declares a stream pattern we report
+      // ONLY those, so the list is the real stream instead of every candidate.
+      // Non-matches are held here and flushed if no strict hit arrives in time —
+      // a stale pattern must never leave a site dead.
+      var pending = [];
+      var strictSatisfied = false;
+      var FALLBACK_MS = 8000;
+
+      function emit(abs, title, site) {
+        post({
+          kind: 'video',
+          url: abs,
+          title: title || document.title || '',
+          referer: refererFor(site),
+          origin: location.origin,
+          ua: navigator.userAgent,
+          cookie: document.cookie || '',
+          type: (site && site.type) || '',
+          siteId: (site && site.id) || '',
+          headers: (site && site.headers) || null
+        });
+      }
+
       function report(url, title) {
         try {
           if (!isVideoUrl(url)) return;
           var abs = absolute(url);
           if (reported[abs]) return;
           reported[abs] = true;
-          post({
-            kind: 'video',
-            url: abs,
-            title: title || document.title || '',
-            referer: location.href,
-            origin: location.origin,
-            ua: navigator.userAgent,
-            cookie: document.cookie || ''
-          });
+
+          var site = matchedSite();
+          var strict = !!(site && site.stream);
+
+          if (!strict) { emit(abs, title, site); return; }
+
+          if (matchesStream(site, abs)) {
+            strictSatisfied = true;
+            pending = [];               // the real stream won; drop the noise
+            emit(abs, title, site);
+          } else {
+            pending.push([abs, title]);
+          }
         } catch (e) {}
       }
+
+      setTimeout(function () {
+        try {
+          if (strictSatisfied || !pending.length) return;
+          var site = matchedSite();
+          for (var i = 0; i < pending.length; i++) emit(pending[i][0], pending[i][1], site);
+          pending = [];
+        } catch (e) {}
+      }, FALLBACK_MS);
 
       // ── Subtitles ──────────────────────────────────────────────────────────
       function isSubUrl(url) {

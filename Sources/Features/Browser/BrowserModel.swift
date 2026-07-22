@@ -57,12 +57,19 @@ final class BrowserModel: ObservableObject {
 
     // MARK: detection
 
-    func report(url: URL, title: String, headers: [String: String]) {
+    func report(
+        url: URL,
+        title: String,
+        headers: [String: String],
+        contentType: String? = nil
+    ) {
         let key = url.absoluteString
         guard !seen.contains(key) else { return }
         seen.insert(key)
         let name = title.isEmpty ? mediaSessionTitle : title
-        foundVideos.append(ExtractedVideo(url: url, title: name, headers: headers))
+        foundVideos.append(
+            ExtractedVideo(url: url, title: name, headers: headers, contentType: contentType)
+        )
     }
 
     func reportSubtitle(url: URL, label: String, language: String) {
@@ -78,7 +85,8 @@ final class BrowserModel: ObservableObject {
             title: video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title,
             url: video.url,
             headers: video.headers,
-            subtitles: foundSubtitles
+            subtitles: foundSubtitles,
+            contentType: video.contentType
         )
     }
 

@@ -63,6 +63,13 @@ struct WebViewContainer: UIViewRepresentable {
         // Remote stream patterns + ad/tracker rule lists, then one reload so
         // both apply to the current page.
         Task { @MainActor in
+            if let sites = await ManifestStore.sitesJSON() {
+                webView.configuration.userContentController.addUserScript(WKUserScript(
+                    source: "window.__panuraSites = \(sites);",
+                    injectionTime: .atDocumentStart,
+                    forMainFrameOnly: false
+                ))
+            }
             if let json = await ManifestStore.streamPatternsJSON() {
                 webView.configuration.userContentController.addUserScript(WKUserScript(
                     source: "window.__panuraStreamPatternMap = \(json);",
@@ -211,21 +218,33 @@ struct WebViewContainer: UIViewRepresentable {
             let title = dict["title"] as? String ?? ""
 
             // Replay the exact context the page used, or the CDN rejects us.
+            // The JS already applied the rule's referer mode (origin vs full URL).
             var headers: [String: String] = [:]
             if let referer = dict["referer"] as? String, !referer.isEmpty {
                 headers["Referer"] = referer
             }
-            if let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
+            let ua = dict["ua"] as? String
+            if let ua, !ua.isEmpty { lastUserAgent = ua }
+
+            // A rule may narrow which extra headers to send; with no rule we
+            // send everything we captured, as before.
+            let allowed = dict["headers"] as? [String]
+            func wants(_ name: String) -> Bool { allowed?.contains(name) ?? true }
+
+            if wants("origin"),
+               let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
                 headers["Origin"] = origin
             }
-            if let ua = dict["ua"] as? String, !ua.isEmpty {
+            if wants("user-agent"), let ua, !ua.isEmpty {
                 headers["User-Agent"] = ua
-                lastUserAgent = ua
             }
-            if let cookie = dict["cookie"] as? String, !cookie.isEmpty {
+            if wants("cookie"),
+               let cookie = dict["cookie"] as? String, !cookie.isEmpty {
                 headers["Cookie"] = cookie
             }
-            model.report(url: url, title: title, headers: headers)
+
+            let type = (dict["type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            model.report(url: url, title: title, headers: headers, contentType: type)
         }
     }
 }
