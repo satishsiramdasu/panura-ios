@@ -34,6 +34,24 @@ enum ExtractionScript {
       function absolute(u) {
         try { return new URL(String(u), location.href).href; } catch (e) { return String(u); }
       }
+      // Playlist URIs are relative to the playlist, not to the page.
+      function resolveAgainst(u, base) {
+        try { return new URL(String(u), base || location.href).href; } catch (e) { return absolute(u); }
+      }
+
+      // Segments are never playable on their own. Extension alone can't tell a
+      // segment from a manifest when both are extensionless, so we also learn
+      // them for certain by reading the playlists we see (see scanPlaylist).
+      var knownSegments = window.__panura_segments = window.__panura_segments || {};
+      function isSegmentUrl(abs) {
+        try {
+          if (knownSegments[abs]) return true;
+          var l = abs.toLowerCase().split('?')[0];
+          if (/\.(ts|m4s|aac|mp3|m4a|cmfv|cmfa)$/.test(l)) return true;
+          // seg-3-v1-a1, segment_12, frag12, chunk-4 …
+          return /[\/\-_](seg|segment|frag|fragment|chunk)[\-_]?\d/.test(l);
+        } catch (e) { return false; }
+      }
 
       // ── URL classification (ported from Android isVideoUrl) ────────────────
       function isVideoUrl(url) {
@@ -131,10 +149,15 @@ enum ExtractionScript {
         });
       }
 
-      function report(url, title) {
+      // `proven` = the body came back starting with #EXTM3U, so this URL is a
+      // manifest as a matter of fact. Proof outranks every URL-shape rule and
+      // outranks strict mode: a stale `stream` pattern must not hide a real
+      // stream we have already confirmed.
+      function report(url, title, proven) {
         try {
-          if (!isVideoUrl(url)) return;
+          if (!proven && !isVideoUrl(url)) return;
           var abs = absolute(url);
+          if (!proven && isSegmentUrl(abs)) return;
           if (reported[abs]) return;
           reported[abs] = true;
 
@@ -143,12 +166,40 @@ enum ExtractionScript {
 
           if (!strict) { emit(abs, title, site); return; }
 
-          if (matchesStream(site, abs)) {
+          if (proven || matchesStream(site, abs)) {
             strictSatisfied = true;
             pending = [];               // the real stream won; drop the noise
             emit(abs, title, site);
           } else {
             pending.push([abs, title]);
+          }
+        } catch (e) {}
+      }
+
+      // An HLS body identifies itself. Reading it tells us two things nothing
+      // else can: that `sourceUrl` really is a manifest, and exactly which URLs
+      // are segments — so they stop polluting the list.
+      function scanPlaylist(text, sourceUrl) {
+        try {
+          if (!text || typeof text !== 'string') return;
+          var head = text.slice(0, 512).replace(/^﻿/, '');
+          if (head.replace(/^\s+/, '').lastIndexOf('#EXTM3U', 0) !== 0) return;
+
+          if (sourceUrl) report(sourceUrl, '', true);
+
+          var lines = text.split(/\r?\n/);
+          var expectSegment = false;
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (!line) continue;
+            if (line.charAt(0) === '#') {
+              if (line.lastIndexOf('#EXTINF', 0) === 0) expectSegment = true;
+              continue;
+            }
+            // Variant / audio playlists aren't emitted here: hls.js fetches them
+            // next and they arrive proven, with their own post-redirect URL.
+            if (expectSegment) knownSegments[resolveAgainst(line, sourceUrl)] = true;
+            expectSegment = false;
           }
         } catch (e) {}
       }
@@ -251,9 +302,15 @@ enum ExtractionScript {
             xhr.addEventListener('load', function () {
               try {
                 var t = xhr.responseType;
-                if (t === '' || t === 'text' || t === 'json') {
-                  scanSubsInText(typeof xhr.response === 'string' ? xhr.response : xhr.responseText);
-                }
+                if (t !== '' && t !== 'text' && t !== 'json') return; // segments are arraybuffer
+                var body = typeof xhr.response === 'string' ? xhr.response : xhr.responseText;
+                // responseURL is the URL AFTER redirects — the only place the
+                // real CDN manifest appears when the player requests it through
+                // a redirecting front-end URL.
+                var finalUrl = xhr.responseURL || '';
+                scanPlaylist(body, finalUrl);
+                if (finalUrl) report(finalUrl);
+                scanSubsInText(body);
               } catch (e) {}
             }, false);
           } catch (e) {}
@@ -271,7 +328,15 @@ enum ExtractionScript {
             } catch (e) {}
             return origFetch.apply(this, arguments).then(function (response) {
               // Clone so the page still consumes its own body normally.
-              try { response.clone().text().then(scanSubsInText).catch(function () {}); } catch (e) {}
+              try {
+                // response.url is post-redirect, unlike the request URL above.
+                var finalUrl = response.url || '';
+                response.clone().text().then(function (body) {
+                  scanPlaylist(body, finalUrl);
+                  if (finalUrl) report(finalUrl);
+                  scanSubsInText(body);
+                }).catch(function () {});
+              } catch (e) {}
               return response;
             });
           };
