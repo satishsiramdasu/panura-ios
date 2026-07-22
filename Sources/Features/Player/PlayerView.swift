@@ -27,7 +27,18 @@ struct PlayerView: View {
                 .ignoresSafeArea()
                 .onTapGesture { toggleControls() }
 
-            if model.buffering {
+            if let failure = model.failure {
+                VStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.largeTitle)
+                        .foregroundStyle(.orange)
+                    Text(failure)
+                        .font(.callout)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(24)
+            } else if model.buffering {
                 ProgressView().tint(.white).scaleEffect(1.4)
             }
 

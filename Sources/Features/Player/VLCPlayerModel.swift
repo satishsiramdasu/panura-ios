@@ -14,6 +14,8 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     @Published var elapsed = "0:00"
     @Published var remaining = "-0:00"
     @Published var buffering = true
+    /// Non-nil when playback failed, so the UI says so instead of spinning.
+    @Published var failure: String?
     @Published var rate: Float = 1.0
 
     @Published var audioTracks: [Track] = []
@@ -40,15 +42,28 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         player.drawable = view
         player.delegate = self
 
-        // The relay exists for headers VLC cannot send — Origin and anything
-        // else we captured. Referer/UA/cookie it sets natively, so routing those
-        // through the relay would buffer every segment through a local socket
-        // for nothing. Use it only when a header actually demands it.
-        let needsRelay = item.headers.keys.contains {
+        // Two reasons to relay.
+        // 1. Headers VLC cannot send — Origin and anything else we captured.
+        //    Referer/UA/cookie it sets natively, so relaying those would buffer
+        //    every segment through a local socket for nothing.
+        // 2. An HLS stream nothing identifies as HLS. These CDNs serve an
+        //    extensionless URL as text/plain, and libVLC chooses its demuxer by
+        //    MIME and extension — so it never reaches the adaptive demuxer and
+        //    simply fails. The relay re-serves it as application/vnd.apple.mpegurl.
+        let needsHeaderRelay = item.headers.keys.contains {
             !Self.vlcNativeHeaders.contains($0.lowercased())
         }
-        let playURL = needsRelay
-            ? StreamProxy.shared.proxied(url: item.url, headers: item.headers)
+        let path = item.url.path.lowercased()
+        let looksLikeHLS = path.hasSuffix(".m3u8")
+        let needsTypeRelay = item.contentType == "hls" && !looksLikeHLS
+
+        let playURL = (needsHeaderRelay || needsTypeRelay)
+            ? StreamProxy.shared.proxied(
+                url: item.url,
+                headers: item.headers,
+                playlistHint: needsTypeRelay,
+                relayChildren: needsHeaderRelay
+              )
             : item.url
 
         let media = VLCMedia(url: playURL)
@@ -204,7 +219,12 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
             isPlaying = player.isPlaying
             switch player.state {
             case .buffering, .opening: buffering = !player.isPlaying
-            case .playing: buffering = false; loadTracksIfNeeded()
+            case .playing: buffering = false; failure = nil; loadTracksIfNeeded()
+            case .error:
+                // Previously swallowed by `default`, which left a failed stream
+                // spinning forever with nothing said.
+                buffering = false
+                failure = "This stream could not be opened."
             default: break
             }
             updateNowPlaying()
