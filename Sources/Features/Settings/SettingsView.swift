@@ -3,6 +3,12 @@ import SwiftUI
 struct SettingsView: View {
     /// Read by VLCPlayerModel; when off, playback pauses on lock/background.
     @AppStorage("background_play") private var backgroundPlay = false
+    /// Read by VLCPlayerModel — resume each video from where it was left.
+    @AppStorage("resume_playback") private var resumePlayback = true
+    /// Seconds the ±skip buttons and double-tap jump.
+    @AppStorage("skip_interval") private var skipInterval = 10
+    /// Default subtitle size (px); applied by VLCPlayerModel at media open.
+    @AppStorage("subtitle_size") private var subtitleSize = 24
     @State private var rulesRefreshed = false
     /// Read by WebViewContainer at web-view creation and by the found-videos sheet.
     @AppStorage("debug_detection") private var debugDetection = false
@@ -12,11 +18,18 @@ struct SettingsView: View {
             List {
                 Section {
                     Toggle("Background playback", isOn: $backgroundPlay)
+                    Toggle("Resume from last position", isOn: $resumePlayback)
+                    Picker("Skip interval", selection: $skipInterval) {
+                        Text("10s").tag(10); Text("15s").tag(15); Text("30s").tag(30)
+                    }
+                    Picker("Subtitle size", selection: $subtitleSize) {
+                        Text("Small").tag(16); Text("Medium").tag(24); Text("Large").tag(34)
+                    }
                     NavigationLink("Cast to TV") { CastDevicesView() }
                 } header: {
                     Text("Playback")
                 } footer: {
-                    Text("Keep audio playing when you lock the screen or leave the app. Off by default.")
+                    Text("Background playback keeps audio going when you lock the screen or leave the app. Skip interval sets the ±buttons and double-tap jump.")
                 }
                 Section {
                     Button {

@@ -31,4 +31,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         ManifestStore.refreshOnLaunch()
         return true
     }
+
+    /// The player drives orientation (allow-landscape / lock) through this.
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        OrientationManager.mask
+    }
 }
