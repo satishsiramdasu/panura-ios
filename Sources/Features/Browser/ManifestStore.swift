@@ -10,7 +10,7 @@ import Foundation
 /// page can neither read our target list nor brute-force it — and a plain fetch
 /// of the manifest is just opaque hashes.
 enum ManifestStore {
-    private static let url = URL(string: "https://panura.pages.dev/player/manifest.json")!
+    private static let url = URL(string: "https://panura.app/manifest.json")!
     private static let ttl: TimeInterval = 6 * 60 * 60   // Android refreshes every 6h
     private static let cacheFile = "manifest.json"
     private static let lastFetchKey = "manifest_last_fetch"
