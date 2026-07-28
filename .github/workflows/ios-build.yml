@@ -12,6 +12,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The manifest names no domains; it hashes them with this salt. The app
+      # must hold the SAME salt to match. Injected from a secret so it is never
+      # committed to this public repo; without it the app still builds and just
+      # falls back to generic detection. Keep it equal to .manifest-src/salt.txt.
+      - name: Inject manifest salt
+        env:
+          MANIFEST_SALT: ${{ secrets.MANIFEST_SALT }}
+        run: |
+          if [ -n "$MANIFEST_SALT" ]; then
+            printf 'enum ManifestSalt {\n    static let value = "%s"\n}\n' "$MANIFEST_SALT" \
+              > Sources/Core/ManifestSalt.swift
+            echo "manifest salt injected"
+          else
+            echo "::warning::MANIFEST_SALT not set — site rules will not match (generic detection only)"
+          fi
+
       - name: Select latest Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:

@@ -33,6 +33,10 @@ enum ExtractionScript {
       function post(payload) {
         try { window.webkit.messageHandlers.panura.postMessage(payload); } catch (e) {}
       }
+
+      // Announce this frame so the app can resolve its rule (by hashing the
+      // frame's own host natively) and push it in as window.__panuraRule.
+      post({ kind: 'ready' });
       function absolute(u) {
         try { return new URL(String(u), location.href).href; } catch (e) { return String(u); }
       }
@@ -73,33 +77,24 @@ enum ExtractionScript {
         // A site rule's stream pattern is authoritative — it may well point at a
         // URL none of the generic rules above would accept.
         if (matchesStream(matchedSite(), url)) return true;
-        // Extra regexes pushed from the remote manifest.
-        return streamPatterns().some(function (p) {
-          try { return new RegExp(p).test(url); } catch (e) { return false; }
-        });
+        return false;
       }
 
       // ── Manifest site rules ────────────────────────────────────────────────
-      // First entry whose host regex matches THIS frame's hostname. Resolved on
-      // each call (the manifest is injected asynchronously and may land after
-      // the first URL is classified).
-      function matchedSite() {
-        try {
-          var sites = window.__panuraSites;
-          if (!sites || !sites.length) return null;
-          var h = location.hostname;
-          for (var i = 0; i < sites.length; i++) {
-            var s = sites[i];
-            if (!s || !s.host) continue;
-            try { if (new RegExp(s.host).test(h)) return s; } catch (e) {}
-          }
-        } catch (e) {}
-        return null;
-      }
+      // The rule for THIS frame is resolved natively (the app hashes the frame's
+      // own host and looks it up) and pushed in as window.__panuraRule. The web
+      // view never sees the host list or the salt — only this one frame's rule,
+      // about a domain the page already knows: its own. May arrive after the
+      // first URL is classified, so it is read on each call, never memoised.
+      function matchedSite() { return window.__panuraRule || null; }
 
+      // stream is a list of DOMAINLESS regexes — any match counts.
       function matchesStream(site, url) {
-        if (!site || !site.stream) return false;
-        try { return new RegExp(site.stream).test(url); } catch (e) { return false; }
+        if (!site || !site.stream || !site.stream.length) return false;
+        for (var i = 0; i < site.stream.length; i++) {
+          try { if (new RegExp(site.stream[i]).test(url)) return true; } catch (e) {}
+        }
+        return false;
       }
 
       // Referer exactly as the rule requires — the form matters: some CDNs are
@@ -109,23 +104,6 @@ enum ExtractionScript {
         if (mode === 'none') return '';
         if (mode === 'origin') return location.origin + '/';
         return location.href;
-      }
-
-      // Patterns for THIS frame's host (or its parent domain). Resolved on each
-      // call rather than memoized, because the manifest is injected
-      // asynchronously and may land after the first URL is classified.
-      function streamPatterns() {
-        var out = window.__panuraStreamPatterns || [];
-        try {
-          var map = window.__panuraStreamPatternMap;
-          if (map) {
-            var h = location.hostname.replace(/^www\./, '');
-            var parent = h.indexOf('.') !== -1 ? h.substring(h.indexOf('.') + 1) : '';
-            var hit = map[h] || (parent ? map[parent] : null);
-            if (hit) out = out.concat([hit]);
-          }
-        } catch (e) {}
-        return out;
       }
 
       // Strict mode: when the matched rule declares a stream pattern we report
@@ -196,7 +174,7 @@ enum ExtractionScript {
           if (proven) confirmed[abs] = true;
 
           var site = matchedSite();
-          var strict = !!(site && site.stream);
+          var strict = !!(site && site.stream && site.stream.length);
 
           if (!strict) { dbg(abs, 'emitted (no rule)', src); emit(abs, title, site, proven); return; }
 

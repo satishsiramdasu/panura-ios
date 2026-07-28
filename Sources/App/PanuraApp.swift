@@ -26,6 +26,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             }
         }
         CastManager.shared.configure()
+        // Detection rules can change server-side any day; refetch once per launch
+        // (then the 6h TTL applies) so a fix lands without waiting the app out.
+        ManifestStore.refreshOnLaunch()
         return true
     }
 }

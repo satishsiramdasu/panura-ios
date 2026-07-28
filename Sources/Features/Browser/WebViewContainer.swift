@@ -58,23 +58,12 @@ struct WebViewContainer: UIViewRepresentable {
         context.coordinator.observe(webView)
         webView.load(URLRequest(url: URL(string: "https://www.google.com")!))
 
-        // Remote stream patterns + ad/tracker rule lists, then one reload so
-        // both apply to the current page.
+        // Ad/tracker rule lists, then one reload so they apply to the current
+        // page. Site rules are NOT injected here — the manifest names no domains
+        // and the salt must never enter a web view. Instead each frame posts
+        // `ready` and we push back only that frame's own resolved rule (see the
+        // message handler).
         Task { @MainActor in
-            if let sites = await ManifestStore.sitesJSON() {
-                webView.configuration.userContentController.addUserScript(WKUserScript(
-                    source: "window.__panuraSites = \(sites);",
-                    injectionTime: .atDocumentStart,
-                    forMainFrameOnly: false
-                ))
-            }
-            if let json = await ManifestStore.streamPatternsJSON() {
-                webView.configuration.userContentController.addUserScript(WKUserScript(
-                    source: "window.__panuraStreamPatternMap = \(json);",
-                    injectionTime: .atDocumentStart,
-                    forMainFrameOnly: false
-                ))
-            }
             let lists = await FilterListUpdater.current()
             for list in lists {
                 webView.configuration.userContentController.add(list)
@@ -184,6 +173,16 @@ struct WebViewContainer: UIViewRepresentable {
         /// UA captured from the page, reused for hits found via navigation.
         private var lastUserAgent: String?
 
+        /// `window.__panuraRule = {…}` for the frame — the manifest entry minus
+        /// its `h` hashes (the page has no use for them and shouldn't see them).
+        static func ruleInjectionJS(_ rule: [String: Any]) -> String? {
+            var r = rule
+            r.removeValue(forKey: "h")
+            guard let data = try? JSONSerialization.data(withJSONObject: r),
+                  let json = String(data: data, encoding: .utf8) else { return nil }
+            return "window.__panuraRule = \(json);"
+        }
+
         // Hits posted from the injected extraction script.
         func userContentController(
             _ userContentController: WKUserContentController,
@@ -193,6 +192,23 @@ struct WebViewContainer: UIViewRepresentable {
                   let dict = message.body as? [String: Any] else { return }
 
             switch dict["kind"] as? String {
+            case "ready":
+                // A frame's sniffer is up. Resolve its rule by the FRAME's own
+                // host (authoritative, from WebKit — not anything the page said)
+                // and push only that one rule back into that one frame. No list,
+                // no salt, no other site's domains ever reach the page.
+                let host = message.frameInfo.securityOrigin.host
+                guard !host.isEmpty else { return }
+                let frame = message.frameInfo
+                let wv = message.webView
+                Task { @MainActor in
+                    guard let rule = await ManifestStore.rule(forHost: host),
+                          let js = Self.ruleInjectionJS(rule) else { return }
+                    // Same content world the sniffer runs in (the default page
+                    // world), and only into this one frame.
+                    wv?.evaluateJavaScript(js, in: frame, in: .page, completionHandler: nil)
+                }
+                return
             case "subtitle":
                 if let s = dict["url"] as? String, let u = URL(string: s) {
                     model.reportSubtitle(

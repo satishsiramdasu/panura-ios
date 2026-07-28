@@ -1,54 +1,72 @@
+import CryptoKit
 import Foundation
 
-/// Reads the remote extractor manifest (same file the Android app uses) so
-/// detection rules can be fixed without shipping an app update — which matters
-/// far more on iOS, where a release takes days of review.
+/// Reads the remote detection manifest so rules can be fixed without shipping an
+/// app update — which matters far more on iOS, where a release takes days.
 ///
-/// Currently consumes `streamPatterns`: host → regex identifying that site's
-/// stream URLs. The sniffer applies the entry matching the frame's hostname.
+/// The deployed manifest names no domains: each site's `h` is a list of
+/// HMAC-SHA256 hashes of its hostnames. We hash the *frame's own* hostname here,
+/// natively, and match. The salt (`ManifestSalt`) never enters a web view, so a
+/// page can neither read our target list nor brute-force it — and a plain fetch
+/// of the manifest is just opaque hashes.
 enum ManifestStore {
     private static let url = URL(string: "https://panura.pages.dev/player/manifest.json")!
     private static let ttl: TimeInterval = 6 * 60 * 60   // Android refreshes every 6h
     private static let cacheFile = "manifest.json"
     private static let lastFetchKey = "manifest_last_fetch"
 
-    /// host → regex string, ready to serialize into the page.
-    static func streamPatterns() async -> [String: String] {
-        guard let data = await load() else { return [:] }
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let raw = root["streamPatterns"] as? [String: Any] else { return [:] }
+    /// Hashed site entries verbatim (each has `h`: [hex hmac], plus optional
+    /// stream/type/referer/headers). Order preserved — first host match wins.
+    static func sites() async -> [[String: Any]] {
+        guard let data = await load(),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let sites = root["sites"] as? [[String: Any]] else { return [] }
+        return sites
+    }
 
-        var out: [String: String] = [:]
-        for (host, value) in raw {
-            // Entries are either {"pattern": "...", "type": "hls"} or a bare string.
-            if let dict = value as? [String: Any], let pattern = dict["pattern"] as? String {
-                out[host] = pattern
-            } else if let pattern = value as? String {
-                out[host] = pattern
+    /// The rule for `host`, or nil — the first entry whose hashed host list
+    /// contains the HMAC of the host or any of its parent domains. Returned
+    /// verbatim (still carrying `h`); the caller strips it before use.
+    static func rule(forHost host: String) async -> [String: Any]? {
+        let sites = await sites()
+        guard !sites.isEmpty else { return nil }
+        let candidateHashes = Set(hostCandidates(host).map(hash))
+        for site in sites {
+            if let h = site["h"] as? [String], h.contains(where: candidateHashes.contains) {
+                return site
             }
+        }
+        return nil
+    }
+
+    /// HMAC-SHA256(salt, host) as lowercase hex — byte-identical to the Node
+    /// build tool (which is why the host must be canonicalised the same way).
+    static func hash(_ canonicalHost: String) -> String {
+        let key = SymmetricKey(data: Data(ManifestSalt.value.utf8))
+        let mac = HMAC<SHA256>.authenticationCode(for: Data(canonicalHost.utf8), using: key)
+        return mac.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// `example.com` and every parent down to two labels, canonicalised to match
+    /// the build tool: lowercased, trailing dot removed. Hashing the registrable
+    /// domain lets one manifest entry cover every rotating subdomain.
+    static func hostCandidates(_ host: String) -> [String] {
+        var base = host.lowercased()
+        if base.hasSuffix(".") { base.removeLast() }
+        var parts = base.split(separator: ".").map(String.init)
+        var out: [String] = []
+        while parts.count >= 2 {
+            out.append(parts.joined(separator: "."))
+            parts.removeFirst()
         }
         return out
     }
 
-    /// JSON object literal for injection, or nil when there's nothing to inject.
-    static func streamPatternsJSON() async -> String? {
-        let patterns = await streamPatterns()
-        guard !patterns.isEmpty,
-              let data = try? JSONSerialization.data(withJSONObject: patterns),
-              let json = String(data: data, encoding: .utf8) else { return nil }
-        return json
-    }
-
-    /// The `sites` array verbatim, serialized for injection into the page.
-    /// Order is preserved — the sniffer takes the first host match.
-    static func sitesJSON() async -> String? {
-        guard let data = await load(),
-              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sites = root["sites"] as? [[String: Any]],
-              !sites.isEmpty,
-              let out = try? JSONSerialization.data(withJSONObject: sites),
-              let json = String(data: out, encoding: .utf8) else { return nil }
-        return json
+    /// Force the next read to refetch, but keep the cached file as offline
+    /// fallback. Called once at launch (see AppDelegate) so a server-side rule
+    /// fix is picked up promptly rather than after the 6h TTL.
+    static func refreshOnLaunch() {
+        UserDefaults.standard.removeObject(forKey: lastFetchKey)
     }
 
     /// Drop the cached manifest so the next read refetches. Without this,
