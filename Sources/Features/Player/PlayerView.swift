@@ -29,10 +29,9 @@ struct PlayerView: View {
     @State private var flashZone: PlayerZone?
     @State private var hudClear: Task<Void, Never>?
 
-    // Sheets / PiP / orientation mirror
+    // Sheets / PiP
     @State private var sheet: PlayerSheet?
     @State private var pip: VLCPiPController?
-    @State private var orientationLocked = false
 
     @AppStorage("subtitle_size") private var subtitleSize = 24
     @AppStorage("subtitle_color") private var subtitleColor = 0xFFFFFF
@@ -256,8 +255,7 @@ struct PlayerView: View {
             iconButton("xmark") { close() }
             Text(item.title).lineLimit(1).font(.headline)
             Spacer()
-            iconButton(model.aspect.icon) { model.cycleAspect(); scheduleHide() }
-            iconButton(orientationLocked ? "lock.rotation" : "arrow.clockwise") { toggleOrientationLock() }
+            iconButton("rotate.right") { OrientationManager.rotate(); scheduleHide() }
             if pipPossible { iconButton("pip.enter") { togglePiP() } }
             iconButton("lock.fill") { lock() }
             speedMenu
@@ -293,7 +291,13 @@ struct PlayerView: View {
                     }
                 )
                 .tint(PanuraTheme.accent)
-                Text(model.remaining).font(.caption.monospacedDigit())
+                // Time left (dimmed) stacked over total duration — matches Android.
+                VStack(alignment: .trailing, spacing: 0) {
+                    Text(model.remaining)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.65))
+                    Text(model.total).font(.caption.monospacedDigit())
+                }
             }
             HStack(spacing: 26) {
                 quickAction("waveform", "Audio") { sheet = .audio }
@@ -478,12 +482,6 @@ struct PlayerView: View {
     private func togglePiP() {
         if pip == nil, let v = model.drawableView { pip = VLCPiPController(source: v, model: model) }
         pip?.toggle()
-        scheduleHide()
-    }
-
-    private func toggleOrientationLock() {
-        if orientationLocked { OrientationManager.allowAll() } else { OrientationManager.lockCurrent() }
-        orientationLocked.toggle()
         scheduleHide()
     }
 

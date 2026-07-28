@@ -22,6 +22,14 @@ enum OrientationManager {
     /// Restore the app-wide default (player closed).
     static func reset() { mask = .all }
 
+    /// Manual rotate button — flip the pinned orientation family (portrait ⇄
+    /// landscape) and force it. Because the resulting mask is a single family the
+    /// app stays pinned there, so this rotates the player even when the device's
+    /// auto-rotate lock is on. Mirrors Android's `RotationState.rotate()`.
+    static func rotate() {
+        mask = currentInterfaceOrientation.isLandscape ? .portrait : .landscape
+    }
+
     /// Pin to the orientation currently on screen — the player's lock button.
     static func lockCurrent() {
         let o = currentInterfaceOrientation

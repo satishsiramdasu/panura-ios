@@ -12,7 +12,8 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     @Published var isPlaying = false
     @Published var position: Float = 0          // 0...1
     @Published var elapsed = "0:00"
-    @Published var remaining = "-0:00"
+    @Published var remaining = "-0:00"      // time left, e.g. "-12:34"
+    @Published var total = "0:00"           // duration / end time, e.g. "36:04"
     @Published var buffering = true
     /// Non-nil when playback failed, so the UI says so instead of spinning.
     @Published var failure: String?
@@ -441,8 +442,13 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
     nonisolated func mediaPlayerTimeChanged(_ aNotification: Notification) {
         Task { @MainActor in
             position = player.position
-            elapsed = Self.fmt(player.time.intValue)
-            remaining = Self.fmt(player.remainingTime?.intValue ?? 0)
+            // remainingTime is NEGATIVE; abs it, then derive the end time so the
+            // duration shows even when the stream reports no length up front.
+            let elapsedMs = player.time.intValue
+            let remMs = abs(player.remainingTime?.intValue ?? 0)
+            elapsed = Self.fmt(elapsedMs)
+            remaining = "-" + Self.fmt(remMs)
+            total = Self.fmt(elapsedMs + remMs)
             buffering = false
             loadTracksIfNeeded()
             applyResumeIfPending()
