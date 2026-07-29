@@ -97,7 +97,9 @@ final class VLCPiPController: NSObject, ObservableObject {
     private func startLink() {
         guard link == nil else { return }
         let l = CADisplayLink(target: self, selector: #selector(step))
-        l.preferredFramesPerSecond = 15
+        // afterScreenUpdates:true (below) forces a real render each capture, so
+        // keep the rate modest.
+        l.preferredFramesPerSecond = 10
         l.add(to: .main, forMode: .common)
         link = l
     }
@@ -121,7 +123,10 @@ final class VLCPiPController: NSObject, ObservableObject {
         fmt.scale = 1                    // PiP is small; native scale wastes work
         fmt.opaque = true
         let image = UIGraphicsImageRenderer(size: size, format: fmt).image { _ in
-            view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: false)
+            // afterScreenUpdates MUST be true: VLC renders via a Metal/GL layer,
+            // and only a post-update snapshot captures GPU-composited content —
+            // with false the capture is black, which is why PiP showed nothing.
+            view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
         }
         guard let cg = image.cgImage else { return nil }
 
@@ -159,7 +164,7 @@ final class VLCPiPController: NSObject, ObservableObject {
 
         let now = CMClockGetTime(CMClockGetHostTimeClock())
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 15),
+            duration: CMTime(value: 1, timescale: 10),
             presentationTimeStamp: now, decodeTimeStamp: .invalid)
 
         var sb: CMSampleBuffer?

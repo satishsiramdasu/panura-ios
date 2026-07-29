@@ -92,7 +92,12 @@ struct PlayerView: View {
             },
             onSeekChanged: { dx in
                 guard !locked, seekPreview != nil else { return }
-                seekPreview = clamp01f(seekBase + Float(dx))
+                let total = model.totalSeconds
+                guard total > 0 else { return }
+                // Time-based, not fraction-based: a full-width swipe moves ~90s
+                // regardless of length (it used to jump the whole video).
+                let target = Double(seekBase) * total + Double(dx) * 90
+                seekPreview = clamp01f(Float(target / total))
             },
             onSeekEnded: {
                 guard !locked, let f = seekPreview else { return }
@@ -255,10 +260,8 @@ struct PlayerView: View {
             iconButton("xmark") { close() }
             Text(item.title).lineLimit(1).font(.headline)
             Spacer()
-            iconButton("rotate.right") { OrientationManager.rotate(); scheduleHide() }
             if pipPossible { iconButton("pip.enter") { togglePiP() } }
             iconButton("lock.fill") { lock() }
-            speedMenu
         }
         .foregroundStyle(.white)
     }
@@ -299,11 +302,13 @@ struct PlayerView: View {
                     Text(model.total).font(.caption.monospacedDigit())
                 }
             }
-            HStack(spacing: 26) {
+            HStack(spacing: 22) {
                 quickAction("waveform", "Audio") { sheet = .audio }
                 quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
                 quickAction("slider.horizontal.below.rectangle", "Sync") { sheet = .sync }
                 Spacer()
+                quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
+                speedQuick
                 quickAction(model.aspect.icon, model.aspect.label) { model.cycleAspect(); scheduleHide() }
             }
         }
@@ -315,7 +320,8 @@ struct PlayerView: View {
         return model.elapsed
     }
 
-    private var speedMenu: some View {
+    /// Playback speed as a bottom-right quick action (menu on tap).
+    private var speedQuick: some View {
         Menu {
             ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { r in
                 Button {
@@ -326,7 +332,10 @@ struct PlayerView: View {
                 }
             }
         } label: {
-            Image(systemName: "speedometer").font(.title3)
+            VStack(spacing: 4) {
+                Image(systemName: "speedometer").font(.system(size: 17))
+                Text(model.rate == 1.0 ? "Speed" : "\(model.rate)×").font(.system(size: 11))
+            }
         }
         .foregroundStyle(.white)
     }
