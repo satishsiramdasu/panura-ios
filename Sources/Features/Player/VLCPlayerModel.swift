@@ -94,6 +94,14 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     private var rateBeforeBoost: Float = 1.0
 
+    /// The user's intended play/pause state — true while they want playback. Used
+    /// to nudge VLC out of a post-seek buffering stall without overriding a
+    /// deliberate pause.
+    private var wantsPlayback = true
+
+    /// Fires if a buffering state hangs; nudges VLC to resume. Cancelled on play.
+    private var bufferWatchdog: Task<Void, Never>?
+
     /// User setting — when off, playback pauses as soon as the app leaves the
     /// foreground (screen lock, home). When on, audio keeps going.
     private var backgroundPlayEnabled: Bool {
@@ -165,6 +173,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         applySubtitleStyle(to: media)
         player.media = media
         player.play()
+        wantsPlayback = true
 
         // Sidecar subtitles sniffed from the page — the stream itself usually
         // carries none, so without these there are no captions at all.
@@ -244,7 +253,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     // MARK: transport
 
-    func togglePlay() { player.isPlaying ? player.pause() : player.play() }
+    func togglePlay() {
+        if player.isPlaying { player.pause(); wantsPlayback = false }
+        else { player.play(); wantsPlayback = true }
+    }
 
     /// Skip amount (seconds) — user-configurable, default 10.
     var skipInterval: Int {
@@ -257,7 +269,13 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         seconds >= 0 ? player.jumpForward(Int32(seconds)) : player.jumpBackward(Int32(-seconds))
     }
 
-    func seek(to fraction: Float) { player.position = max(0, min(1, fraction)) }
+    func seek(to fraction: Float) {
+        player.position = max(0, min(1, fraction))
+        // VLC can wedge in the buffering state after a seek (notably local files),
+        // leaving the spinner up and playback stalled — nudge it when the user
+        // expects playback. Harmless if already playing.
+        if wantsPlayback, !player.isPlaying { player.play() }
+    }
     func setRate(_ r: Float) { player.rate = r; rate = r }
 
     /// Hold-to-speed-up (long press): remember the rate, jump to 2×, restore.
@@ -265,6 +283,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     func endSpeedBoost()   { setRate(rateBeforeBoost) }
 
     func stop() {
+        bufferWatchdog?.cancel()
         saveResume()
         player.stop()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -340,7 +359,29 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         guard videoIsPortrait == nil else { return }
         let s = player.videoSize
         guard s.width > 0, s.height > 0 else { return }
-        videoIsPortrait = s.height > s.width
+        var portrait = s.height > s.width
+        // Phone portrait clips are encoded landscape + a 90°/270° rotation flag;
+        // videoSize reports the ENCODED (landscape) dimensions, so a rotated
+        // track means the frame is actually displayed transposed. Without this,
+        // a portrait video wrongly forced the player into landscape.
+        if videoIsQuarterRotated() == true { portrait.toggle() }
+        videoIsPortrait = portrait
+    }
+
+    /// Whether the video track carries a 90°/270° rotation. Read from the media
+    /// metadata without depending on an exact VLCKit constant name (it varies by
+    /// build): any track key mentioning "orientation" whose value is a
+    /// VLCMediaOrientation raw >= 4 is a quarter-turn. nil when unknown.
+    private func videoIsQuarterRotated() -> Bool? {
+        guard let tracks = player.media?.tracksInformation as? [[AnyHashable: Any]] else { return nil }
+        for t in tracks {
+            if let entry = t.first(where: {
+                ($0.key as? String)?.lowercased().contains("orientation") == true
+            }), let n = entry.value as? NSNumber {
+                return n.intValue >= 4
+            }
+        }
+        return nil
     }
 
     // MARK: audio boost
@@ -433,10 +474,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     private func setupRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.player.play() }; return .success
+            Task { @MainActor in self?.player.play(); self?.wantsPlayback = true }; return .success
         }
         center.pauseCommand.addTarget { [weak self] _ in
-            Task { @MainActor in self?.player.pause() }; return .success
+            Task { @MainActor in self?.player.pause(); self?.wantsPlayback = false }; return .success
         }
         center.togglePlayPauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.togglePlay() }; return .success
@@ -476,6 +517,38 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             Task { @MainActor in
                 guard let self, !self.backgroundPlayEnabled else { return }
                 self.player.pause()
+            }
+        }
+        // Backgrounding tears down VLC's video output; audio keeps going but the
+        // surface returns black. Re-attach the drawable on foreground to rebuild it.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshVideoOutput() }
+        }
+    }
+
+    /// Rebuild the video output after returning from the background, where VLC's
+    /// vout is destroyed (black frame, audio-only). Reassigning the drawable
+    /// forces a fresh vout; a zero-distance seek re-renders a frame immediately.
+    private func refreshVideoOutput() {
+        guard let v = drawableView else { return }
+        player.drawable = nil
+        player.drawable = v
+        if player.isPlaying {
+            let p = player.position
+            player.position = p
+        }
+    }
+
+    private func scheduleBufferWatchdog() {
+        bufferWatchdog?.cancel()
+        bufferWatchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, !Task.isCancelled else { return }
+            // Still stuck buffering and the user wants playback → nudge VLC.
+            if self.buffering, self.wantsPlayback, !self.player.isPlaying {
+                self.player.play()
             }
         }
     }
@@ -545,8 +618,11 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
         Task { @MainActor in
             isPlaying = player.isPlaying
             switch player.state {
-            case .buffering, .opening: buffering = !player.isPlaying
+            case .buffering, .opening:
+                buffering = !player.isPlaying
+                if buffering { scheduleBufferWatchdog() }
             case .playing:
+                bufferWatchdog?.cancel()
                 buffering = false; failure = nil
                 loadTracksIfNeeded()
                 reapplySync()

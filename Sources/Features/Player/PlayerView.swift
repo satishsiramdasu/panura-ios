@@ -119,7 +119,9 @@ struct PlayerView: View {
             onSeekBegan: {
                 guard !locked else { return }
                 seekBase = model.position; seekPreview = model.position
-                isGestureSeeking = true; showControlsNow()
+                // Deliberately does NOT reveal the controls — a seek gesture only
+                // shows its own HUD; controls stay in whatever state they were.
+                isGestureSeeking = true
             },
             onSeekChanged: { dx in
                 guard !locked, seekPreview != nil else { return }
@@ -300,19 +302,20 @@ struct PlayerView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
 
-            // Top bar pinned to the top, bottom bar hugging the bottom, with
-            // matching gaps at both edges.
+            // Top bar pinned to the top; bottom bar hugs the very bottom edge
+            // (no extra bottom inset) so it sits low, matching Android.
             VStack(spacing: 0) {
                 topBar
                 Spacer()
                 bottomBar
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 6)
+            .padding(.top, 6)
 
             // Transport on the TRUE screen center, independent of bar heights.
-            // Hidden during a horizontal seek so the seek HUD reads clearly.
-            centerTransport.opacity(seekPreview == nil ? 1 : 0)
+            // Hidden only during a swipe-seek (not a slider drag) so the seek HUD
+            // reads clearly and the buttons reliably return when the finger lifts.
+            centerTransport.opacity(isGestureSeeking ? 0 : 1)
         }
     }
 
@@ -380,7 +383,7 @@ struct PlayerView: View {
                         quickAction("rectangle.stack", "Quality") { sheet = .quality }
                     }
                 }
-                .padding(.horizontal, 12).padding(.vertical, 6)
+                .padding(.horizontal, 16).padding(.vertical, 6)
                 .background(Color.black.opacity(0.3), in: Capsule())
 
                 Spacer()
@@ -389,9 +392,9 @@ struct PlayerView: View {
                 HStack(spacing: 14) {
                     quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
                     speedQuick
-                    quickAction(model.aspect.icon, model.aspect.label) { model.cycleAspect(); scheduleHide() }
+                    aspectAction
                 }
-                .padding(.horizontal, 12).padding(.vertical, 6)
+                .padding(.horizontal, 16).padding(.vertical, 6)
                 .background(Color.black.opacity(0.3), in: Capsule())
             }
             .foregroundStyle(.white)
@@ -415,6 +418,21 @@ struct PlayerView: View {
     private var displayElapsed: String {
         if let f = seekPreview { return VLCPlayerModel.clock(Double(f) * model.totalSeconds) }
         return model.elapsed
+    }
+
+    /// Aspect cycle button with a fixed-width label so "Stretch" doesn't widen
+    /// the bottom-right group (the icon + text both swap per mode).
+    private var aspectAction: some View {
+        Button {
+            model.cycleAspect(); scheduleHide()
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: model.aspect.icon).font(.system(size: 17))
+                Text(model.aspect.label).font(.system(size: 11))
+            }
+            .frame(width: 58)
+        }
+        .foregroundStyle(.white)
     }
 
     /// Playback speed as a bottom-right quick action (menu on tap).
@@ -679,7 +697,9 @@ struct PlayerView: View {
         hideTask?.cancel()
         hideTask = Task {
             do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { return }
-            guard !Task.isCancelled, showControls, seekPreview == nil, model.isPlaying else { return }
+            // Hide after 4s regardless of play/pause (was gated on isPlaying, so
+            // controls could stick forever while buffering). Never hide mid-scrub.
+            guard !Task.isCancelled, showControls, seekPreview == nil else { return }
             withAnimation { showControls = false }
         }
     }
