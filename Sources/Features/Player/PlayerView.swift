@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import AVKit
 import VLCKitSPM
 
 /// Full-screen VLC player with a Panura-branded control overlay:
@@ -29,9 +28,8 @@ struct PlayerView: View {
     @State private var flashZone: PlayerZone?
     @State private var hudClear: Task<Void, Never>?
 
-    // Sheets / PiP
+    // Sheets
     @State private var sheet: PlayerSheet?
-    @State private var pip: VLCPiPController?
 
     @AppStorage("subtitle_size") private var subtitleSize = 24
     @AppStorage("subtitle_color") private var subtitleColor = 0xFFFFFF
@@ -73,7 +71,6 @@ struct PlayerView: View {
         .onAppear { OrientationManager.allowAll(); scheduleHide() }
         .onDisappear {
             OrientationManager.reset()
-            pip?.teardown()
             model.stop()
         }
         .onChange(of: subtitleSize) { _ in model.reopenPreservingPosition() }
@@ -260,7 +257,6 @@ struct PlayerView: View {
             iconButton("xmark") { close() }
             Text(item.title).lineLimit(1).font(.headline)
             Spacer()
-            if pipPossible { iconButton("pip.enter") { togglePiP() } }
             iconButton("lock.fill") { lock() }
         }
         .foregroundStyle(.white)
@@ -327,18 +323,24 @@ struct PlayerView: View {
                 Button {
                     model.setRate(Float(r)); scheduleHide()
                 } label: {
-                    Label(r == 1.0 ? "Normal" : "\(r)×",
+                    Label(r == 1.0 ? "Normal" : Self.speedText(r),
                           systemImage: model.rate == Float(r) ? "checkmark" : "")
                 }
             }
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: "speedometer").font(.system(size: 17))
-                Text(model.rate == 1.0 ? "Speed" : "\(model.rate)×").font(.system(size: 11))
+                Text(verbatim: model.rate == 1.0 ? "Speed" : Self.speedText(Double(model.rate)))
+                    .font(.system(size: 11))
             }
         }
         .foregroundStyle(.white)
     }
+
+    /// "%g" trims trailing zeros: 1.5 → "1.5×", 2 → "2×", 0.75 → "0.75×".
+    /// Interpolating a Float straight into Text goes via LocalizedStringKey and
+    /// prints "1.500000×", so format it to a plain String first.
+    private static func speedText(_ r: Double) -> String { String(format: "%g×", r) }
 
     // MARK: lock overlay
 
@@ -486,15 +488,7 @@ struct PlayerView: View {
 
     // MARK: actions
 
-    private var pipPossible: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
-
-    private func togglePiP() {
-        if pip == nil, let v = model.drawableView { pip = VLCPiPController(source: v, model: model) }
-        pip?.toggle()
-        scheduleHide()
-    }
-
-    private func close() { model.stop(); pip?.teardown(); dismiss() }
+    private func close() { model.stop(); dismiss() }
 
     private func lock() {
         withAnimation { locked = true; showControls = false; lockRevealed = true }
