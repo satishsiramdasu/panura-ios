@@ -30,7 +30,22 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     @Published var subtitleDelayMs: Int = 0
     @Published var audioDelayMs: Int = 0
 
+    /// Audio gain in percent (100 = normal, up to 200 = boost). NOT persisted —
+    /// a fresh player always starts at 100, so it resets when the player closes.
+    @Published var audioBoost: Int = 100
+
+    /// HLS quality variants — populated only when the master playlist lists more
+    /// than one. Empty otherwise, which is what hides the Quality button.
+    @Published var qualities: [Quality] = []
+    @Published var currentQualityId: String = Quality.auto.id
+
     struct Track: Identifiable, Hashable { let id: Int; let name: String }
+
+    /// A selectable HLS rendition. `url == nil` means Auto (adaptive = the master).
+    struct Quality: Identifiable, Hashable {
+        let id: String; let label: String; let url: URL?
+        static let auto = Quality(id: "auto", label: "Auto", url: nil)
+    }
 
     enum AspectMode: String, CaseIterable {
         case fit, fill, stretch
@@ -56,6 +71,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     private var tracksLoaded = false
     private var item: MediaItem?
+    private var playURLOverride: URL?     // a specific HLS variant; nil = master / Auto
     private var observersAdded = false
 
     // char* options libVLC copies internally; we own the buffers and free on change.
@@ -104,6 +120,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         buildAndPlay()
         setupRemoteCommands()
         observeLifecycle()
+        loadQualities()
     }
 
     /// (Re)builds the VLCMedia and starts playback. Split out so a subtitle-style
@@ -120,20 +137,22 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         //    extensionless URL as text/plain, and libVLC chooses its demuxer by
         //    MIME and extension — so it never reaches the adaptive demuxer and
         //    simply fails. The relay re-serves it as application/vnd.apple.mpegurl.
+        // Auto plays the master (item.url); a picked quality plays its variant URL.
+        let sourceURL = playURLOverride ?? item.url
         let needsHeaderRelay = item.headers.keys.contains {
             !Self.vlcNativeHeaders.contains($0.lowercased())
         }
-        let path = item.url.path.lowercased()
+        let path = sourceURL.path.lowercased()
         let looksLikeHLS = path.hasSuffix(".m3u8")
         let needsTypeRelay = item.contentType == "hls" && !looksLikeHLS
 
         let playURL = (needsHeaderRelay || needsTypeRelay)
             ? StreamProxy.shared.proxied(
-                url: item.url,
+                url: sourceURL,
                 headers: item.headers,
                 playlistHint: needsTypeRelay
               )
-            : item.url
+            : sourceURL
 
         let media = VLCMedia(url: playURL)
         applyHeaders(item.headers, to: media)     // belt-and-braces for the direct path
@@ -175,10 +194,16 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     private func applySubtitleStyle(to media: VLCMedia) {
         let size = UserDefaults.standard.object(forKey: "subtitle_size") as? Int ?? 24
         let color = UserDefaults.standard.object(forKey: "subtitle_color") as? Int ?? 0xFFFFFF
+        let background = UserDefaults.standard.bool(forKey: "subtitle_background")   // default off
         media.addOption(":freetype-fontsize=\(size)")
         media.addOption(":freetype-color=\(color)")
         // A soft outline keeps white text legible over bright frames.
         media.addOption(":freetype-outline-thickness=4")
+        if background {
+            // Opaque black box behind the glyphs for readability.
+            media.addOption(":freetype-background-opacity=255")
+            media.addOption(":freetype-background-color=0")
+        }
     }
 
     /// Re-open the current item at the current playhead — used when a subtitle
@@ -280,6 +305,63 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     private func reapplySync() {
         player.currentVideoSubTitleDelay = subtitleDelayMs * usPerMs
         player.currentAudioPlaybackDelay = audioDelayMs * usPerMs
+    }
+
+    // MARK: audio boost
+
+    func setAudioBoost(_ percent: Int) {
+        audioBoost = max(100, min(200, percent))
+        player.audio?.volume = Int32(audioBoost)
+    }
+    private func reapplyAudioBoost() {
+        if audioBoost != 100 { player.audio?.volume = Int32(audioBoost) }
+    }
+
+    // MARK: preferred languages — best-effort match on the track name
+
+    /// Auto-select the audio/subtitle track whose name contains the user's
+    /// preferred language. Runs on first track load and when the preference
+    /// changes mid-playback.
+    func applyPreferredLanguages() {
+        if let pa = UserDefaults.standard.string(forKey: "preferred_audio_language"), !pa.isEmpty,
+           let t = audioTracks.first(where: { $0.name.range(of: pa, options: .caseInsensitive) != nil }) {
+            selectAudio(t.id)
+        }
+        if let ps = UserDefaults.standard.string(forKey: "preferred_subtitle_language"), !ps.isEmpty,
+           let t = subtitleTracks.first(where: { $0.name.range(of: ps, options: .caseInsensitive) != nil }) {
+            selectSubtitle(t.id)
+        }
+    }
+
+    // MARK: HLS quality
+
+    func selectQuality(_ q: Quality) {
+        currentQualityId = q.id
+        playURLOverride = q.url
+        reopenPreservingPosition()
+    }
+
+    /// Fetch + parse the HLS master (only for HLS) so a manual quality picker can
+    /// appear. VLC only does adaptive internally, so we switch quality by
+    /// re-opening with the chosen variant URL.
+    private func loadQualities() {
+        guard let item, item.contentType == "hls" || item.url.path.lowercased().hasSuffix(".m3u8")
+        else { return }
+        let url = item.url, headers = item.headers
+        Task { [weak self] in
+            let variants = await HLSVariants.fetch(url: url, headers: headers)
+            guard variants.count > 1 else { return }
+            await MainActor.run {
+                guard let self else { return }
+                self.qualities = [Quality.auto] + variants.map {
+                    Quality(
+                        id: "\($0.height)_\($0.bandwidth)",
+                        label: $0.height > 0 ? "\($0.height)p" : "\($0.bandwidth / 1000) kbps",
+                        url: $0.url
+                    )
+                }
+            }
+        }
     }
 
     // MARK: helpers exposed to the view
@@ -408,7 +490,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         currentAudioId = Int(player.currentAudioTrackIndex)
         currentSubtitleId = Int(player.currentVideoSubTitleIndex)
 
-        if !audioTracks.isEmpty || !subtitleTracks.isEmpty { tracksLoaded = true }
+        if !audioTracks.isEmpty || !subtitleTracks.isEmpty {
+            tracksLoaded = true
+            applyPreferredLanguages()
+        }
     }
 
     private static func fmt(_ ms: Int32) -> String {
@@ -429,6 +514,7 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
                 buffering = false; failure = nil
                 loadTracksIfNeeded()
                 reapplySync()
+                reapplyAudioBoost()
                 applyAspect()
             case .error:
                 buffering = false

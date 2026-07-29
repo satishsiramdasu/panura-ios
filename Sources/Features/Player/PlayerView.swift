@@ -33,8 +33,19 @@ struct PlayerView: View {
 
     @AppStorage("subtitle_size") private var subtitleSize = 24
     @AppStorage("subtitle_color") private var subtitleColor = 0xFFFFFF
+    @AppStorage("subtitle_background") private var subtitleBackground = false
+    @AppStorage("preferred_audio_language") private var preferredAudioLang = ""
+    @AppStorage("preferred_subtitle_language") private var preferredSubtitleLang = ""
 
-    enum PlayerSheet: Int, Identifiable { case audio, subtitles, sync; var id: Int { rawValue } }
+    enum PlayerSheet: Int, Identifiable { case audio, subtitles, quality; var id: Int { rawValue } }
+
+    /// Common languages offered for the preferred-audio/subtitle pickers. Matched
+    /// (case-insensitively) against VLC's track names, so it's best-effort.
+    private static let commonLanguages = [
+        "English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Marathi",
+        "Bengali", "Spanish", "French", "German", "Italian", "Arabic", "Japanese",
+        "Korean", "Chinese", "Russian", "Portuguese", "Turkish",
+    ]
 
     var body: some View {
         ZStack {
@@ -75,6 +86,9 @@ struct PlayerView: View {
         }
         .onChange(of: subtitleSize) { _ in model.reopenPreservingPosition() }
         .onChange(of: subtitleColor) { _ in model.reopenPreservingPosition() }
+        .onChange(of: subtitleBackground) { _ in model.reopenPreservingPosition() }
+        .onChange(of: preferredAudioLang) { _ in model.applyPreferredLanguages() }
+        .onChange(of: preferredSubtitleLang) { _ in model.applyPreferredLanguages() }
     }
 
     // MARK: gesture surface
@@ -301,8 +315,10 @@ struct PlayerView: View {
             HStack(spacing: 22) {
                 quickAction("waveform", "Audio") { sheet = .audio }
                 quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
-                quickAction("slider.horizontal.below.rectangle", "Sync") { sheet = .sync }
                 Spacer()
+                if !model.qualities.isEmpty {
+                    quickAction("rectangle.stack", "Quality") { sheet = .quality }
+                }
                 quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
                 speedQuick
                 quickAction(model.aspect.icon, model.aspect.label) { model.cycleAspect(); scheduleHide() }
@@ -403,18 +419,37 @@ struct PlayerView: View {
         switch s {
         case .audio:     audioSheet
         case .subtitles: subtitleSheet
-        case .sync:      syncSheet
+        case .quality:   qualitySheet
         }
     }
 
     private var audioSheet: some View {
         NavigationStack {
             List {
-                if model.audioTracks.isEmpty {
-                    Text("No audio tracks").foregroundStyle(.secondary)
+                Section("Track") {
+                    if model.audioTracks.isEmpty {
+                        Text("No audio tracks").foregroundStyle(.secondary)
+                    }
+                    ForEach(model.audioTracks) { t in
+                        trackRow(t.name, selected: model.currentAudioId == t.id) { model.selectAudio(t.id) }
+                    }
                 }
-                ForEach(model.audioTracks) { t in
-                    trackRow(t.name, selected: model.currentAudioId == t.id) { model.selectAudio(t.id) }
+                Section {
+                    languagePicker(selection: $preferredAudioLang)
+                } header: {
+                    Text("Preferred language")
+                } footer: {
+                    Text("Auto-selects a matching audio track on every video. Remembered.")
+                }
+                Section {
+                    boostRow
+                } header: {
+                    Text("Volume boost")
+                } footer: {
+                    Text("Above 100%. Resets when you close the player.")
+                }
+                Section("Audio delay") {
+                    delayStepper(model.audioDelayMs) { model.adjustAudioDelay($0) }
                 }
             }
             .navigationTitle("Audio").navigationBarTitleDisplayMode(.inline)
@@ -430,6 +465,13 @@ struct PlayerView: View {
                         trackRow(t.name, selected: model.currentSubtitleId == t.id) { model.selectSubtitle(t.id) }
                     }
                 }
+                Section {
+                    languagePicker(selection: $preferredSubtitleLang)
+                } header: {
+                    Text("Preferred language")
+                } footer: {
+                    Text("Auto-selects a matching subtitle track on every video. Remembered.")
+                }
                 Section("Size") {
                     Picker("Size", selection: $subtitleSize) {
                         Text("Small").tag(16); Text("Medium").tag(24); Text("Large").tag(34)
@@ -440,25 +482,49 @@ struct PlayerView: View {
                         Text("White").tag(0xFFFFFF); Text("Yellow").tag(0xFFFF00)
                     }.pickerStyle(.segmented)
                 }
+                Section {
+                    Toggle("Background", isOn: $subtitleBackground)
+                }
+                Section("Subtitle delay") {
+                    delayStepper(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
+                }
             }
             .navigationTitle("Subtitles").navigationBarTitleDisplayMode(.inline)
         }
     }
 
-    private var syncSheet: some View {
+    private var qualitySheet: some View {
         NavigationStack {
             List {
-                Section("Subtitle delay") {
-                    delayStepper(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
-                }
-                Section("Audio delay") {
-                    delayStepper(model.audioDelayMs) { model.adjustAudioDelay($0) }
-                }
-                Section {
-                    Button("Reset", role: .destructive) { model.resetSync() }
+                ForEach(model.qualities) { q in
+                    trackRow(q.label, selected: model.currentQualityId == q.id) {
+                        model.selectQuality(q); sheet = nil
+                    }
                 }
             }
-            .navigationTitle("A-V Sync").navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Quality").navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func languagePicker(selection: Binding<String>) -> some View {
+        Picker("Language", selection: selection) {
+            Text("Off").tag("")
+            ForEach(Self.commonLanguages, id: \.self) { Text($0).tag($0) }
+        }
+        .pickerStyle(.menu)
+        .tint(PanuraTheme.accent)
+    }
+
+    private var boostRow: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+            Slider(
+                value: Binding(get: { Double(model.audioBoost) },
+                               set: { model.setAudioBoost(Int($0)) }),
+                in: 100...200, step: 10
+            )
+            .tint(PanuraTheme.accent)
+            Text("\(model.audioBoost)%").monospacedDigit().frame(width: 48, alignment: .trailing)
         }
     }
 
