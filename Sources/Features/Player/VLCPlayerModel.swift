@@ -40,6 +40,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     @Published var qualities: [Quality] = []
     @Published var currentQualityId: String = Quality.auto.id
 
+    /// nil until the real video dimensions arrive; then true for a portrait video.
+    /// The view auto-rotates to match on change.
+    @Published var videoIsPortrait: Bool?
+
     struct Track: Identifiable, Hashable { let id: Int; let name: String }
 
     /// A selectable HLS rendition. `url == nil` means Auto (adaptive = the master).
@@ -222,6 +226,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         saveResume()                       // persist the outgoing item's position
         self.item = newItem
         displayTitle = newItem.title
+        videoIsPortrait = nil              // re-detect for the new video
         playURLOverride = nil
         qualities = []; currentQualityId = Quality.auto.id
         resetSync()                        // clears delays on model + player
@@ -327,6 +332,15 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     private func reapplySync() {
         player.currentVideoSubTitleDelay = subtitleDelayMs * usPerMs
         player.currentAudioPlaybackDelay = audioDelayMs * usPerMs
+    }
+
+    /// Once the real dimensions are known, publish the video's orientation so the
+    /// view can rotate to match (portrait clip → portrait, wide clip → landscape).
+    private func detectVideoOrientation() {
+        guard videoIsPortrait == nil else { return }
+        let s = player.videoSize
+        guard s.width > 0, s.height > 0 else { return }
+        videoIsPortrait = s.height > s.width
     }
 
     // MARK: audio boost
@@ -538,6 +552,7 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
                 reapplySync()
                 reapplyAudioBoost()
                 applyAspect()
+                detectVideoOrientation()
             case .error:
                 buffering = false
                 failure = "This stream could not be opened."
@@ -560,6 +575,7 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
             buffering = false
             loadTracksIfNeeded()
             applyResumeIfPending()
+            detectVideoOrientation()
             updateNowPlaying()
 
             // Throttle resume persistence to ~5s.

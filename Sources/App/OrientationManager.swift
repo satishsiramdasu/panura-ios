@@ -22,6 +22,12 @@ enum OrientationManager {
     /// Restore the app-wide default (player closed).
     static func reset() { mask = .all }
 
+    /// Auto-orient to match a video's shape (portrait clip → portrait, wide clip
+    /// → landscape). Pins the family, like the manual rotate.
+    static func applyVideoOrientation(portrait: Bool) {
+        mask = portrait ? .portrait : .landscape
+    }
+
     /// Manual rotate button — flip the pinned orientation family (portrait ⇄
     /// landscape) and force it. Because the resulting mask is a single family the
     /// app stays pinned there, so this rotates the player even when the device's

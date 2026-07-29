@@ -33,6 +33,8 @@ struct PlayerView: View {
     // Gesture HUD state
     @State private var seekPreview: Float?          // fraction while horizontal-dragging
     @State private var seekBase: Float = 0
+    @State private var isGestureSeeking = false     // true only for the swipe-seek (not the slider)
+    @State private var verticalAxis: PlayerZone?    // active vertical gesture: .left=brightness, .right=volume
     @State private var brightnessHUD: CGFloat?
     @State private var brightnessBase: CGFloat = 0
     @State private var volumeHUD: CGFloat?
@@ -103,6 +105,9 @@ struct PlayerView: View {
         .onChange(of: subtitleBackground) { _ in model.reopenPreservingPosition() }
         .onChange(of: preferredAudioLang) { _ in model.applyPreferredLanguages() }
         .onChange(of: preferredSubtitleLang) { _ in model.applyPreferredLanguages() }
+        .onChange(of: model.videoIsPortrait) { p in
+            if let p { OrientationManager.applyVideoOrientation(portrait: p) }
+        }
     }
 
     // MARK: gesture surface
@@ -113,7 +118,8 @@ struct PlayerView: View {
             onDoubleTap: { handleDoubleTap($0) },
             onSeekBegan: {
                 guard !locked else { return }
-                seekBase = model.position; seekPreview = model.position; showControlsNow()
+                seekBase = model.position; seekPreview = model.position
+                isGestureSeeking = true; showControlsNow()
             },
             onSeekChanged: { dx in
                 guard !locked, seekPreview != nil else { return }
@@ -126,7 +132,7 @@ struct PlayerView: View {
             },
             onSeekEnded: {
                 guard !locked, let f = seekPreview else { return }
-                model.seek(to: f); seekPreview = nil; scheduleHide()
+                model.seek(to: f); seekPreview = nil; isGestureSeeking = false; scheduleHide()
             },
             onVerticalBegan: { beginVertical($0) },
             onVerticalChanged: { changeVertical($0) },
@@ -148,21 +154,32 @@ struct PlayerView: View {
 
     private func beginVertical(_ zone: PlayerZone) {
         guard !locked else { return }
-        if zone == .left { brightnessBase = ScreenBrightness.level; brightnessHUD = brightnessBase }
-        else { volumeBase = SystemVolume.shared.level; volumeHUD = CGFloat(volumeBase) }
+        // Cancel any pending hide from a previous swipe — otherwise it fires
+        // mid-gesture and the HUD vanishes under the finger.
+        hudClear?.cancel()
+        verticalAxis = zone
+        if zone == .left {
+            brightnessBase = ScreenBrightness.level; brightnessHUD = brightnessBase; volumeHUD = nil
+        } else {
+            volumeBase = SystemVolume.shared.level; volumeHUD = CGFloat(volumeBase); brightnessHUD = nil
+        }
     }
     private func changeVertical(_ d: CGFloat) {
-        guard !locked else { return }
-        if brightnessHUD != nil {
+        // Drive off the tracked axis, NOT the HUD's presence — a stale clear
+        // could nil the HUD and freeze the gesture.
+        guard !locked, let axis = verticalAxis else { return }
+        if axis == .left {
             let b = clamp01(brightnessBase + d); ScreenBrightness.set(b); brightnessHUD = b
-        } else if volumeHUD != nil {
+        } else {
             let v = Float(clamp01(CGFloat(volumeBase) + d)); SystemVolume.shared.set(v); volumeHUD = CGFloat(v)
         }
     }
     private func endVertical() {
+        verticalAxis = nil
         hudClear?.cancel()
         hudClear = Task {
             try? await Task.sleep(nanoseconds: 700_000_000)
+            guard verticalAxis == nil else { return }   // a new swipe started; keep it
             withAnimation { brightnessHUD = nil; volumeHUD = nil }
         }
     }
@@ -197,7 +214,9 @@ struct PlayerView: View {
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, 44)
             }
-            if let f = seekPreview { seekHUD(f) }
+            // Only for the swipe-seek gesture — the slider shows its own position,
+            // and this HUD reliably clears when the gesture ends.
+            if isGestureSeeking, let f = seekPreview { seekHUD(f) }
             // The HUD shows on the OPPOSITE edge from the touch: brightness (left
             // touch) → right, volume (right touch) → left. Mirrors the Android player.
             if let b = brightnessHUD {
@@ -281,16 +300,19 @@ struct PlayerView: View {
             .ignoresSafeArea()
             .allowsHitTesting(false)
 
+            // Top bar pinned to the top, bottom bar hugging the bottom, with
+            // matching gaps at both edges.
             VStack(spacing: 0) {
                 topBar
-                Spacer()
-                // Hidden during a horizontal seek so the seek HUD reads clearly.
-                centerTransport.opacity(seekPreview == nil ? 1 : 0)
                 Spacer()
                 bottomBar
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 12)
+            .padding(.vertical, 6)
+
+            // Transport on the TRUE screen center, independent of bar heights.
+            // Hidden during a horizontal seek so the seek HUD reads clearly.
+            centerTransport.opacity(seekPreview == nil ? 1 : 0)
         }
     }
 
@@ -491,6 +513,9 @@ struct PlayerView: View {
                         trackRow(t.name, selected: model.currentAudioId == t.id) { model.selectAudio(t.id) }
                     }
                 }
+                Section("Audio delay") {
+                    delayStepper(model.audioDelayMs) { model.adjustAudioDelay($0) }
+                }
                 Section {
                     languagePicker(selection: $preferredAudioLang)
                 } header: {
@@ -505,9 +530,6 @@ struct PlayerView: View {
                 } footer: {
                     Text("Above 100%. Resets when you close the player.")
                 }
-                Section("Audio delay") {
-                    delayStepper(model.audioDelayMs) { model.adjustAudioDelay($0) }
-                }
             }
             .navigationTitle("Audio").navigationBarTitleDisplayMode(.inline)
         }
@@ -521,6 +543,9 @@ struct PlayerView: View {
                     ForEach(model.subtitleTracks) { t in
                         trackRow(t.name, selected: model.currentSubtitleId == t.id) { model.selectSubtitle(t.id) }
                     }
+                }
+                Section("Subtitle delay") {
+                    delayStepper(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
                 }
                 Section {
                     languagePicker(selection: $preferredSubtitleLang)
@@ -541,9 +566,6 @@ struct PlayerView: View {
                 }
                 Section {
                     Toggle("Background", isOn: $subtitleBackground)
-                }
-                Section("Subtitle delay") {
-                    delayStepper(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
                 }
             }
             .navigationTitle("Subtitles").navigationBarTitleDisplayMode(.inline)
