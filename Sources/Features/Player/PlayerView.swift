@@ -6,10 +6,23 @@ import VLCKitSPM
 /// gesture seeking / brightness / volume, ±skip, aspect zoom, controls-lock,
 /// orientation-lock, PiP, audio + subtitle tracks, and A-V sync — plus
 /// resume-from-position handled by the model.
+/// Optional playlist context so the player's next/previous buttons can advance
+/// through a list (local videos, downloads). `load` resolves an item lazily so
+/// callers needn't pre-resolve every URL up front.
+struct PlayerPlaylist {
+    let count: Int
+    let startIndex: Int
+    let load: (Int) async -> MediaItem?
+}
+
 struct PlayerView: View {
     let item: MediaItem
+    var playlist: PlayerPlaylist? = nil
     @Environment(\.dismiss) private var dismiss
     @StateObject private var model = VLCPlayerModel()
+
+    // Playlist position
+    @State private var index = 0
 
     // Control visibility
     @State private var showControls = true
@@ -64,13 +77,14 @@ struct PlayerView: View {
                 ProgressView().tint(.white).scaleEffect(1.4)
             }
 
-            hudLayer.allowsHitTesting(false)
-
             if locked {
                 lockOverlay
             } else if showControls {
                 controlsOverlay.transition(.opacity)
             }
+
+            // Above the controls so gesture feedback overlaps the middle buttons.
+            hudLayer.allowsHitTesting(false)
         }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
@@ -79,7 +93,7 @@ struct PlayerView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .onAppear { OrientationManager.allowAll(); scheduleHide() }
+        .onAppear { index = playlist?.startIndex ?? 0; OrientationManager.allowAll(); scheduleHide() }
         .onDisappear {
             OrientationManager.reset()
             model.stop()
@@ -178,19 +192,25 @@ struct PlayerView: View {
                 Label("2×", systemImage: "forward.fill")
                     .font(.subheadline.bold())
                     .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(Color.black.opacity(0.4), in: Capsule())
                     .foregroundStyle(.white)
                     .frame(maxHeight: .infinity, alignment: .top)
                     .padding(.top, 44)
             }
             if let f = seekPreview { seekHUD(f) }
+            // The HUD shows on the OPPOSITE edge from the touch: brightness (left
+            // touch) → right, volume (right touch) → left. Mirrors the Android player.
             if let b = brightnessHUD {
                 verticalHUD(icon: "sun.max.fill", value: b)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .padding(.trailing, 28)
             }
             if let v = volumeHUD {
                 verticalHUD(icon: v <= 0.001 ? "speaker.slash.fill" : "speaker.wave.2.fill", value: v)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    .padding(.leading, 28)
             }
-            skipFlash
+            if let z = flashZone { skipFlash(z) }
         }
     }
 
@@ -206,38 +226,45 @@ struct PlayerView: View {
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 20).padding(.vertical, 12)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .background(Color.black.opacity(0.45), in: RoundedRectangle(cornerRadius: 14))
     }
 
+    /// Vertical capsule bar (Android VerticalProgressView): fill from the bottom,
+    /// percentage on top, icon at the bottom.
     private func verticalHUD(icon: String, value: CGFloat) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon).font(.title3)
-            ZStack(alignment: .bottom) {
-                Capsule().fill(.white.opacity(0.25)).frame(width: 5, height: 110)
-                Capsule().fill(PanuraTheme.accent).frame(width: 5, height: max(3, 110 * value))
+        let v = max(0, min(1, value))
+        let pct = Int((v * 100).rounded())
+        let barHeight: CGFloat = 190
+        return ZStack(alignment: .bottom) {
+            Color.black.opacity(0.45)
+            PanuraTheme.accent.opacity(0.75).frame(height: barHeight * v)
+            VStack {
+                Text("\(pct)").font(.callout.monospacedDigit().weight(.semibold))
+                Spacer()
+                Image(systemName: icon).font(.system(size: 20))
             }
+            .foregroundStyle(.white)
+            .padding(.vertical, 16)
         }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 16).padding(.vertical, 16)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .frame(width: 44, height: barHeight)
+        .clipShape(Capsule())
     }
 
-    private var skipFlash: some View {
-        HStack {
-            if flashZone == .left { skipBadge("gobackward").frame(maxWidth: .infinity) }
-            if flashZone == .right {
-                Spacer(); skipBadge("goforward").frame(maxWidth: .infinity)
+    /// Android-style double-tap seek indicator: a D-shaped white wash on the edge
+    /// with animated chevrons and the skip amount below.
+    private func skipFlash(_ zone: PlayerZone) -> some View {
+        let forward = zone == .right
+        return GeometryReader { geo in
+            ZStack {
+                EdgeOvalShape(rightSide: forward).fill(Color.white.opacity(0.2))
+                SkipFlashContent(forward: forward, seconds: model.skipInterval)
             }
+            .frame(width: geo.size.width * 0.42, height: geo.size.height)
+            .position(
+                x: forward ? geo.size.width - geo.size.width * 0.21 : geo.size.width * 0.21,
+                y: geo.size.height / 2
+            )
         }
-    }
-    private func skipBadge(_ system: String) -> some View {
-        VStack(spacing: 4) {
-            Image(systemName: system).font(.system(size: 30))
-            Text("\(model.skipInterval)s").font(.caption.bold())
-        }
-        .foregroundStyle(.white)
-        .padding(22)
-        .background(.ultraThinMaterial, in: Circle())
     }
 
     // MARK: controls overlay
@@ -257,7 +284,8 @@ struct PlayerView: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer()
-                centerTransport
+                // Hidden during a horizontal seek so the seek HUD reads clearly.
+                centerTransport.opacity(seekPreview == nil ? 1 : 0)
                 Spacer()
                 bottomBar
             }
@@ -267,25 +295,32 @@ struct PlayerView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             iconButton("xmark") { close() }
-            Text(item.title).lineLimit(1).font(.headline)
+                .background(Color.black.opacity(0.3), in: Circle())
+            Text(model.displayTitle.isEmpty ? item.title : model.displayTitle)
+                .lineLimit(1).font(.headline)
             Spacer()
-            iconButton("lock.fill") { lock() }
+            HStack(spacing: 4) {
+                iconButton("lock.fill") { lock() }
+            }
+            .background(Color.black.opacity(0.3), in: Capsule())
         }
         .foregroundStyle(.white)
     }
 
     private var centerTransport: some View {
-        HStack(spacing: 56) {
-            skipButton(system: "gobackward") { model.skipBackward(); scheduleHide() }
-            Button { model.togglePlay(); scheduleHide() } label: {
-                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 56))
+        HStack(spacing: 40) {
+            if playlist != nil {
+                circleTransport("backward.end.fill", size: 52, icon: 20, enabled: canPrevious) { goToPrevious() }
             }
-            skipButton(system: "goforward") { model.skipForward(); scheduleHide() }
+            circleTransport(model.isPlaying ? "pause.fill" : "play.fill", size: 70, icon: 32) {
+                model.togglePlay(); scheduleHide()
+            }
+            if playlist != nil {
+                circleTransport("forward.end.fill", size: 52, icon: 20, enabled: canNext) { goToNext() }
+            }
         }
-        .foregroundStyle(.white)
     }
 
     private var bottomBar: some View {
@@ -312,18 +347,46 @@ struct PlayerView: View {
                     Text(model.total).font(.caption.monospacedDigit())
                 }
             }
-            HStack(spacing: 22) {
-                quickAction("waveform", "Audio") { sheet = .audio }
-                quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
-                Spacer()
-                if !model.qualities.isEmpty {
-                    quickAction("rectangle.stack", "Quality") { sheet = .quality }
+            .foregroundStyle(.white)
+
+            HStack(spacing: 12) {
+                // Bottom-left group
+                HStack(spacing: 14) {
+                    quickAction("waveform", "Audio") { sheet = .audio }
+                    quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
+                    if !model.qualities.isEmpty {
+                        quickAction("rectangle.stack", "Quality") { sheet = .quality }
+                    }
                 }
-                quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
-                speedQuick
-                quickAction(model.aspect.icon, model.aspect.label) { model.cycleAspect(); scheduleHide() }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Color.black.opacity(0.3), in: Capsule())
+
+                Spacer()
+
+                // Bottom-right group
+                HStack(spacing: 14) {
+                    quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
+                    speedQuick
+                    quickAction(model.aspect.icon, model.aspect.label) { model.cycleAspect(); scheduleHide() }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Color.black.opacity(0.3), in: Capsule())
             }
+            .foregroundStyle(.white)
         }
+    }
+
+    private func circleTransport(
+        _ system: String, size: CGFloat, icon: CGFloat, enabled: Bool = true,
+        _ action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: system).font(.system(size: icon))
+                .frame(width: size, height: size)
+                .background(Color.black.opacity(0.3), in: Circle())
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
         .foregroundStyle(.white)
     }
 
@@ -385,14 +448,8 @@ struct PlayerView: View {
     // MARK: reusable buttons
 
     private func iconButton(_ system: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: system).font(.title3) }
-    }
-    private func skipButton(system: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            ZStack {
-                Image(systemName: system).font(.system(size: 40))
-                Text("\(model.skipInterval)").font(.system(size: 12, weight: .bold))
-            }
+            Image(systemName: system).font(.title3).frame(width: 40, height: 40)
         }
     }
     private func quickAction(_ system: String, _ title: String, _ action: @escaping () -> Void) -> some View {
@@ -556,6 +613,25 @@ struct PlayerView: View {
 
     private func close() { model.stop(); dismiss() }
 
+    // MARK: playlist next / previous
+
+    private var canPrevious: Bool { playlist != nil && index > 0 }
+    private var canNext: Bool { if let pl = playlist { return index + 1 < pl.count }; return false }
+
+    private func goToPrevious() { advance(to: index - 1) }
+    private func goToNext() { advance(to: index + 1) }
+
+    private func advance(to newIndex: Int) {
+        guard let pl = playlist, newIndex >= 0, newIndex < pl.count else { return }
+        scheduleHide()
+        Task {
+            if let next = await pl.load(newIndex) {
+                index = newIndex
+                model.play(item: next)
+            }
+        }
+    }
+
     private func lock() {
         withAnimation { locked = true; showControls = false; lockRevealed = true }
         scheduleHideLock()
@@ -613,4 +689,60 @@ private struct VLCVideoView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+/// D-shaped wash on the screen edge for the double-tap seek indicator: flat on
+/// the outer edge, bulging inward. Mirrors Android's Left/RightSideOvalShape.
+private struct EdgeOvalShape: Shape {
+    let rightSide: Bool
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        var p = Path()
+        if rightSide {
+            p.move(to: CGPoint(x: w, y: h))
+            p.addLine(to: CGPoint(x: w, y: 0))
+            p.addLine(to: CGPoint(x: w * 0.1, y: 0))
+            p.addCurve(to: CGPoint(x: w * 0.1, y: h),
+                       control1: CGPoint(x: -w * 0.1, y: h / 2),
+                       control2: CGPoint(x: -w * 0.1, y: h / 2))
+        } else {
+            p.move(to: CGPoint(x: 0, y: 0))
+            p.addLine(to: CGPoint(x: w * 0.9, y: 0))
+            p.addCurve(to: CGPoint(x: w * 0.9, y: h),
+                       control1: CGPoint(x: w * 1.1, y: h / 2),
+                       control2: CGPoint(x: w * 1.1, y: h / 2))
+            p.addLine(to: CGPoint(x: 0, y: h))
+        }
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// Three chevrons that fade in sequence, over the skip amount — the animated
+/// heart of the double-tap indicator.
+private struct SkipFlashContent: View {
+    let forward: Bool
+    let seconds: Int
+    @State private var animating = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 1) {
+                ForEach(0..<3, id: \.self) { i in
+                    Image(systemName: "play.fill")
+                        .rotationEffect(.degrees(forward ? 0 : 180))
+                        .font(.system(size: 15))
+                        .opacity(animating ? 1 : 0.25)
+                        .animation(
+                            .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
+                                .delay(Double(forward ? i : 2 - i) * 0.15),
+                            value: animating
+                        )
+                }
+            }
+            Text("\(seconds) seconds").font(.caption)
+        }
+        .foregroundStyle(.white)
+        .onAppear { animating = true }
+    }
 }

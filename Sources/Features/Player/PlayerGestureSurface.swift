@@ -50,9 +50,9 @@ struct PlayerGestureSurface: UIViewRepresentable {
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var parent: PlayerGestureSurface
-        private enum Axis { case undecided, horizontal, vertical }
+        private enum Axis { case undecided, horizontal, vertical, ignored }
         private var axis: Axis = .undecided
-        private var zone: PlayerZone = .center
+        private var vZone: PlayerZone?   // nil = middle → vertical gesture ignored
 
         init(_ parent: PlayerGestureSurface) { self.parent = parent }
 
@@ -70,25 +70,29 @@ struct PlayerGestureSurface: UIViewRepresentable {
             switch g.state {
             case .began:
                 axis = .undecided
-                zone = g.location(in: v).x < v.bounds.width / 2 ? .left : .right
+                // Volume/brightness only from the outer 25% on each edge; the
+                // middle 50% never starts a vertical gesture.
+                let x = g.location(in: v).x, w = v.bounds.width
+                vZone = x < w * 0.25 ? .left : (x > w * 0.75 ? .right : nil)
             case .changed:
                 if axis == .undecided {
                     if abs(t.x) > 12, abs(t.x) > abs(t.y) {
                         axis = .horizontal; parent.onSeekBegan()
                     } else if abs(t.y) > 12, abs(t.y) > abs(t.x) {
-                        axis = .vertical; parent.onVerticalBegan(zone)
+                        if let z = vZone { axis = .vertical; parent.onVerticalBegan(z) }
+                        else { axis = .ignored }
                     }
                 }
                 switch axis {
-                case .horizontal: parent.onSeekChanged(t.x / max(1, v.bounds.width))
-                case .vertical:   parent.onVerticalChanged(-t.y / max(1, v.bounds.height))
-                case .undecided:  break
+                case .horizontal:          parent.onSeekChanged(t.x / max(1, v.bounds.width))
+                case .vertical:            parent.onVerticalChanged(-t.y / max(1, v.bounds.height))
+                case .undecided, .ignored: break
                 }
             case .ended, .cancelled, .failed:
                 switch axis {
                 case .horizontal: parent.onSeekEnded()
                 case .vertical:   parent.onVerticalEnded()
-                case .undecided:  break
+                default:          break
                 }
                 axis = .undecided
             default: break

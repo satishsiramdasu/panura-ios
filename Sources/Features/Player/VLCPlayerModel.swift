@@ -11,6 +11,7 @@ import VLCKitSPM
 final class VLCPlayerModel: NSObject, ObservableObject {
     @Published var isPlaying = false
     @Published var position: Float = 0          // 0...1
+    @Published var displayTitle = ""        // current item title (updates on next/prev)
     @Published var elapsed = "0:00"
     @Published var remaining = "-0:00"      // time left, e.g. "-12:34"
     @Published var total = "0:00"           // duration / end time, e.g. "36:04"
@@ -108,6 +109,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(true)
 
         self.item = item
+        displayTitle = item.title
         drawableView = view
         player.drawable = view
         player.delegate = self
@@ -213,6 +215,26 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         pendingResumeSeconds = atSeconds > 2 ? atSeconds : nil
         resumeApplied = false
         buildAndPlay()
+    }
+
+    /// Switch to a different item in the same player — playlist next/previous.
+    func play(item newItem: MediaItem) {
+        saveResume()                       // persist the outgoing item's position
+        self.item = newItem
+        displayTitle = newItem.title
+        playURLOverride = nil
+        qualities = []; currentQualityId = Quality.auto.id
+        resetSync()                        // clears delays on model + player
+        audioTracks = []; subtitleTracks = []
+        currentAudioId = -1; currentSubtitleId = -1
+        tracksLoaded = false
+        pendingResumeSeconds = nil; resumeApplied = false
+        if resumeEnabled {
+            let saved = UserDefaults.standard.double(forKey: Self.resumeKey(newItem.url))
+            if saved > 15 { pendingResumeSeconds = saved }
+        }
+        buildAndPlay()
+        loadQualities()
     }
 
     // MARK: transport

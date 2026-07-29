@@ -7,6 +7,7 @@ import AVFoundation
 struct LocalVideosView: View {
     @StateObject private var model = LocalVideosModel()
     @State private var playItem: MediaItem?
+    @State private var playIndex = 0
 
     private let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
 
@@ -24,8 +25,8 @@ struct LocalVideosView: View {
                 case .loaded(let items):
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 12) {
-                            ForEach(items) { item in
-                                Button { play(item) } label: { VideoCell(item: item) }
+                            ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                                Button { play(item, at: idx) } label: { VideoCell(item: item) }
                             }
                         }
                         .padding(12)
@@ -37,7 +38,18 @@ struct LocalVideosView: View {
             .navigationTitle("Local Videos")
         }
         .task { await model.load() }
-        .fullScreenCover(item: $playItem) { PlayerView(item: $0) }
+        .fullScreenCover(item: $playItem) { PlayerView(item: $0, playlist: localPlaylist()) }
+    }
+
+    /// Playlist over the loaded library so the player's next/previous can advance.
+    /// URLs resolve lazily — only the item being played is resolved.
+    private func localPlaylist() -> PlayerPlaylist? {
+        guard case .loaded(let items) = model.state, items.count > 1 else { return nil }
+        return PlayerPlaylist(count: items.count, startIndex: playIndex) { i in
+            guard i >= 0, i < items.count,
+                  let url = await model.resolveURL(for: items[i]) else { return nil }
+            return MediaItem(title: items[i].title, url: url, isLocal: true)
+        }
     }
 
     private var permissionPrompt: some View {
@@ -50,9 +62,10 @@ struct LocalVideosView: View {
         }
     }
 
-    private func play(_ asset: LocalVideoAsset) {
+    private func play(_ asset: LocalVideoAsset, at index: Int) {
         Task {
             if let url = await model.resolveURL(for: asset) {
+                playIndex = index
                 playItem = MediaItem(title: asset.title, url: url, isLocal: true)
             }
         }

@@ -24,7 +24,18 @@ struct DownloadsView: View {
             }
             .navigationTitle("Downloads")
         }
-        .fullScreenCover(item: $playItem) { PlayerView(item: $0) }
+        .fullScreenCover(item: $playItem) { PlayerView(item: $0, playlist: playlist(for: $0)) }
+    }
+
+    /// Playlist over the finished downloads so next/previous can advance.
+    private func playlist(for item: MediaItem) -> PlayerPlaylist? {
+        let finished = downloads.jobs.filter { $0.isFinished && $0.localURL != nil }
+        guard finished.count > 1,
+              let start = finished.firstIndex(where: { $0.localURL == item.url }) else { return nil }
+        return PlayerPlaylist(count: finished.count, startIndex: start) { i in
+            guard i >= 0, i < finished.count, let url = finished[i].localURL else { return nil }
+            return MediaItem(title: finished[i].title, url: url, isLocal: true)
+        }
     }
 
     @ViewBuilder
