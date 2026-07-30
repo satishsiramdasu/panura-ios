@@ -363,8 +363,18 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // Phone portrait clips are encoded landscape + a 90°/270° rotation flag;
         // videoSize reports the ENCODED (landscape) dimensions, so a rotated
         // track means the frame is actually displayed transposed. Without this,
-        // a portrait video wrongly forced the player into landscape.
-        if videoIsQuarterRotated() == true { portrait.toggle() }
+        // a portrait video wrongly forces the player into landscape.
+        let rotated = videoIsQuarterRotated()
+        if let rotated {
+            if rotated { portrait.toggle() }
+        } else if !portrait, elapsedSeconds < 3 {
+            // Landscape dimensions + unknown rotation is the ambiguous case (could
+            // be a rotated-portrait clip). Network streams parse track metadata
+            // lazily, so wait a beat for the rotation flag before committing —
+            // otherwise a portrait remote video briefly reads as landscape and
+            // locks there. Portrait dimensions are trusted immediately.
+            return
+        }
         videoIsPortrait = portrait
     }
 
