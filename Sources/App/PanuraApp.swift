@@ -9,7 +9,6 @@ struct PanuraApp: App {
         WindowGroup {
             RootTabView()
                 .environmentObject(CastManager.shared)
-                .environmentObject(DownloadManager.shared)
                 .preferredColorScheme(nil) // follow system light/dark
         }
     }

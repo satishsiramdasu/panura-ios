@@ -1,7 +1,11 @@
 import SwiftUI
 
-/// Mirrors the Android `HomeScreen` tab layout:
-/// Home · Browser · Downloads · Stream · Videos · Settings.
+/// Mirrors the Android `HomeScreen` tab layout, minus Downloads:
+/// Home · Browser · Stream · Videos · Settings.
+///
+/// iOS ships no download feature at all. Saving streamed content is the clearest
+/// App Review 5.2.3 problem in this app, and a flag-gated feature still ships the
+/// code — so it is removed rather than disabled.
 struct RootTabView: View {
     @State private var selection: Tab = .home
     /// Address typed on Home, waiting for the Browser tab to pick it up. The
@@ -9,7 +13,7 @@ struct RootTabView: View {
     /// state here rather than a fresh `BrowserView(url:)`.
     @State private var pendingAddress: String?
 
-    enum Tab: Hashable { case home, browser, downloads, stream, videos, settings }
+    enum Tab: Hashable { case home, browser, stream, videos, settings }
 
     var body: some View {
         TabView(selection: $selection) {
@@ -23,12 +27,6 @@ struct RootTabView: View {
             BrowserView(pendingAddress: $pendingAddress)
                 .tabItem { Label("Browser", systemImage: "globe") }
                 .tag(Tab.browser)
-
-            if FeatureFlags.downloadsEnabled {
-                DownloadsView()
-                    .tabItem { Label("Downloads", systemImage: "arrow.down.circle.fill") }
-                    .tag(Tab.downloads)
-            }
 
             StreamView()
                 .tabItem { Label("Stream", systemImage: "link") }

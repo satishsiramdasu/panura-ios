@@ -1,8 +1,11 @@
 import Foundation
 
-/// Compile-time feature toggles. Downloads and Ads are deferred for the initial
-/// release; flip these to `true` to restore full parity with Android.
+/// Compile-time feature toggles.
+///
+/// There is deliberately no `downloadsEnabled` here: iOS ships no download
+/// feature, and the code is gone rather than gated. Saving streamed content is
+/// the clearest App Review 5.2.3 exposure in this app, so it is not a flag flip
+/// away from returning.
 enum FeatureFlags {
-    static let downloadsEnabled = false
     static let adsEnabled = false
 }
