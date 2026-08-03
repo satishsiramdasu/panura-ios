@@ -133,7 +133,37 @@ struct WebViewContainer: UIViewRepresentable {
                 webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
                     Task { @MainActor in self?.model.pageTitle = wv.title ?? "" }
                 },
+                // The only signal a single-page app gives. `history.pushState`
+                // fires no navigation delegate callback at all — not
+                // didStartProvisional, not didFinish — so without this a React
+                // route change leaves the address bar on the old URL and keeps
+                // the previous page's detections in the list.
+                webView.observe(\.url, options: [.new]) { [weak self] wv, _ in
+                    Task { @MainActor in self?.documentChanged(wv.url) }
+                },
             ]
+        }
+
+        /// Last document we counted as "a page", ignoring the fragment: `#tab`
+        /// is in-page state, while a path or query change is a new route and
+        /// should reset findings the way a real navigation does.
+        private var lastDocumentKey: String?
+
+        @MainActor
+        private func documentChanged(_ url: URL?) {
+            guard let url else { return }
+            model.currentURL = url
+
+            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            components?.fragment = nil
+            let key = components?.url?.absoluteString ?? url.absoluteString
+            guard key != lastDocumentKey else { return }
+            lastDocumentKey = key
+
+            // A real navigation already cleared these in didStartProvisional;
+            // clearing again is harmless and keeps one path for both cases.
+            model.clearFindings()
+            embeds.reset()
         }
 
         @objc func handleRefresh(_ sender: UIRefreshControl) {
