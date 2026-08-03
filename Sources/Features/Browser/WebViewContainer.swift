@@ -13,9 +13,13 @@ struct WebViewContainer: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
-    func makeUIView(context: Context) -> WKWebView {
+    /// Every script and setting the sniffer depends on. Shared so the offscreen
+    /// embed extractor is configured identically to the visible browser — a
+    /// difference between the two would show up as "detects inline but not in an
+    /// embed", which is exactly the bug class that is hardest to find.
+    static func makeConfiguration(handler: WKScriptMessageHandler) -> WKWebViewConfiguration {
         let contentController = WKUserContentController()
-        contentController.add(context.coordinator, name: "panura")
+        contentController.add(handler, name: "panura")
 
         // Identity marker + PanuraExtractor bridge first, so a page script that
         // checks for either finds it however early it runs.
@@ -24,7 +28,7 @@ struct WebViewContainer: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         ))
-        // `#referer=` iframes, rewritten onto the custom scheme handled below.
+        // Reports `#referer=` iframes so they can be extracted offscreen.
         contentController.addUserScript(WKUserScript(
             source: FrameRelayScript.source,
             injectionTime: .atDocumentStart,
@@ -49,19 +53,22 @@ struct WebViewContainer: UIViewRepresentable {
 
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
-        // Must be registered before the web view exists — a handler cannot be
-        // attached to a live configuration.
-        config.setURLSchemeHandler(context.coordinator.frameScheme, forURLScheme: FrameSchemeHandler.scheme)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         // Block the pop-under/new-window ads these sites open on tap.
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
+        return config
+    }
 
-        // Frame-relay events land in the same Diagnostics log as the sniffer, so
-        // one screen shows where a blank frame actually died.
-        context.coordinator.frameScheme.onEvent = { [weak model] url, verdict in
+    func makeUIView(context: Context) -> WKWebView {
+        let config = Self.makeConfiguration(handler: context.coordinator)
+
+        // Offscreen extraction of gated embeds, reporting into the same model.
+        let coordinator = context.coordinator
+        coordinator.embeds.makeConfiguration = { Self.makeConfiguration(handler: coordinator) }
+        coordinator.embeds.log = { [weak model] url, verdict in
             Task { @MainActor in
-                model?.reportDebug(url: url, verdict: verdict, host: "relay", source: "frame-relay")
+                model?.reportDebug(url: url, verdict: verdict, host: "embed", source: "frame-relay")
             }
         }
 
@@ -101,8 +108,9 @@ struct WebViewContainer: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKUIDelegate {
         let model: BrowserModel
-        /// Serves `#referer=` frames; held here so it lives as long as the view.
-        let frameScheme = FrameSchemeHandler()
+        /// Offscreen extraction of `#referer=` embeds; held here so it lives as
+        /// long as the view.
+        let embeds = EmbedExtractor()
         init(model: BrowserModel) { self.model = model }
 
         private var observations: [NSKeyValueObservation] = []
@@ -151,6 +159,10 @@ struct WebViewContainer: UIViewRepresentable {
             model.isLoading = true
             // Main-frame navigation: findings belong to the page we're leaving.
             model.clearFindings()
+            // Safe to reset unconditionally: extraction web views are created
+            // without a navigation delegate, so this only ever fires for the
+            // visible browser.
+            embeds.reset()
         }
 
         func webView(_ webView: WKWebView, didFinish nav: WKNavigation!) {
@@ -238,6 +250,13 @@ struct WebViewContainer: UIViewRepresentable {
                     wv?.evaluateJavaScript(js, in: frame, in: .page, completionHandler: nil)
                 }
                 return
+            case "embed":
+                // A `#referer=` iframe the page cannot load itself. Extract it
+                // offscreen as a main-frame load, where a Referer header is legal.
+                guard let s = dict["url"] as? String, let u = URL(string: s),
+                      let host = message.webView else { return }
+                embeds.extract(url: u, referer: dict["referer"] as? String ?? "", host: host)
+                return
             case "subtitle":
                 if let s = dict["url"] as? String, let u = URL(string: s) {
                     model.reportSubtitle(
@@ -286,26 +305,18 @@ struct WebViewContainer: UIViewRepresentable {
 
             // Replay the exact context the page used, or the CDN rejects us.
             // The JS already applied the rule's referer mode (origin vs full URL).
-            // Inside a relayed frame, `location.*` describes the custom scheme,
-            // which means nothing to the CDN. Reverse it once and use it for
-            // both Referer and Origin below.
-            let relay = (dict["referer"] as? String)
-                .flatMap(URL.init(string:))
-                .flatMap(FrameSchemeHandler.relayTarget(of:))
-
+            //
+            // An extraction web view needs no special case: it loads the embed as
+            // its main frame, so `location.*` there IS the embed — which is what
+            // the CDN expects to see on the stream request.
+            //
             // Referer priority, mirroring Android's `onEmbedDetected`:
             //  1. `#referer=` fragment — the CDN's explicit instruction
-            //  2. relayed frame — the referer the frame was actually fetched with
-            //  3. what the JS captured (rule's referer mode, applied in-page)
-            //  4. nothing; the player falls back to no Referer
+            //  2. what the JS captured (rule's referer mode, applied in-page)
+            //  3. nothing; the player falls back to no Referer
             var headers: [String: String] = [:]
             if let referer = dict["referer"] as? String, !referer.isEmpty {
                 headers["Referer"] = referer
-            }
-            if let relay {
-                headers["Referer"] = relay.referer.isEmpty
-                    ? relay.url.absoluteString
-                    : relay.referer
             }
             if let fragmentReferer { headers["Referer"] = fragmentReferer }
             let ua = dict["ua"] as? String
@@ -316,15 +327,9 @@ struct WebViewContainer: UIViewRepresentable {
             let allowed = dict["headers"] as? [String]
             func wants(_ name: String) -> Bool { allowed?.contains(name) ?? true }
 
-            if wants("origin") {
-                // A relayed frame's own origin is opaque under a custom scheme,
-                // so derive it from the upstream URL; the CDN validates that.
-                if let relay, let scheme = relay.url.scheme, let host = relay.url.host {
-                    headers["Origin"] = "\(scheme)://\(host)"
-                } else if let origin = dict["origin"] as? String,
-                          !origin.isEmpty, origin != "null" {
-                    headers["Origin"] = origin
-                }
+            if wants("origin"),
+               let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
+                headers["Origin"] = origin
             }
             if wants("user-agent"), let ua, !ua.isEmpty {
                 headers["User-Agent"] = ua
