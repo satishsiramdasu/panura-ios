@@ -43,8 +43,7 @@ final class PanuraCastManager: ObservableObject {
                 guard let self else { return }
                 self.isAdvertising = advertising
                 if let error {
-                    self.lastError = "Bonjour could not publish: \(error). Panura needs "
-                        + "Local Network access — check Settings → Panura."
+                    self.lastError = error
                 } else if advertising {
                     self.lastError = nil
                 }

@@ -82,6 +82,15 @@ struct CastDevicesView: View {
 
                 if let error = panura.lastError {
                     Text(error).font(.footnote).foregroundStyle(.red)
+                    Button {
+                        // Deep-links to Panura's own settings page, where the
+                        // Local Network toggle lives.
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    } label: {
+                        Label("Open Panura settings", systemImage: "gear")
+                    }
                 }
             } header: {
                 Text("Panura Android TV")

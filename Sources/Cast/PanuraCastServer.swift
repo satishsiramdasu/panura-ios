@@ -109,7 +109,7 @@ final class PanuraCastServer: NSObject {
                 case .ready:
                     self?.onAdvertisingChanged?(true, nil)
                 case .failed(let error):
-                    self?.onAdvertisingChanged?(false, error.localizedDescription)
+                    self?.onAdvertisingChanged?(false, Self.describe(error))
                 case .cancelled:
                     self?.onAdvertisingChanged?(false, nil)
                 default:
@@ -121,6 +121,21 @@ final class PanuraCastServer: NSObject {
         } catch {
             onAdvertisingChanged?(false, error.localizedDescription)
         }
+    }
+
+    /// Turns an NWError into something a user can act on.
+    ///
+    /// -65555 is `kDNSServiceErr_NoAuth`: mDNS refusing to publish because the
+    /// app has no Local Network permission. It is by far the most common failure
+    /// here and the raw description ("NoAuth") names neither the cause nor the
+    /// fix, so it gets spelled out.
+    static func describe(_ error: NWError) -> String {
+        if case .dns(let code) = error, code == -65555 {
+            return "Local Network access is off for Panura. Settings → Privacy & "
+                + "Security → Local Network → Panura. (If Panura isn't listed, "
+                + "reinstall the app so iOS asks for the permission.)"
+        }
+        return error.localizedDescription
     }
 
     // MARK: messaging
