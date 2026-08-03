@@ -72,6 +72,17 @@ final class PanuraCastManager: ObservableObject {
                 if self.proxyLog.count > 12 { self.proxyLog.removeLast() }
             }
         }
+        // Sockets and the Bonjour registration do not survive suspension. On
+        // return the listener is dead, and `start()` would early-return on
+        // isServerRunning and never republish — the phone believes it is
+        // discoverable while the TV can no longer see it.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.republishIfStale() }
+        }
         server.onAdvertisingChanged = { [weak self] advertising, error in
             Task { @MainActor in
                 guard let self else { return }
@@ -90,7 +101,14 @@ final class PanuraCastManager: ObservableObject {
     /// Starts advertising. Idempotent — casting calls this first, so the user
     /// never has to "connect" before picking a video.
     func start() {
-        guard !isServerRunning else { return }
+        if isServerRunning {
+            // Healthy: nothing to do. Stale (sockets up, advertisement gone —
+            // typically after suspension): tear down and rebuild, or the retry
+            // button and the foreground check would both be no-ops.
+            guard !isAdvertising else { return }
+            server.stop()
+            isServerRunning = false
+        }
         if server.start() {
             isServerRunning = true
             // isAdvertising is NOT set here — it follows the listener going ready.
@@ -102,6 +120,13 @@ final class PanuraCastManager: ObservableObject {
             lastError = "Could not start the cast server. Check that Panura has "
                 + "local network access in Settings."
         }
+    }
+
+    /// Rebuilds the server when it is nominally up but no longer advertising.
+    /// Cheap when healthy: a live advertisement short-circuits it.
+    private func republishIfStale() {
+        guard isServerRunning, !isAdvertising else { return }
+        start()   // start() itself rebuilds a stale server
     }
 
     func stop() {
