@@ -17,7 +17,14 @@ struct WebViewContainer: UIViewRepresentable {
         let contentController = WKUserContentController()
         contentController.add(context.coordinator, name: "panura")
 
-        // Ad/pop neutralization first, at document start, so it beats inline
+        // Identity marker + PanuraExtractor bridge first, so a page script that
+        // checks for either finds it however early it runs.
+        contentController.addUserScript(WKUserScript(
+            source: PanuraBridgeScript.source,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
+        // Ad/pop neutralization next, at document start, so it beats inline
         // pop scripts (window.open, aclib, etc.).
         contentController.addUserScript(WKUserScript(
             source: AdBlockScript.source,

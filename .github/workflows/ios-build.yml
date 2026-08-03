@@ -10,12 +10,15 @@ jobs:
   build:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # The manifest names no domains; it hashes them with this salt. The app
-      # must hold the SAME salt to match. Injected from a secret so it is never
-      # committed to this public repo; without it the app still builds and just
-      # falls back to generic detection. Keep it equal to .manifest-src/salt.txt.
+      # must hold the SAME salt to match. Injected from a secret rather than
+      # committed. Keep it equal to .manifest-src/salt.txt in the panura repo.
+      #
+      # Sources/Core/ManifestSalt.swift now carries the real salt (this repo is
+      # private), so a build with no secret is correct, not a dud. The secret is
+      # kept as the override path: set it to rotate the salt without a commit.
       - name: Inject manifest salt
         env:
           MANIFEST_SALT: ${{ secrets.MANIFEST_SALT }}
@@ -23,9 +26,9 @@ jobs:
           if [ -n "$MANIFEST_SALT" ]; then
             printf 'enum ManifestSalt {\n    static let value = "%s"\n}\n' "$MANIFEST_SALT" \
               > Sources/Core/ManifestSalt.swift
-            echo "manifest salt injected"
+            echo "manifest salt injected from secret (overrides the committed value)"
           else
-            echo "::warning::MANIFEST_SALT not set — site rules will not match (generic detection only)"
+            echo "using the committed salt in Sources/Core/ManifestSalt.swift"
           fi
 
       - name: Select latest Xcode
@@ -80,7 +83,7 @@ jobs:
           (cd build && zip -qr PanuraPlayer-unsigned.ipa Payload)
 
       - name: Upload .ipa artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: PanuraPlayer-unsigned-ipa
           path: build/PanuraPlayer-unsigned.ipa
