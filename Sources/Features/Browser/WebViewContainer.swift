@@ -24,6 +24,16 @@ struct WebViewContainer: UIViewRepresentable {
             injectionTime: .atDocumentStart,
             forMainFrameOnly: false
         ))
+        // `#referer=` iframes, rewritten to the local relay. Needs the server's
+        // port, so it only installs once the relay is actually up; without it
+        // those frames simply load as before (with the wrong referer).
+        if let relayBase = StreamProxy.shared.relayBase {
+            contentController.addUserScript(WKUserScript(
+                source: FrameRelayScript.source(relayBase: relayBase),
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            ))
+        }
         // Ad/pop neutralization next, at document start, so it beats inline
         // pop scripts (window.open, aclib, etc.).
         contentController.addUserScript(WKUserScript(
@@ -269,11 +279,20 @@ struct WebViewContainer: UIViewRepresentable {
             // The JS already applied the rule's referer mode (origin vs full URL).
             // Referer priority, mirroring Android's `onEmbedDetected`:
             //  1. `#referer=` fragment — the CDN's explicit instruction
-            //  2. what the JS captured (rule's referer mode, applied in-page)
-            //  3. nothing; the player falls back to no Referer
+            //  2. relayed frame — the referer the relay fetched the frame with,
+            //     never the 127.0.0.1 URL the page can see
+            //  3. what the JS captured (rule's referer mode, applied in-page)
+            //  4. nothing; the player falls back to no Referer
             var headers: [String: String] = [:]
             if let referer = dict["referer"] as? String, !referer.isEmpty {
                 headers["Referer"] = referer
+                // A stream found inside a relayed frame reports location.href,
+                // which is the relay. Substitute what the CDN actually expects.
+                if let r = URL(string: referer), let relay = StreamProxy.relayTarget(of: r) {
+                    headers["Referer"] = relay.referer.isEmpty
+                        ? relay.url.absoluteString
+                        : relay.referer
+                }
             }
             if let fragmentReferer { headers["Referer"] = fragmentReferer }
             let ua = dict["ua"] as? String
@@ -286,7 +305,17 @@ struct WebViewContainer: UIViewRepresentable {
 
             if wants("origin"),
                let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
-                headers["Origin"] = origin
+                // Inside a relayed frame `location.origin` is the relay; send the
+                // upstream host's origin, which is what the CDN validates.
+                if origin.hasPrefix("http://127.0.0.1"),
+                   let page = dict["referer"] as? String,
+                   let r = URL(string: page),
+                   let relay = StreamProxy.relayTarget(of: r),
+                   let scheme = relay.url.scheme, let host = relay.url.host {
+                    headers["Origin"] = "\(scheme)://\(host)"
+                } else {
+                    headers["Origin"] = origin
+                }
             }
             if wants("user-agent"), let ua, !ua.isEmpty {
                 headers["User-Agent"] = ua

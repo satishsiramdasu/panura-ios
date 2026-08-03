@@ -66,6 +66,39 @@ final class StreamProxy {
         return proxyURL(for: url, session: session, suffix: playlistHint ? ".m3u8" : "") ?? url
     }
 
+    // MARK: iframe relay
+
+    /// Base URL of the local server, starting it if needed — `nil` if it won't
+    /// start. Injected into pages so the frame-relay script can build its own
+    /// URLs without a round trip to native.
+    var relayBase: String? {
+        guard start() else { return nil }
+        return "http://127.0.0.1:\(port)"
+    }
+
+    /// Reverses a relay URL: the upstream URL and the Referer it was fetched
+    /// with. Lets a stream reported from inside a relayed frame be attributed to
+    /// the real page instead of to 127.0.0.1.
+    static func relayTarget(of url: URL) -> (url: URL, referer: String)? {
+        guard url.host == "127.0.0.1", url.path == "/f",
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let u = items.first(where: { $0.name == "u" })?.value,
+              let target = base64URLDecode(u).flatMap(URL.init(string:))
+        else { return nil }
+        let referer = items.first(where: { $0.name == "r" })?.value.flatMap(base64URLDecode) ?? ""
+        return (target, referer)
+    }
+
+    /// base64url (no padding) — chosen because a raw URL in a query string is
+    /// exactly what mangles here: `/`, `=` and `+` all misparse.
+    static func base64URLDecode(_ s: String) -> String? {
+        var b = s.replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        while b.count % 4 != 0 { b += "=" }
+        guard let data = Data(base64Encoded: b) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
     // MARK: server
 
     @discardableResult
@@ -101,6 +134,56 @@ final class StreamProxy {
     }
 
     private func route() {
+        // Frame relay: `/f?u=<base64url target>&r=<base64url referer>`.
+        // The iOS answer to Android's `shouldInterceptRequest` branch — WebKit
+        // will not let us set a header on a frame's own request, so the document
+        // is fetched here with the Referer the CDN demands and handed back.
+        //
+        // Registration is stateless (everything is in the query) so the script
+        // in the page can build the URL itself, and a relayed frame survives a
+        // reload without native having to remember it.
+        server["/f"] = { [weak self] request in
+            guard let self else { return .internalServerError }
+            // First match only: `Dictionary(uniqueKeysWithValues:)` traps on a
+            // duplicate key, and a repeated `?u=` is one crafted URL away.
+            func param(_ name: String) -> String? {
+                request.queryParams.first { $0.0 == name }?.1
+            }
+            guard let u = param("u"),
+                  let targetString = Self.base64URLDecode(u),
+                  let target = URL(string: targetString),
+                  let scheme = target.scheme?.lowercased(),
+                  scheme == "http" || scheme == "https"
+            else { return .badRequest(nil) }
+
+            var headers: [String: String] = [:]
+            if let r = param("r"), let referer = Self.base64URLDecode(r), !referer.isEmpty {
+                headers["Referer"] = referer
+            }
+            if let ua = request.headers["user-agent"] { headers["User-Agent"] = ua }
+
+            guard let result = self.fetch(target, headers: headers, range: nil) else {
+                return .internalServerError
+            }
+
+            let mime = result.mime ?? "text/html"
+            // An HTML document fetched from 127.0.0.1 would resolve its relative
+            // URLs against the relay. `<base>` points them back at the real host
+            // so the page's own assets still load.
+            guard mime.contains("html"), var html = String(data: result.body, encoding: .utf8) else {
+                return .raw(result.status, "OK", ["Content-Type": mime]) { try $0.write(result.body) }
+            }
+            let baseTag = "<base href=\"\(targetString)\">"
+            if let range = html.range(of: "<head", options: .caseInsensitive),
+               let close = html.range(of: ">", range: range.upperBound..<html.endIndex) {
+                html.insert(contentsOf: baseTag, at: close.upperBound)
+            } else {
+                html = baseTag + html
+            }
+            let body = Data(html.utf8)
+            return .raw(result.status, "OK", ["Content-Type": mime]) { try $0.write(body) }
+        }
+
         server["/p/:session/:id"] = { [weak self] request in
             guard let self,
                   let session = request.params[":session"],
