@@ -18,13 +18,15 @@ struct CastDevicesView: View {
 
     var body: some View {
         List {
-            Section("Chromecast") {
+            Section {
                 if cast.isConnected {
                     Label(cast.connectedDeviceName ?? "Connected", systemImage: "tv.fill")
                 } else {
                     Text("Not connected").foregroundStyle(.secondary)
                 }
                 CastButton().frame(height: 40)
+            } header: {
+                Text("Chromecast")
             } footer: {
                 Text("Tap the Cast icon to pick a TV on your network.")
             }

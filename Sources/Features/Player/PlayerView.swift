@@ -442,11 +442,12 @@ struct PlayerView: View {
                 Button {
                     model.selectQuality(q); scheduleHide()
                 } label: {
+                    // Built as an explicit String: a ternary of interpolations
+                    // makes Label's LocalizedStringKey overload a candidate, and
+                    // the size would render as a literal key.
                     let size = q.sizeEstimate(durationSeconds: model.totalSeconds)
-                    Label(
-                        size.isEmpty ? q.label : "\(q.label)  ·  \(size)",
-                        systemImage: model.currentQualityId == q.id ? "checkmark" : ""
-                    )
+                    let title: String = size.isEmpty ? q.label : q.label + "  ·  " + size
+                    Label(title, systemImage: model.currentQualityId == q.id ? "checkmark" : "")
                 }
             }
         } label: {
