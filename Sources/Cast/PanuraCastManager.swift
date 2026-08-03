@@ -53,6 +53,10 @@ final class PanuraCastManager: ObservableObject {
 
     private let server = PanuraCastServer()
 
+    /// URL of the cast in flight. The direct-cast watchdog compares against this
+    /// so a stall never downgrades a stream the user has since replaced.
+    private var castID = ""
+
     private init() {
         server.onMessage = { [weak self] message in
             Task { @MainActor in self?.handle(message) }
@@ -120,6 +124,7 @@ final class PanuraCastManager: ObservableObject {
         isCasting = false
         streamTitle = ""
         mode = ""
+        castID = ""
         playback = PanuraPlayback()
     }
 
@@ -145,6 +150,7 @@ final class PanuraCastManager: ObservableObject {
 
         isCasting = true
         streamTitle = item.title
+        castID = item.url.absoluteString
 
         let skipProbe = forceProxy
         Task { [weak self] in
@@ -171,6 +177,42 @@ final class PanuraCastManager: ObservableObject {
 
             self.server.send(message)
             self.mode = direct == nil ? "proxy" : "direct"
+            if direct != nil { self.watchDirectCast(item, proxyURL: proxyURL) }
+        }
+    }
+
+    /// Re-sends through the proxy if a direct cast never starts.
+    ///
+    /// Predicting what the TV will refuse does not work: the phone can only ask
+    /// the CDN what *it* will serve, and a CDN can answer a probe perfectly while
+    /// the TV's player rejects what arrives — a decoy-prefixed segment being the
+    /// case in hand. The TV reports its own position, so stop guessing and watch
+    /// it: no progress within the grace period means direct failed, whatever the
+    /// reason, and the proxy path is known to work.
+    private func watchDirectCast(_ item: MediaItem, proxyURL: String) {
+        let expected = item.url.absoluteString
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard let self,
+                  self.isCasting,
+                  self.mode == "direct",
+                  self.castID == expected,
+                  self.playback.positionMs == 0,
+                  !self.playback.isPlaying
+            else { return }
+
+            var message = CastMessage(type: "stream")
+            message.streamUrl = proxyURL
+            message.proxyUrl = proxyURL
+            message.title = item.title
+            message.mode = "proxy"
+            message.subtitles = item.subtitles.map {
+                CastSubtitle(url: $0.url.absoluteString, label: $0.label, lang: $0.language)
+            }
+            message.subtitleHeaders = item.headers
+            self.server.send(message)
+            self.mode = "proxy"
+            self.proxyLog.insert("direct stalled — retrying through this phone", at: 0)
         }
     }
 
