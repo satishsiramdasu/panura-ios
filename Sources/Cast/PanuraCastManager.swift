@@ -160,6 +160,14 @@ final class PanuraCastManager: ObservableObject {
     /// Referer/Origin/Sec-Fetch removed — some CDNs reject a Referer they didn't
     /// issue, and those stream fine bare.
     private static func probeDirect(_ url: URL, headers: [String: String]) async -> [String: String]? {
+        // A CDN that prefixes its segments with a decoy image must be proxied
+        // however willing it is to serve the TV. The receiver plays through
+        // ExoPlayer, whose TS extractor probes the first bytes and refuses on
+        // seeing PNG/JPEG/GIF magic — the stream simply never starts, which is
+        // what "plays on the phone, loads forever on the TV" means. libVLC hunts
+        // for the sync byte and survives it, and our proxy strips it outright.
+        if await segmentsCarryDecoy(url, headers: headers) { return nil }
+
         if await head(url, headers: headers) { return headers }
         let stripped = headers.filter { key, _ in
             let k = key.lowercased()
@@ -167,6 +175,69 @@ final class PanuraCastManager: ObservableObject {
         }
         guard stripped.count != headers.count else { return nil }
         return await head(url, headers: stripped) ? stripped : nil
+    }
+
+    /// Fetches the first segment's opening bytes and reports whether they are
+    /// something ExoPlayer will refuse. Only a positive identification forces the
+    /// proxy — anything unrecognised leaves direct mode available, since guessing
+    /// the other way would tether the phone for every stream we cannot classify.
+    private static func segmentsCarryDecoy(_ url: URL, headers: [String: String]) async -> Bool {
+        guard let playlist = await text(url, headers: headers, bytes: 65_535),
+              playlist.contains("#EXTM3U")
+        else { return false }
+
+        // One level down a master playlist to reach real segments.
+        var mediaPlaylist = playlist
+        var base = url
+        if playlist.contains("#EXT-X-STREAM-INF"),
+           let variant = firstURI(in: playlist, base: url),
+           let nested = await text(variant, headers: headers, bytes: 65_535) {
+            mediaPlaylist = nested
+            base = variant
+        }
+
+        guard let segment = firstURI(in: mediaPlaylist, base: base),
+              let head = await bytes(segment, headers: headers, count: 8), head.count >= 4
+        else { return false }
+
+        // Images first, and GIF is the reason why: its magic is 47 49 46 38, and
+        // that leading 0x47 is also the MPEG-TS sync byte. Testing for TS first
+        // would wave every GIF-prefixed segment through as clean.
+        let png: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
+        let jpeg: [UInt8] = [0xFF, 0xD8, 0xFF]
+        let gif: [UInt8] = [0x47, 0x49, 0x46, 0x38]
+        if Array(head.prefix(4)) == png { return true }
+        if Array(head.prefix(3)) == jpeg { return true }
+        if Array(head.prefix(4)) == gif { return true }
+
+        if head[0] == 0x47 { return false }                                    // clean MPEG-TS
+        if head.count >= 8, Array(head[4..<8]) == Array("ftyp".utf8) { return false }
+        if head.count >= 8, Array(head[4..<8]) == Array("styp".utf8) { return false }
+        return false
+    }
+
+    /// First non-comment URI in a playlist, resolved against `base`.
+    private static func firstURI(in playlist: String, base: URL) -> URL? {
+        for line in playlist.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
+            return URL(string: trimmed, relativeTo: base)?.absoluteURL
+        }
+        return nil
+    }
+
+    private static func text(_ url: URL, headers: [String: String], bytes limit: Int) async -> String? {
+        guard let data = await Self.bytes(url, headers: headers, count: limit) else { return nil }
+        return String(data: Data(data), encoding: .utf8)
+    }
+
+    private static func bytes(_ url: URL, headers: [String: String], count: Int) async -> [UInt8]? {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        request.setValue("bytes=0-\(count - 1)", forHTTPHeaderField: "Range")
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
+        return [UInt8](data)
     }
 
     /// True when the CDN will serve this URL to a plain client with these headers.
