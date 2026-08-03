@@ -44,6 +44,30 @@ enum FrameRelayScript {
             } catch (e) {}
           }
 
+          // If CSP is what kills the frame, the engine says so here — and this is
+          // the only way to see a header-delivered policy from inside the page.
+          // `blockedURI` + `violatedDirective` name the cause outright.
+          try {
+            document.addEventListener('securitypolicyviolation', function (e) {
+              if (String(e.blockedURI || '').indexOf(SCHEME) < 0 &&
+                  String(e.violatedDirective || '').indexOf('frame') < 0) return;
+              note(e.blockedURI || '', 'CSP blocked: ' + e.violatedDirective +
+                   ' (policy: ' + (e.originalPolicy || '').slice(0, 200) + ')');
+            });
+          } catch (e) {}
+
+          // Second probe: can this page reach the scheme AT ALL, outside a frame?
+          // Reachable here but dead in an iframe means the scheme is fine and the
+          // frame is being blocked; dead both ways means the scheme never
+          // resolves in this context and the relay approach cannot work as built.
+          function probeScheme(url) {
+            try {
+              fetch(url, { method: 'GET' })
+                .then(function (r) { note(url, 'scheme probe: reachable, status ' + r.status); })
+                .catch(function (err) { note(url, 'scheme probe: failed — ' + err); });
+            } catch (e) { note(url, 'scheme probe: threw — ' + e); }
+          }
+
           // base64url, no padding — a raw URL in a query string mangles on `/`,
           // `=` and `+`. unescape(encodeURIComponent(…)) keeps non-ASCII safe.
           function enc(s) {
@@ -93,6 +117,19 @@ enum FrameRelayScript {
             frame.setAttribute('data-panura-relayed', raw);
             frame.setAttribute('src', relayed);
             note(target, 'frame: rewritten to ' + SCHEME + ':');
+            probeScheme(relayed);
+
+            // Did the frame actually load? A blocked frame never fires `load`,
+            // and the block itself is silent — this is the only page-side signal
+            // that separates "never requested" from "requested and empty".
+            var settled = false;
+            frame.addEventListener('load', function () {
+              settled = true;
+              note(target, 'frame: load event fired');
+            });
+            setTimeout(function () {
+              if (!settled) note(target, 'frame: no load event after 4s — blocked before request');
+            }, 4000);
           }
 
           function scan(root) {
