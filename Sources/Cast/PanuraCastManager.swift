@@ -17,6 +17,9 @@ final class PanuraCastManager: ObservableObject {
     @Published private(set) var connectedTVName = ""
     @Published private(set) var isCasting = false
     @Published private(set) var streamTitle = ""
+    /// "direct" (TV fetches the CDN itself, phone may leave the network) or
+    /// "proxy" (every byte goes through this device).
+    @Published private(set) var mode = ""
     @Published private(set) var playback = PanuraPlayback()
     /// Set when the server could not bind or Bonjour refused to publish — nearly
     /// always the local-network permission.
@@ -59,6 +62,7 @@ final class PanuraCastManager: ObservableObject {
         isTVConnected = false
         connectedTVName = ""
         isCasting = false
+        mode = ""
         streamTitle = ""
         playback = PanuraPlayback()
     }
@@ -69,15 +73,19 @@ final class PanuraCastManager: ObservableObject {
         server.send(CastMessage(type: "stop"))
         isCasting = false
         streamTitle = ""
+        mode = ""
         playback = PanuraPlayback()
     }
 
     // MARK: casting
 
-    /// Sends `item` to the TV. Always proxy mode for now: the phone fetches with
-    /// the captured headers and re-serves, which works for every gated CDN. The
-    /// direct-mode probe Android does (letting the TV fetch the CDN itself, so
-    /// the phone can leave the network) is not ported yet.
+    /// Sends `item` to the TV, choosing direct or proxy the way Android does.
+    ///
+    /// Direct means the TV fetches the CDN itself and the phone can leave the
+    /// network; proxy means every byte goes through this device. Direct is
+    /// preferable whenever the CDN will accept the TV's request, so we probe
+    /// first — and the probe must fail exactly where the TV would, or picking
+    /// direct simply moves the rejection onto the TV.
     func cast(_ item: MediaItem) {
         start()
         guard isAdvertising else { return }
@@ -88,25 +96,59 @@ final class PanuraCastManager: ObservableObject {
             lastError = "No Wi-Fi address — the TV has no way to reach this device."
             return
         }
-        // Nonce: the TV keys its player on the URL, so replacing a stream needs a
-        // distinct one or it will not reload.
-        let url = proxy + "?v=\(Int(Date().timeIntervalSince1970 * 1000))"
-
-        var message = CastMessage(type: "stream")
-        message.streamUrl = url
-        message.proxyUrl = url
-        message.title = item.title
-        message.mode = "proxy"
-        message.subtitles = item.subtitles.map {
-            CastSubtitle(url: $0.url.absoluteString, label: $0.label, lang: $0.language)
-        }
-        // Always the full captured set — the subtitle host is usually a different
-        // origin from the video CDN, with its own requirements.
-        message.subtitleHeaders = item.headers
-        server.send(message)
 
         isCasting = true
         streamTitle = item.title
+
+        Task { [weak self] in
+            let direct = await Self.probeDirect(item.url, headers: item.headers)
+            guard let self else { return }
+
+            // Nonce: the TV keys its player on the URL, so replacing a stream
+            // needs a distinct one or it will not reload.
+            let proxyURL = proxy + "?v=\(Int(Date().timeIntervalSince1970 * 1000))"
+
+            var message = CastMessage(type: "stream")
+            message.streamUrl = direct == nil ? proxyURL : item.url.absoluteString
+            message.proxyUrl = proxyURL
+            message.title = item.title
+            message.mode = direct == nil ? "proxy" : "direct"
+            message.headers = direct ?? [:]
+            message.subtitles = item.subtitles.map {
+                CastSubtitle(url: $0.url.absoluteString, label: $0.label, lang: $0.language)
+            }
+            // Always the full captured set, never the trimmed one — the subtitle
+            // host is usually a different origin from the video CDN and often
+            // wants the opposite headers.
+            message.subtitleHeaders = item.headers
+
+            self.server.send(message)
+            self.mode = direct == nil ? "proxy" : "direct"
+        }
+    }
+
+    /// Returns the header set the CDN accepts for a TV-side fetch, or nil when it
+    /// won't serve one at all. Tries the captured headers, then a set with
+    /// Referer/Origin/Sec-Fetch removed — some CDNs reject a Referer they didn't
+    /// issue, and those stream fine bare.
+    private static func probeDirect(_ url: URL, headers: [String: String]) async -> [String: String]? {
+        if await head(url, headers: headers) { return headers }
+        let stripped = headers.filter { key, _ in
+            let k = key.lowercased()
+            return k != "referer" && k != "origin" && !k.hasPrefix("sec-fetch")
+        }
+        guard stripped.count != headers.count else { return nil }
+        return await head(url, headers: stripped) ? stripped : nil
+    }
+
+    private static func head(_ url: URL, headers: [String: String]) async -> Bool {
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 8
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return false }
+        return (200...299).contains(http.statusCode)
     }
 
     // MARK: transport
@@ -155,9 +197,15 @@ final class PanuraCastManager: ObservableObject {
 
     private func clientCountChanged(_ count: Int) {
         isTVConnected = count > 0
-        if count == 0 {
+        guard count > 0 else {
             connectedTVName = ""
             playback = PanuraPlayback()
+            return
         }
+        // Introduce ourselves on every connect, not just at start: a TV that
+        // joins later has no other way to learn which phone it is paired with.
+        var hello = CastMessage(type: "hello")
+        hello.deviceName = UIDevice.current.name
+        server.send(hello)
     }
 }

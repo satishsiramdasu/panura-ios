@@ -12,6 +12,7 @@ struct BrowserView: View {
     @State private var addressText = ""
     @State private var playItem: MediaItem?
     @State private var showFoundSheet = false
+    @State private var showPanuraControls = false
     @State private var editingAddress = false
     @AppStorage("debug_detection") private var debugDetection = false
 
@@ -29,6 +30,7 @@ struct BrowserView: View {
             }
         }
         .fullScreenCover(item: $playItem) { PlayerView(item: $0) }
+        .sheet(isPresented: $showPanuraControls) { PanuraCastControlView() }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
         .onChange(of: model.currentURL) { url in
             if let url, !editingAddress { addressText = url.absoluteString }
@@ -220,6 +222,7 @@ struct BrowserView: View {
                             Button {
                                 showFoundSheet = false
                                 panuraCast.cast(model.playable(video))
+                                showPanuraControls = true
                             } label: {
                                 Label("Panura TV", systemImage: "appletv.fill")
                             }

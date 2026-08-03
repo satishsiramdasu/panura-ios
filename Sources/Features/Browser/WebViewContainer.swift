@@ -144,9 +144,13 @@ struct WebViewContainer: UIViewRepresentable {
             ]
         }
 
-        /// Last document we counted as "a page", ignoring the fragment: `#tab`
-        /// is in-page state, while a path or query change is a new route and
-        /// should reset findings the way a real navigation does.
+        /// Last document we counted as "a page": host + path only.
+        ///
+        /// Query and fragment are deliberately excluded. Keying on them broke
+        /// detection outright — a player that rewrites its own query after
+        /// starting (`?t=`, `?autoplay=1`, a cache-buster) looked like a new
+        /// route, so the stream was cleared from the list moments after it was
+        /// found. A genuine SPA route change moves the path, which still resets.
         private var lastDocumentKey: String?
 
         @MainActor
@@ -154,14 +158,14 @@ struct WebViewContainer: UIViewRepresentable {
             guard let url else { return }
             model.currentURL = url
 
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-            components?.fragment = nil
-            let key = components?.url?.absoluteString ?? url.absoluteString
+            let key = "\(url.host ?? "")\(url.path)"
             guard key != lastDocumentKey else { return }
+            let isFirst = lastDocumentKey == nil
             lastDocumentKey = key
+            // Nothing to reset on the first observation, and clearing here would
+            // race a detection from a page that redirected on load.
+            guard !isFirst else { return }
 
-            // A real navigation already cleared these in didStartProvisional;
-            // clearing again is harmless and keeps one path for both cases.
             model.clearFindings()
             embeds.reset()
         }

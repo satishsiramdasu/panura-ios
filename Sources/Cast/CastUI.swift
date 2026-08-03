@@ -15,6 +15,7 @@ struct CastButton: UIViewRepresentable {
 struct CastDevicesView: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
+    @State private var showControls = false
 
     var body: some View {
         List {
@@ -51,6 +52,14 @@ struct CastDevicesView: View {
                     Text("Off").foregroundStyle(.secondary)
                 }
 
+                if panura.isCasting {
+                    Button {
+                        showControls = true
+                    } label: {
+                        Label("Open controls", systemImage: "slider.horizontal.3")
+                    }
+                }
+
                 if panura.isAdvertising {
                     Button("Stop", role: .destructive) { panura.stop() }
                 } else {
@@ -69,5 +78,6 @@ struct CastDevicesView: View {
             }
         }
         .navigationTitle("Cast to TV")
+        .sheet(isPresented: $showControls) { PanuraCastControlView() }
     }
 }
