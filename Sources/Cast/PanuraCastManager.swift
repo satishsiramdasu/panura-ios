@@ -33,6 +33,12 @@ final class PanuraCastManager: ObservableObject {
     /// anything — a different fault from asking and being refused.
     @Published private(set) var proxyLog: [String] = []
 
+    /// Skip the direct probe and always serve through this phone. Direct mode is
+    /// judged from what the CDN tells *us*, which cannot account for everything
+    /// the TV's player will refuse — this is the escape hatch when a stream is
+    /// detected fine, casts as direct, and then never starts on the TV.
+    @AppStorage("cast_force_proxy") var forceProxy = false
+
     private let server = PanuraCastServer()
 
     private init() {
@@ -128,8 +134,9 @@ final class PanuraCastManager: ObservableObject {
         isCasting = true
         streamTitle = item.title
 
+        let skipProbe = forceProxy
         Task { [weak self] in
-            let direct = await Self.probeDirect(item.url, headers: item.headers)
+            let direct = skipProbe ? nil : await Self.probeDirect(item.url, headers: item.headers)
             guard let self else { return }
 
             // Nonce: the TV keys its player on the URL, so replacing a stream

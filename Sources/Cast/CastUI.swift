@@ -92,6 +92,9 @@ struct CastDevicesView: View {
                         Label("Open Panura settings", systemImage: "gear")
                     }
                 }
+                Toggle("Always cast through this phone", isOn: $panura.forceProxy)
+                    .font(.footnote)
+
                 if !panura.proxyLog.isEmpty {
                     DisclosureGroup("TV requests (\(panura.proxyLog.count))") {
                         ForEach(panura.proxyLog, id: \.self) { line in
