@@ -102,5 +102,11 @@ struct CastDevicesView: View {
         }
         .navigationTitle("Cast to TV")
         .sheet(isPresented: $showControls) { PanuraCastControlView() }
+        // Start advertising on arrival. iOS shows the Local Network prompt on the
+        // first genuine local-network request, so this is what makes it appear —
+        // and this screen is where the user is already asking to reach a TV.
+        // Waiting for them to find the button means the permission is requested
+        // late, or never.
+        .onAppear { panura.start() }
     }
 }
