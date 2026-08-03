@@ -169,6 +169,12 @@ final class PanuraCastManager: ObservableObject {
         return await head(url, headers: stripped) ? stripped : nil
     }
 
+    /// True when the CDN will serve this URL to a plain client with these headers.
+    ///
+    /// `HEAD` first, then a one-byte ranged `GET` if the server rejects the
+    /// method. Plenty of CDNs answer 405/501 to HEAD while serving GET perfectly
+    /// — treating those as a failure would proxy streams that the TV could fetch
+    /// itself, tethering the phone for no reason.
     private static func head(_ url: URL, headers: [String: String]) async -> Bool {
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
@@ -176,7 +182,16 @@ final class PanuraCastManager: ObservableObject {
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         guard let (_, response) = try? await URLSession.shared.data(for: request),
               let http = response as? HTTPURLResponse else { return false }
-        return (200...299).contains(http.statusCode)
+        if (200...299).contains(http.statusCode) { return true }
+        guard http.statusCode == 405 || http.statusCode == 501 else { return false }
+
+        var ranged = URLRequest(url: url)
+        ranged.timeoutInterval = 8
+        for (key, value) in headers { ranged.setValue(value, forHTTPHeaderField: key) }
+        ranged.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        guard let (_, rangedResponse) = try? await URLSession.shared.data(for: ranged),
+              let rangedHTTP = rangedResponse as? HTTPURLResponse else { return false }
+        return (200...299).contains(rangedHTTP.statusCode)
     }
 
     // MARK: transport
