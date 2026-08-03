@@ -159,10 +159,11 @@ struct WebViewContainer: UIViewRepresentable {
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction
         ) async -> WKNavigationActionPolicy {
-            if let url = navigationAction.request.url,
-               VideoURL.looksLikeVideo(url) {
+            if let rawURL = navigationAction.request.url,
+               VideoURL.looksLikeVideo(rawURL) {
                 // Same context capture as the JS path: the page we're leaving
                 // is the Referer the CDN expects.
+                let (url, fragmentReferer) = RefererFragment.split(rawURL)
                 var headers: [String: String] = [:]
                 if let page = webView.url {
                     headers["Referer"] = page.absoluteString
@@ -171,6 +172,8 @@ struct WebViewContainer: UIViewRepresentable {
                     }
                 }
                 if let ua = lastUserAgent { headers["User-Agent"] = ua }
+                // Explicit instruction beats the inferred page URL.
+                if let fragmentReferer { headers["Referer"] = fragmentReferer }
                 model.report(url: url, title: webView.title ?? "", headers: headers)
                 return .cancel
             }
@@ -256,15 +259,23 @@ struct WebViewContainer: UIViewRepresentable {
             }
 
             guard let urlString = dict["url"] as? String,
-                  let url = URL(string: urlString) else { return }
+                  let rawURL = URL(string: urlString) else { return }
+            // Every JS hook funnels through here, so stripping `#referer=` once
+            // covers xhr/fetch/src/DOM-scan and the PanuraExtractor bridge.
+            let (url, fragmentReferer) = RefererFragment.split(rawURL)
             let title = dict["title"] as? String ?? ""
 
             // Replay the exact context the page used, or the CDN rejects us.
             // The JS already applied the rule's referer mode (origin vs full URL).
+            // Referer priority, mirroring Android's `onEmbedDetected`:
+            //  1. `#referer=` fragment — the CDN's explicit instruction
+            //  2. what the JS captured (rule's referer mode, applied in-page)
+            //  3. nothing; the player falls back to no Referer
             var headers: [String: String] = [:]
             if let referer = dict["referer"] as? String, !referer.isEmpty {
                 headers["Referer"] = referer
             }
+            if let fragmentReferer { headers["Referer"] = fragmentReferer }
             let ua = dict["ua"] as? String
             if let ua, !ua.isEmpty { lastUserAgent = ua }
 

@@ -45,7 +45,10 @@ final class BrowserModel: ObservableObject {
     func load(_ text: String) {
         let url = Self.normalize(text)
         clearFindings()
-        webView?.load(URLRequest(url: url))
+        // `#referer=` names the Referer this URL must be fetched with; strip it
+        // and send the header. WebKit applies it to this request only — a later
+        // in-page navigation carries the page's own referer, same as Android.
+        webView?.load(RefererFragment.request(for: url))
     }
 
     func goBack() { webView?.goBack() }

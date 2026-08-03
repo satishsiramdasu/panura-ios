@@ -28,7 +28,12 @@ struct StreamView: View {
     }
 
     private func play() {
-        guard let url = URL(string: urlText.trimmingCharacters(in: .whitespaces)) else { return }
-        playItem = MediaItem(title: "Stream", url: url)
+        guard let raw = URL(string: urlText.trimmingCharacters(in: .whitespaces)) else { return }
+        // Pasted links and .m3u entries commonly carry the gate as
+        // `…/master.m3u8#referer=https%3A%2F%2Fsite.com`.
+        let (url, referer) = RefererFragment.split(raw)
+        var headers: [String: String] = [:]
+        if let referer { headers["Referer"] = referer }
+        playItem = MediaItem(title: "Stream", url: url, headers: headers)
     }
 }
