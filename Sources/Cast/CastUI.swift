@@ -92,6 +92,16 @@ struct CastDevicesView: View {
                         Label("Open Panura settings", systemImage: "gear")
                     }
                 }
+                if !panura.proxyLog.isEmpty {
+                    DisclosureGroup("TV requests (\(panura.proxyLog.count))") {
+                        ForEach(panura.proxyLog, id: \.self) { line in
+                            Text(line)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .font(.footnote)
+                }
             } header: {
                 Text("Panura Android TV")
             } footer: {

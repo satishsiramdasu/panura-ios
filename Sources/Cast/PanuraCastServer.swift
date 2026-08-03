@@ -51,6 +51,9 @@ final class PanuraCastServer: NSObject {
     var onClientCountChanged: ((Int) -> Void)?
     /// (advertising, error) — fires when Bonjour actually publishes or fails.
     var onAdvertisingChanged: ((Bool, String?) -> Void)?
+    /// (what, status, bytes) for each upstream fetch the TV triggered. The only
+    /// way to tell "the TV never asked" from "it asked and got a 403".
+    var onProxyRequest: ((String, Int, Int) -> Void)?
 
     // MARK: lifecycle
 
@@ -231,7 +234,10 @@ final class PanuraCastServer: NSObject {
         var request = URLRequest(url: url)
         request.timeoutInterval = 30
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
-        if let range { request.setValue(range, forHTTPHeaderField: "Range") }
+        // Never range a playlist: we answer it whole and rewritten, so asking
+        // upstream for a slice would return a 206 we then serve as a 200 — with
+        // a truncated body the TV parses as a short playlist and stalls on.
+        if let range, !rewrite { request.setValue(range, forHTTPHeaderField: "Range") }
 
         var body: Data?
         var mime: String?
@@ -248,20 +254,33 @@ final class PanuraCastServer: NSObject {
         }.resume()
         _ = done.wait(timeout: .now() + 35)
 
-        guard var data = body else { return .internalServerError }
+        guard var data = body else {
+            onProxyRequest?(url.lastPathComponent, status, 0)
+            return .internalServerError
+        }
 
         if rewrite, isPlaylist(url: url, mime: mime, body: data),
            let text = String(data: data, encoding: .utf8) {
             data = Data(rewritePlaylist(text, base: url).utf8)
+            onProxyRequest?("playlist \(url.lastPathComponent)", status, data.count)
             return .ok(.data(data, contentType: "application/vnd.apple.mpegurl"))
         }
 
         // Whole-body only: stripping bytes would invalidate the offsets a ranged
         // response was answered with.
         let out = range == nil ? StreamProxy.stripDecoyHeader(data) : data
-        var responseHeaders = ["Content-Type": mime ?? "application/octet-stream",
-                               "Accept-Ranges": "bytes"]
+        var responseHeaders = [
+            "Content-Type": mime ?? "application/octet-stream",
+            "Accept-Ranges": "bytes",
+            // Required. A `.raw` response sets no length itself, so without this
+            // the TV cannot tell where the body ends: ExoPlayer reads until the
+            // socket closes and sits on "loading" forever rather than handing the
+            // segment to its demuxer. NanoHTTPD sets it for free on Android,
+            // which is why the same protocol works there.
+            "Content-Length": "\(out.count)",
+        ]
         contentRange.map { responseHeaders["Content-Range"] = $0 }
+        onProxyRequest?(url.lastPathComponent, status, out.count)
         return .raw(status, status == 206 ? "Partial Content" : "OK", responseHeaders) { writer in
             try writer.write(out)
         }

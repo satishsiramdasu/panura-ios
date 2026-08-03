@@ -28,6 +28,10 @@ final class PanuraCastManager: ObservableObject {
     /// Set when the server could not bind or Bonjour refused to publish — nearly
     /// always the local-network permission.
     @Published private(set) var lastError: String?
+    /// Newest first: status, size and what was fetched, for each request the TV
+    /// made. Empty while casting means the TV never asked this device for
+    /// anything — a different fault from asking and being refused.
+    @Published private(set) var proxyLog: [String] = []
 
     private let server = PanuraCastServer()
 
@@ -37,6 +41,14 @@ final class PanuraCastManager: ObservableObject {
         }
         server.onClientCountChanged = { [weak self] count in
             Task { @MainActor in self?.clientCountChanged(count) }
+        }
+        server.onProxyRequest = { [weak self] what, status, bytes in
+            Task { @MainActor in
+                guard let self else { return }
+                let size = bytes >= 1024 ? "\(bytes / 1024) KB" : "\(bytes) B"
+                self.proxyLog.insert("\(status)  \(size)  \(what)", at: 0)
+                if self.proxyLog.count > 12 { self.proxyLog.removeLast() }
+            }
         }
         server.onAdvertisingChanged = { [weak self] advertising, error in
             Task { @MainActor in
