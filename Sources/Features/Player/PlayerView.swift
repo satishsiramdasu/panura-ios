@@ -52,7 +52,7 @@ struct PlayerView: View {
     @AppStorage("preferred_audio_language") private var preferredAudioLang = ""
     @AppStorage("preferred_subtitle_language") private var preferredSubtitleLang = ""
 
-    enum PlayerSheet: Int, Identifiable { case audio, subtitles, quality; var id: Int { rawValue } }
+    enum PlayerSheet: Int, Identifiable { case audio, subtitles; var id: Int { rawValue } }
 
     /// Common languages offered for the preferred-audio/subtitle pickers. Matched
     /// (case-insensitively) against VLC's track names, so it's best-effort.
@@ -379,9 +379,7 @@ struct PlayerView: View {
                 HStack(spacing: 14) {
                     quickAction("waveform", "Audio") { sheet = .audio }
                     quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
-                    if !model.qualities.isEmpty {
-                        quickAction("rectangle.stack", "Quality") { sheet = .quality }
-                    }
+                    if !model.qualities.isEmpty { qualityQuick }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 6)
                 .background(Color.black.opacity(0.3), in: Capsule())
@@ -433,6 +431,39 @@ struct PlayerView: View {
             .frame(width: 58)
         }
         .foregroundStyle(.white)
+    }
+
+    /// Quality as a menu quick action, same shape as `speedQuick` — the label
+    /// carries the current selection, so the choice is readable without opening
+    /// anything. Each row also shows the rough size at that bitrate.
+    private var qualityQuick: some View {
+        Menu {
+            ForEach(model.qualities) { q in
+                Button {
+                    model.selectQuality(q); scheduleHide()
+                } label: {
+                    let size = q.sizeEstimate(durationSeconds: model.totalSeconds)
+                    Label(
+                        size.isEmpty ? q.label : "\(q.label)  ·  \(size)",
+                        systemImage: model.currentQualityId == q.id ? "checkmark" : ""
+                    )
+                }
+            }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "rectangle.stack").font(.system(size: 17))
+                Text(currentQualityLabel).font(.system(size: 11))
+            }
+        }
+        .foregroundStyle(.white)
+    }
+
+    /// "Quality" while on Auto, otherwise the chosen rendition ("1080p").
+    private var currentQualityLabel: String {
+        guard let current = model.qualities.first(where: { $0.id == model.currentQualityId }),
+              current.id != VLCPlayerModel.Quality.auto.id
+        else { return "Quality" }
+        return current.label
     }
 
     /// Playback speed as a bottom-right quick action (menu on tap).
@@ -516,7 +547,6 @@ struct PlayerView: View {
         switch s {
         case .audio:     audioSheet
         case .subtitles: subtitleSheet
-        case .quality:   qualitySheet
         }
     }
 
@@ -587,19 +617,6 @@ struct PlayerView: View {
                 }
             }
             .navigationTitle("Subtitles").navigationBarTitleDisplayMode(.inline)
-        }
-    }
-
-    private var qualitySheet: some View {
-        NavigationStack {
-            List {
-                ForEach(model.qualities) { q in
-                    trackRow(q.label, selected: model.currentQualityId == q.id) {
-                        model.selectQuality(q); sheet = nil
-                    }
-                }
-            }
-            .navigationTitle("Quality").navigationBarTitleDisplayMode(.inline)
         }
     }
 

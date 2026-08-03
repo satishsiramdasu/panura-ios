@@ -49,7 +49,27 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// A selectable HLS rendition. `url == nil` means Auto (adaptive = the master).
     struct Quality: Identifiable, Hashable {
         let id: String; let label: String; let url: URL?
+        /// Advertised bits/sec, for the size estimate. 0 when unknown or Auto.
+        var bandwidth: Int = 0
+
         static let auto = Quality(id: "auto", label: "Auto", url: nil)
+
+        /// Rough download size at this bitrate, matching Android's
+        /// `HlsVariant.estimatedSize`: bandwidth is an average, so this is an
+        /// approximation and is labelled as one. Empty when either input is
+        /// unknown — a live stream has no duration, so no estimate is shown.
+        func sizeEstimate(durationSeconds: Double) -> String {
+            guard durationSeconds > 0, bandwidth > 0 else { return "" }
+            let bytes = Double(bandwidth) / 8 * durationSeconds
+            switch bytes {
+            case 1_000_000_000...:
+                return String(format: "~%.1f GB", bytes / 1_000_000_000)
+            case 1_000_000...:
+                return String(format: "~%.0f MB", bytes / 1_000_000)
+            default:
+                return String(format: "~%.0f KB", bytes / 1_000)
+            }
+        }
     }
 
     enum AspectMode: String, CaseIterable {
@@ -460,7 +480,8 @@ final class VLCPlayerModel: NSObject, ObservableObject {
                     Quality(
                         id: "\($0.height)_\($0.bandwidth)",
                         label: $0.height > 0 ? "\($0.height)p" : "\($0.bandwidth / 1000) kbps",
-                        url: $0.url
+                        url: $0.url,
+                        bandwidth: $0.bandwidth
                     )
                 }
             }
