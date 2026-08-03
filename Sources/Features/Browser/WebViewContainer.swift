@@ -57,6 +57,14 @@ struct WebViewContainer: UIViewRepresentable {
         // Block the pop-under/new-window ads these sites open on tap.
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
 
+        // Frame-relay events land in the same Diagnostics log as the sniffer, so
+        // one screen shows where a blank frame actually died.
+        context.coordinator.frameScheme.onEvent = { [weak model] url, verdict in
+            Task { @MainActor in
+                model?.reportDebug(url: url, verdict: verdict, host: "relay", source: "frame-relay")
+            }
+        }
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator

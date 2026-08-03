@@ -25,6 +25,12 @@ final class FrameSchemeHandler: NSObject, WKURLSchemeHandler {
     private var tasks: [ObjectIdentifier: URLSessionDataTask] = [:]
     private let lock = NSLock()
 
+    /// Reports into the Diagnostics log. Whether this fires at all is the whole
+    /// question when a relayed frame comes up blank: silence means WebKit never
+    /// issued the request (blocked in the page — CSP, sandbox, or the rewrite
+    /// never happened), while a failure here means the upstream fetch is at fault.
+    var onEvent: ((_ url: String, _ verdict: String) -> Void)?
+
     // MARK: URL shape
 
     /// `panura-frame://relay/?u=<base64url target>&r=<base64url referer>`
@@ -70,9 +76,11 @@ final class FrameSchemeHandler: NSObject, WKURLSchemeHandler {
               let scheme = target.scheme?.lowercased(),
               scheme == "http" || scheme == "https"
         else {
+            onEvent?(urlSchemeTask.request.url?.absoluteString ?? "", "frame: bad relay URL")
             urlSchemeTask.didFailWithError(URLError(.badURL))
             return
         }
+        onEvent?(target.absoluteString, "frame: fetching with referer \(referer.isEmpty ? "(none)" : referer)")
 
         var request = URLRequest(url: target)
         if !referer.isEmpty { request.setValue(referer, forHTTPHeaderField: "Referer") }
@@ -88,6 +96,7 @@ final class FrameSchemeHandler: NSObject, WKURLSchemeHandler {
             guard self.isLive(key) else { return }
 
             if let error {
+                self.onEvent?(target.absoluteString, "frame: upstream failed — \(error.localizedDescription)")
                 self.finish(key) { urlSchemeTask.didFailWithError(error) }
                 return
             }
@@ -123,6 +132,10 @@ final class FrameSchemeHandler: NSObject, WKURLSchemeHandler {
                 headerFields: headers
             )!
 
+            self.onEvent?(
+                target.absoluteString,
+                "frame: served \(http.statusCode), \(mime), \(body.count) bytes"
+            )
             self.finish(key) {
                 urlSchemeTask.didReceive(http)
                 urlSchemeTask.didReceive(body)

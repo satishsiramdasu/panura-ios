@@ -33,6 +33,17 @@ enum FrameRelayScript {
           var SCHEME = '__PANURA_SCHEME__';
           var MARK = '#referer=';
 
+          // Every decision is logged, so a frame that stays blank can be told
+          // apart from one that was never matched. Shows in Diagnostics.
+          function note(url, verdict) {
+            try {
+              window.webkit.messageHandlers.panura.postMessage({
+                kind: 'debug', url: url || '', verdict: verdict,
+                host: location.host, src: 'frame-relay'
+              });
+            } catch (e) {}
+          }
+
           // base64url, no padding — a raw URL in a query string mangles on `/`,
           // `=` and `+`. unescape(encodeURIComponent(…)) keeps non-ASCII safe.
           function enc(s) {
@@ -57,11 +68,31 @@ enum FrameRelayScript {
           function rewrite(frame) {
             var raw = frame.getAttribute('src');
             if (!raw || raw.indexOf(MARK) < 0) return;
+
+            var i = raw.indexOf(MARK);
+            var target = raw.slice(0, i);
+            var referer = decodeURIComponent(raw.slice(i + MARK.length));
+            try { target = new URL(target, location.href).href; } catch (e) {}
+
+            // Fast path: when the demanded Referer is this page's own origin,
+            // WebKit can send it itself. `unsafe-url` overrides the default
+            // strict-origin-when-cross-origin, which would send only the origin
+            // and drop the path. No relay, no custom scheme, no CSP question.
+            var sameOrigin = false;
+            try { sameOrigin = new URL(referer).origin === location.origin; } catch (e) {}
+            if (sameOrigin) {
+              frame.setAttribute('referrerpolicy', 'unsafe-url');
+              frame.setAttribute('src', target);
+              note(target, 'frame: same-origin referer, policy=unsafe-url');
+              return;
+            }
+
             var relayed = relayURL(raw);
-            if (!relayed) return;
+            if (!relayed) { note(raw, 'frame: unusable #referer= value'); return; }
             // Mark it so the observer doesn't chase its own write.
             frame.setAttribute('data-panura-relayed', raw);
             frame.setAttribute('src', relayed);
+            note(target, 'frame: rewritten to ' + SCHEME + ':');
           }
 
           function scan(root) {
@@ -87,7 +118,24 @@ enum FrameRelayScript {
             }
           });
 
+          // A `<meta http-equiv="Content-Security-Policy">` with a frame-src or
+          // default-src directive blocks a custom-scheme frame outright — no
+          // request, no error the page can see, just blank. Header-based CSP
+          // cannot be reached from here; this only clears the meta form.
+          function dropMetaCSP() {
+            var metas = document.querySelectorAll(
+              'meta[http-equiv="Content-Security-Policy" i]'
+            );
+            for (var i = 0; i < metas.length; i++) {
+              var content = metas[i].getAttribute('content') || '';
+              if (content.indexOf('frame-src') < 0 && content.indexOf('default-src') < 0) continue;
+              metas[i].parentNode && metas[i].parentNode.removeChild(metas[i]);
+              note(location.href, 'frame: removed meta CSP that would block the relay');
+            }
+          }
+
           function startObserving() {
+            dropMetaCSP();
             scan(document);
             obs.observe(document.documentElement || document, {
               childList: true, subtree: true, attributes: true, attributeFilter: ['src']
