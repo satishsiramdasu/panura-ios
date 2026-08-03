@@ -53,6 +53,18 @@ final class PanuraCastManager: ObservableObject {
 
     private let server = PanuraCastServer()
 
+    /// Numbers each log line. The list is keyed by its text, and two identical
+    /// entries — the same segment fetched twice, the same probe verdict on a
+    /// re-cast — would otherwise collide.
+    private var logSequence = 0
+
+    /// Newest-first, capped. Every route the cast could have taken writes here.
+    private func log(_ line: String) {
+        logSequence += 1
+        proxyLog.insert("\(logSequence).  \(line)", at: 0)
+        if proxyLog.count > 12 { proxyLog.removeLast() }
+    }
+
     /// URL of the cast in flight. The direct-cast watchdog compares against this
     /// so a stall never downgrades a stream the user has since replaced.
     private var castID = ""
@@ -66,10 +78,8 @@ final class PanuraCastManager: ObservableObject {
         }
         server.onProxyRequest = { [weak self] what, status, bytes in
             Task { @MainActor in
-                guard let self else { return }
                 let size = bytes >= 1024 ? "\(bytes / 1024) KB" : "\(bytes) B"
-                self.proxyLog.insert("\(status)  \(size)  \(what)", at: 0)
-                if self.proxyLog.count > 12 { self.proxyLog.removeLast() }
+                self?.log("\(status)  \(size)  \(what)")
             }
         }
         // Sockets and the Bonjour registration do not survive suspension. On
@@ -181,8 +191,15 @@ final class PanuraCastManager: ObservableObject {
 
         let skipProbe = forceProxy
         Task { [weak self] in
-            let direct = skipProbe ? nil : await Self.probeDirect(item.url, headers: item.castHeaders)
+            let probe = skipProbe
+                ? Probe(headers: nil, reason: "forced by the always-proxy setting")
+                : await Self.probeDirect(item.url, headers: item.castHeaders)
+            let direct = probe.headers
             guard let self else { return }
+            // Why this cast went the way it did. Without it "via phone" is a
+            // verdict with no evidence, and the three routes to it — the decoy
+            // check, a refused probe, the toggle — are indistinguishable.
+            self.log((direct == nil ? "via phone: " : "direct: ") + probe.reason)
 
             // Nonce: the TV keys its player on the URL, so replacing a stream
             // needs a distinct one or it will not reload.
@@ -239,30 +256,56 @@ final class PanuraCastManager: ObservableObject {
             message.subtitleHeaders = item.castHeaders
             self.server.send(message)
             self.mode = "proxy"
-            self.proxyLog.insert("direct stalled — retrying through this phone", at: 0)
+            self.log("direct stalled after 12s — retrying through this phone")
         }
+    }
+
+    /// The probe's verdict and, in plain words, what decided it.
+    private struct Probe {
+        /// Headers the TV should send, or nil when only the proxy will do.
+        let headers: [String: String]?
+        let reason: String
     }
 
     /// Returns the header set the CDN accepts for a TV-side fetch, or nil when it
     /// won't serve one at all. Tries the captured headers, then a set with
     /// Referer/Origin/Sec-Fetch removed — some CDNs reject a Referer they didn't
     /// issue, and those stream fine bare.
-    private static func probeDirect(_ url: URL, headers: [String: String]) async -> [String: String]? {
+    private static func probeDirect(_ url: URL, headers: [String: String]) async -> Probe {
         // A CDN that prefixes its segments with a decoy image must be proxied
         // however willing it is to serve the TV. The receiver plays through
         // ExoPlayer, whose TS extractor probes the first bytes and refuses on
         // seeing PNG/JPEG/GIF magic — the stream simply never starts, which is
         // what "plays on the phone, loads forever on the TV" means. libVLC hunts
         // for the sync byte and survives it, and our proxy strips it outright.
-        if await segmentsCarryDecoy(url, headers: headers) { return nil }
+        if await segmentsCarryDecoy(url, headers: headers) {
+            return Probe(headers: nil, reason: "segments carry a decoy image header")
+        }
 
-        if await head(url, headers: headers) { return headers }
+        let full = await head(url, headers: headers)
+        if let full, (200...299).contains(full) {
+            return Probe(headers: headers, reason: "CDN answered \(full) with the page's headers")
+        }
         let stripped = headers.filter { key, _ in
             let k = key.lowercased()
             return k != "referer" && k != "origin" && !k.hasPrefix("sec-fetch")
         }
-        guard stripped.count != headers.count else { return nil }
-        return await head(url, headers: stripped) ? stripped : nil
+        guard stripped.count != headers.count else {
+            return Probe(headers: nil, reason: "CDN refused the probe (\(describe(full)))")
+        }
+        let bare = await head(url, headers: stripped)
+        if let bare, (200...299).contains(bare) {
+            return Probe(headers: stripped, reason: "CDN answered \(bare) without Referer/Origin")
+        }
+        return Probe(
+            headers: nil,
+            reason: "CDN refused both probes (\(describe(full)) with headers, "
+                + "\(describe(bare)) bare)")
+    }
+
+    private static func describe(_ status: Int?) -> String {
+        guard let status else { return "no response" }
+        return "HTTP \(status)"
     }
 
     /// Fetches the first segment's opening bytes and reports whether they are
@@ -328,29 +371,29 @@ final class PanuraCastManager: ObservableObject {
         return [UInt8](data)
     }
 
-    /// True when the CDN will serve this URL to a plain client with these headers.
+    /// The status the CDN gives this URL for a plain client with these headers,
+    /// or nil when the request never completed.
     ///
     /// `HEAD` first, then a one-byte ranged `GET` if the server rejects the
     /// method. Plenty of CDNs answer 405/501 to HEAD while serving GET perfectly
     /// — treating those as a failure would proxy streams that the TV could fetch
     /// itself, tethering the phone for no reason.
-    private static func head(_ url: URL, headers: [String: String]) async -> Bool {
+    private static func head(_ url: URL, headers: [String: String]) async -> Int? {
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
         request.timeoutInterval = 8
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         guard let (_, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse else { return false }
-        if (200...299).contains(http.statusCode) { return true }
-        guard http.statusCode == 405 || http.statusCode == 501 else { return false }
+              let http = response as? HTTPURLResponse else { return nil }
+        guard http.statusCode == 405 || http.statusCode == 501 else { return http.statusCode }
 
         var ranged = URLRequest(url: url)
         ranged.timeoutInterval = 8
         for (key, value) in headers { ranged.setValue(value, forHTTPHeaderField: key) }
         ranged.setValue("bytes=0-0", forHTTPHeaderField: "Range")
         guard let (_, rangedResponse) = try? await URLSession.shared.data(for: ranged),
-              let rangedHTTP = rangedResponse as? HTTPURLResponse else { return false }
-        return (200...299).contains(rangedHTTP.statusCode)
+              let rangedHTTP = rangedResponse as? HTTPURLResponse else { return nil }
+        return rangedHTTP.statusCode
     }
 
     // MARK: transport

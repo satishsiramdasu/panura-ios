@@ -96,7 +96,7 @@ struct CastDevicesView: View {
                     .font(.footnote)
 
                 if !panura.proxyLog.isEmpty {
-                    DisclosureGroup("TV requests (\(panura.proxyLog.count))") {
+                    DisclosureGroup("Cast log (\(panura.proxyLog.count))") {
                         ForEach(panura.proxyLog, id: \.self) { line in
                             Text(line)
                                 .font(.caption2.monospaced())
