@@ -37,7 +37,14 @@ final class PanuraCastManager: ObservableObject {
     /// judged from what the CDN tells *us*, which cannot account for everything
     /// the TV's player will refuse — this is the escape hatch when a stream is
     /// detected fine, casts as direct, and then never starts on the TV.
-    @AppStorage("cast_force_proxy") var forceProxy = false
+    ///
+    /// Persisted by hand rather than with `@AppStorage`: that lives in SwiftUI,
+    /// and a model has no business importing it.
+    @Published var forceProxy = UserDefaults.standard.bool(forKey: Self.forceProxyKey) {
+        didSet { UserDefaults.standard.set(forceProxy, forKey: Self.forceProxyKey) }
+    }
+
+    private static let forceProxyKey = "cast_force_proxy"
 
     private let server = PanuraCastServer()
 
