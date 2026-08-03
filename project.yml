@@ -57,6 +57,16 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # PanuraCast. Without the usage description iOS 14+ denies local network
+        # access outright — NetService.publish() fails and the TV never finds the
+        # phone, with no error anywhere except the delegate callback. The Bonjour
+        # list must name every service type we publish or browse.
+        NSLocalNetworkUsageDescription: >-
+          Panura needs your local network to find and cast to your Panura Android
+          TV. Nothing leaves your network.
+        NSBonjourServices:
+          - _panura._tcp
+          - _googlecast._tcp
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true # extraction/browser hits arbitrary http hosts
         NSPhotoLibraryUsageDescription: Panura needs access to your videos to play and cast them.

@@ -7,6 +7,7 @@ struct BrowserView: View {
 
     @StateObject private var model = BrowserModel()
     @ObservedObject private var store = BrowsingStore.shared
+    @ObservedObject private var panuraCast = PanuraCastManager.shared
     @EnvironmentObject private var cast: CastManager
     @State private var addressText = ""
     @State private var playItem: MediaItem?
@@ -211,6 +212,16 @@ struct BrowserView: View {
                                 cast.cast(model.playable(video))
                             } label: {
                                 Label("Cast", systemImage: "tv")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        if panuraCast.isTVConnected {
+                            Button {
+                                showFoundSheet = false
+                                panuraCast.cast(model.playable(video))
+                            } label: {
+                                Label("Panura TV", systemImage: "appletv.fill")
                             }
                             .buttonStyle(.bordered)
                         }
