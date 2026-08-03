@@ -1,12 +1,17 @@
 import Foundation
 
-/// Routes `#referer=` iframes through the local relay.
+/// Routes `#referer=` iframes through `FrameSchemeHandler`.
 ///
 /// Android handles these in `shouldInterceptRequest`: it refetches the frame by
 /// hand with the custom Referer and returns the response. WKWebView has no such
 /// hook and will not let a page set a header on a frame's own request, so the
-/// rewrite happens in the page instead — the `src` is pointed at StreamProxy's
-/// `/f` route, which does the gated fetch natively.
+/// rewrite happens in the page instead — the `src` is pointed at the custom
+/// `panura-frame:` scheme, which does the gated fetch natively.
+///
+/// The scheme is not incidental. An earlier attempt pointed these frames at the
+/// local StreamProxy over `http://127.0.0.1`, and they rendered blank: the
+/// embedding page is https, so the frame was mixed content and WebKit refused it
+/// before issuing any request. A custom scheme is exempt from that rule.
 ///
 /// Scope is deliberately narrow: **only** iframes whose `src` carries
 /// `#referer=` are touched. That fragment is an explicit instruction from the
@@ -19,13 +24,13 @@ import Foundation
 /// relative assets resolving to the real host. Streams found inside the frame
 /// are re-attributed natively, so detection is unaffected.
 enum FrameRelayScript {
-    static func source(relayBase: String) -> String {
+    static var source: String {
         #"""
         (function () {
           if (window.__panuraFrameRelay) return;
           window.__panuraFrameRelay = true;
 
-          var BASE = '__PANURA_RELAY_BASE__';
+          var SCHEME = '__PANURA_SCHEME__';
           var MARK = '#referer=';
 
           // base64url, no padding — a raw URL in a query string mangles on `/`,
@@ -46,7 +51,7 @@ enum FrameRelayScript {
             try { target = new URL(target, location.href).href; } catch (e) {}
             var u = enc(target), r = enc(referer);
             if (!u) return null;
-            return BASE + '/f?u=' + u + '&r=' + r;
+            return SCHEME + '://relay/?u=' + u + '&r=' + r;
           }
 
           function rewrite(frame) {
@@ -93,6 +98,6 @@ enum FrameRelayScript {
           else document.addEventListener('DOMContentLoaded', startObserving);
         })();
         """#
-        .replacingOccurrences(of: "__PANURA_RELAY_BASE__", with: relayBase)
+        .replacingOccurrences(of: "__PANURA_SCHEME__", with: FrameSchemeHandler.scheme)
     }
 }
