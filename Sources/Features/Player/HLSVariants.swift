@@ -11,12 +11,16 @@ struct HLSVariant: Hashable {
 /// player can offer a manual quality picker — VLC only does adaptive selection
 /// internally and exposes no variant list.
 enum HLSVariants {
-    /// Only call for URLs already known to be HLS: this reads the whole body, so
-    /// pointing it at a progressive MP4 would download the file.
+    /// Safe to call for any URL that might be HLS. A ranged request caps the read
+    /// at 64 KB — comfortably more than any master playlist, and small enough
+    /// that aiming this at a progressive MP4 costs one truncated chunk instead of
+    /// the whole file. A server that ignores `Range` is handled the same way,
+    /// since the body is only ever scanned for playlist markers.
     static func fetch(url: URL, headers: [String: String]) async -> [HLSVariant] {
         var req = URLRequest(url: url)
         req.timeoutInterval = 8
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+        req.setValue("bytes=0-65535", forHTTPHeaderField: "Range")
         guard let (data, _) = try? await URLSession.shared.data(for: req),
               let text = String(data: data, encoding: .utf8),
               text.contains("#EXT-X-STREAM-INF") else { return [] }

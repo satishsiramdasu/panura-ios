@@ -436,8 +436,20 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// appear. VLC only does adaptive internally, so we switch quality by
     /// re-opening with the chosen variant URL.
     private func loadQualities() {
-        guard let item, item.contentType == "hls" || item.url.path.lowercased().hasSuffix(".m3u8")
+        guard let item, !item.isLocal else { return }
+        // Skip only what cannot be a master playlist. The old test demanded a
+        // `hls` content type or an `.m3u8` path, which hid the picker on exactly
+        // the streams this app sees most: extensionless CDN playlists with no
+        // manifest rule to type them. `HLSVariants.fetch` reads at most 64 KB and
+        // parses nothing without `#EXT-X-STREAM-INF`, so probing costs little and
+        // a wrong guess costs nothing.
+        let type = item.contentType?.lowercased()
+        guard type != "mp4", type != "dash" else { return }
+        let path = item.url.path.lowercased()
+        guard !path.hasSuffix(".mp4"), !path.hasSuffix(".mkv"),
+              !path.hasSuffix(".webm"), !path.hasSuffix(".mpd")
         else { return }
+
         let url = item.url, headers = item.headers
         Task { [weak self] in
             let variants = await HLSVariants.fetch(url: url, headers: headers)
