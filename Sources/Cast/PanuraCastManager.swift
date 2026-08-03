@@ -40,11 +40,16 @@ final class PanuraCastManager: ObservableObject {
     ///
     /// Persisted by hand rather than with `@AppStorage`: that lives in SwiftUI,
     /// and a model has no business importing it.
-    @Published var forceProxy = UserDefaults.standard.bool(forKey: Self.forceProxyKey) {
-        didSet { UserDefaults.standard.set(forceProxy, forKey: Self.forceProxyKey) }
+    /// Spelled with the concrete type, not `Self`: a stored property initializer
+    /// on a class cannot reference the covariant `Self`.
+    @Published var forceProxy =
+        UserDefaults.standard.bool(forKey: PanuraCastManager.forceProxyKey) {
+        didSet {
+            UserDefaults.standard.set(forceProxy, forKey: PanuraCastManager.forceProxyKey)
+        }
     }
 
-    private static let forceProxyKey = "cast_force_proxy"
+    fileprivate static let forceProxyKey = "cast_force_proxy"
 
     private let server = PanuraCastServer()
 
