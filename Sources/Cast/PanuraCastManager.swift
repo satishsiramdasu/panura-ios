@@ -200,6 +200,12 @@ final class PanuraCastManager: ObservableObject {
             // verdict with no evidence, and the three routes to it — the decoy
             // check, a refused probe, the toggle — are indistinguishable.
             self.log((direct == nil ? "via phone: " : "direct: ") + probe.reason)
+            if let direct {
+                // The TV sends exactly these and nothing else. When a direct cast
+                // that probed clean still stalls, this line against Android's
+                // "Cast mode: Direct → … (headers=…)" is what names the difference.
+                self.log("TV sends: " + direct.keys.sorted().joined(separator: ", "))
+            }
 
             // Nonce: the TV keys its player on the URL, so replacing a stream
             // needs a distinct one or it will not reload.
@@ -272,14 +278,25 @@ final class PanuraCastManager: ObservableObject {
     /// Referer/Origin/Sec-Fetch removed — some CDNs reject a Referer they didn't
     /// issue, and those stream fine bare.
     private static func probeDirect(_ url: URL, headers: [String: String]) async -> Probe {
+        switch await inspectSegments(url, headers: headers) {
         // A CDN that prefixes its segments with a decoy image must be proxied
         // however willing it is to serve the TV. The receiver plays through
         // ExoPlayer, whose TS extractor probes the first bytes and refuses on
         // seeing PNG/JPEG/GIF magic — the stream simply never starts, which is
         // what "plays on the phone, loads forever on the TV" means. libVLC hunts
         // for the sync byte and survives it, and our proxy strips it outright.
-        if await segmentsCarryDecoy(url, headers: headers) {
+        case .decoy:
             return Probe(headers: nil, reason: "segments carry a decoy image header")
+        // The playlist being served says nothing about the segments: gating them
+        // separately is common, and the TV then fetches a perfectly good playlist
+        // and stalls on the first segment. Probing only the manifest is what let
+        // that reach the TV and cost 12s before the watchdog noticed.
+        case .refused(let status):
+            return Probe(
+                headers: nil,
+                reason: "playlist served, segments refused (\(describe(status)))")
+        case .playable, .unknown:
+            break
         }
 
         let full = await head(url, headers: headers)
@@ -308,28 +325,46 @@ final class PanuraCastManager: ObservableObject {
         return "HTTP \(status)"
     }
 
-    /// Fetches the first segment's opening bytes and reports whether they are
-    /// something ExoPlayer will refuse. Only a positive identification forces the
-    /// proxy — anything unrecognised leaves direct mode available, since guessing
-    /// the other way would tether the phone for every stream we cannot classify.
-    private static func segmentsCarryDecoy(_ url: URL, headers: [String: String]) async -> Bool {
+    private enum SegmentVerdict {
+        /// Fetched, and the opening bytes are a container ExoPlayer accepts.
+        case playable
+        /// Fetched, but prefixed with an image ExoPlayer's TS extractor rejects.
+        case decoy
+        /// The CDN would not serve the segment to a client sending these headers.
+        case refused(Int?)
+        /// Not HLS, or the playlist could not be walked — direct stays available.
+        case unknown
+    }
+
+    /// Follows the playlist down to a real segment and reports what a TV-side
+    /// fetch would actually get.
+    ///
+    /// Both halves matter and they fail differently. A refusal means the CDN gates
+    /// segments even though it served the manifest; a decoy means it served the
+    /// bytes and ExoPlayer will not take them. Everything unrecognised stays
+    /// `unknown` and leaves direct available — guessing the other way would tether
+    /// the phone for every stream we cannot classify.
+    private static func inspectSegments(_ url: URL, headers: [String: String]) async -> SegmentVerdict {
         guard let playlist = await text(url, headers: headers, bytes: 65_535),
               playlist.contains("#EXTM3U")
-        else { return false }
+        else { return .unknown }
 
         // One level down a master playlist to reach real segments.
         var mediaPlaylist = playlist
         var base = url
         if playlist.contains("#EXT-X-STREAM-INF"),
-           let variant = firstURI(in: playlist, base: url),
-           let nested = await text(variant, headers: headers, bytes: 65_535) {
+           let variant = firstURI(in: playlist, base: url) {
+            guard let nested = await text(variant, headers: headers, bytes: 65_535) else {
+                return .refused(nil)
+            }
             mediaPlaylist = nested
             base = variant
         }
 
-        guard let segment = firstURI(in: mediaPlaylist, base: base),
-              let head = await bytes(segment, headers: headers, count: 8), head.count >= 4
-        else { return false }
+        guard let segment = firstURI(in: mediaPlaylist, base: base) else { return .unknown }
+        let (status, body) = await fetch(segment, headers: headers, count: 8)
+        guard let status, (200...299).contains(status) else { return .refused(status) }
+        guard let head = body, head.count >= 4 else { return .unknown }
 
         // Images first, and GIF is the reason why: its magic is 47 49 46 38, and
         // that leading 0x47 is also the MPEG-TS sync byte. Testing for TS first
@@ -337,14 +372,14 @@ final class PanuraCastManager: ObservableObject {
         let png: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
         let jpeg: [UInt8] = [0xFF, 0xD8, 0xFF]
         let gif: [UInt8] = [0x47, 0x49, 0x46, 0x38]
-        if Array(head.prefix(4)) == png { return true }
-        if Array(head.prefix(3)) == jpeg { return true }
-        if Array(head.prefix(4)) == gif { return true }
+        if Array(head.prefix(4)) == png { return .decoy }
+        if Array(head.prefix(3)) == jpeg { return .decoy }
+        if Array(head.prefix(4)) == gif { return .decoy }
 
-        if head[0] == 0x47 { return false }                                    // clean MPEG-TS
-        if head.count >= 8, Array(head[4..<8]) == Array("ftyp".utf8) { return false }
-        if head.count >= 8, Array(head[4..<8]) == Array("styp".utf8) { return false }
-        return false
+        if head[0] == 0x47 { return .playable }                                // clean MPEG-TS
+        if head.count >= 8, Array(head[4..<8]) == Array("ftyp".utf8) { return .playable }
+        if head.count >= 8, Array(head[4..<8]) == Array("styp".utf8) { return .playable }
+        return .unknown
     }
 
     /// First non-comment URI in a playlist, resolved against `base`.
@@ -358,17 +393,25 @@ final class PanuraCastManager: ObservableObject {
     }
 
     private static func text(_ url: URL, headers: [String: String], bytes limit: Int) async -> String? {
-        guard let data = await Self.bytes(url, headers: headers, count: limit) else { return nil }
+        let (status, data) = await fetch(url, headers: headers, count: limit)
+        guard let status, (200...299).contains(status), let data else { return nil }
         return String(data: Data(data), encoding: .utf8)
     }
 
-    private static func bytes(_ url: URL, headers: [String: String], count: Int) async -> [UInt8]? {
+    /// Ranged GET returning the status alongside the opening bytes. The status is
+    /// the point: a refusal and an unreadable body are different verdicts, and
+    /// collapsing both to nil is what let a segment-gated stream pass the probe.
+    private static func fetch(
+        _ url: URL, headers: [String: String], count: Int
+    ) async -> (Int?, [UInt8]?) {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         request.setValue("bytes=0-\(count - 1)", forHTTPHeaderField: "Range")
-        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
-        return [UInt8](data)
+        guard let (data, response) = try? await URLSession.shared.data(for: request) else {
+            return (nil, nil)
+        }
+        return ((response as? HTTPURLResponse)?.statusCode, [UInt8](data))
     }
 
     /// The status the CDN gives this URL for a plain client with these headers,
