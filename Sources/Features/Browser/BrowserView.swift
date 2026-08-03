@@ -1,7 +1,12 @@
 import SwiftUI
 
 struct BrowserView: View {
+    /// Address handed over from Home. Cleared once loaded so the same entry
+    /// isn't replayed on every tab switch.
+    @Binding var pendingAddress: String?
+
     @StateObject private var model = BrowserModel()
+    @ObservedObject private var store = BrowsingStore.shared
     @EnvironmentObject private var cast: CastManager
     @State private var addressText = ""
     @State private var playItem: MediaItem?
@@ -26,7 +31,26 @@ struct BrowserView: View {
         .sheet(isPresented: $showFoundSheet) { foundSheet }
         .onChange(of: model.currentURL) { url in
             if let url, !editingAddress { addressText = url.absoluteString }
+            if let url { store.recordVisit(url: url, title: model.pageTitle) }
         }
+        // Record again when the title lands — WebKit fires it after didFinish, so
+        // the first write usually has an empty title.
+        .onChange(of: model.pageTitle) { title in
+            if let url = model.currentURL, !title.isEmpty {
+                store.recordVisit(url: url, title: title)
+            }
+        }
+        .onChange(of: pendingAddress) { _ in consumePending() }
+        .onAppear { consumePending() }
+    }
+
+    /// Load whatever Home handed over, then clear it.
+    private func consumePending() {
+        guard let address = pendingAddress, !address.isEmpty else { return }
+        pendingAddress = nil
+        editingAddress = false
+        addressText = address
+        model.load(address)
     }
 
     // MARK: address bar
@@ -92,6 +116,23 @@ struct BrowserView: View {
             }
 
             if let url = model.currentURL {
+                let key = url.absoluteString
+                Button {
+                    if store.isShortcut(key) {
+                        store.removeShortcut(url: key)
+                    } else {
+                        store.addShortcut(
+                            url: key,
+                            title: model.pageTitle.isEmpty ? (url.host ?? key) : model.pageTitle
+                        )
+                    }
+                } label: {
+                    Label(
+                        store.isShortcut(key) ? "Remove shortcut" : "Add to shortcuts",
+                        systemImage: store.isShortcut(key) ? "star.fill" : "star"
+                    )
+                }
+
                 Button {
                     UIPasteboard.general.string = url.absoluteString
                 } label: { Label("Copy link", systemImage: "doc.on.doc") }

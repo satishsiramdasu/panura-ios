@@ -130,6 +130,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             let saved = UserDefaults.standard.double(forKey: Self.resumeKey(item.url))
             if saved > 15 { pendingResumeSeconds = saved }
         }
+        // Surface it on Home right away — the user may leave before the first
+        // position save, and an item that never appears can't be resumed from.
+        BrowsingStore.shared.beginWatching(item)
 
         buildAndPlay()
         setupRemoteCommands()
@@ -247,6 +250,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             let saved = UserDefaults.standard.double(forKey: Self.resumeKey(newItem.url))
             if saved > 15 { pendingResumeSeconds = saved }
         }
+        BrowsingStore.shared.beginWatching(newItem)
         buildAndPlay()
         loadQualities()
     }
@@ -588,6 +592,8 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         } else {
             UserDefaults.standard.removeObject(forKey: Self.resumeKey(item.url))
         }
+        // Same rule drives the Home row: finished (or barely started) drops off.
+        BrowsingStore.shared.updateWatching(url: item.url, position: e, duration: total)
     }
 
     // MARK: track loading
