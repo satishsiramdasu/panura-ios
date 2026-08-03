@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Swifter
 import UIKit
 
@@ -13,11 +14,19 @@ import UIKit
 final class PanuraCastServer: NSObject {
     static let httpPort: UInt16 = 8888
     static let socketPort: UInt16 = 8889
-    static let serviceType = "_panura._tcp."
+    /// No trailing dot: Network framework rejects the NetService/Android form.
+    static let serviceType = "_panura._tcp"
 
     private let http = HttpServer()
     private let socket = HttpServer()
-    private var service: NetService?
+    /// Bonjour advertisement. `NWListener` rather than `NetService` — the latter
+    /// is the legacy API and publishes unreliably on current iOS.
+    ///
+    /// It owns its own socket on an OS-chosen port, which is fine: the receiver
+    /// discards the resolved port and connects to :8889 by convention, so only
+    /// the A record (this device's address) actually matters. Trying to make the
+    /// advertisement own :8888 would just collide with the HTTP server.
+    private var advertiser: NWListener?
 
     private var clients: [WebSocketSession] = []
     /// Last "stream" message, replayed to any client that connects afterwards.
@@ -40,6 +49,8 @@ final class PanuraCastServer: NSObject {
 
     var onMessage: ((CastMessage) -> Void)?
     var onClientCountChanged: ((Int) -> Void)?
+    /// (advertising, error) — fires when Bonjour actually publishes or fails.
+    var onAdvertisingChanged: ((Bool, String?) -> Void)?
 
     // MARK: lifecycle
 
@@ -62,8 +73,8 @@ final class PanuraCastServer: NSObject {
     }
 
     func stop() {
-        service?.stop()
-        service = nil
+        advertiser?.cancel()
+        advertiser = nil
         http.stop()
         socket.stop()
         lock.lock()
@@ -75,16 +86,41 @@ final class PanuraCastServer: NSObject {
         isRunning = false
     }
 
-    /// Publishes on :8888 — the port the TV resolves. It then connects to :8889
-    /// by convention, which is why only one service is advertised.
+    /// Publishes `_panura._tcp` so the TV can find this device.
+    ///
+    /// Reports through `onAdvertisingChanged` rather than assuming success:
+    /// publishing fails silently when local-network permission is denied, and
+    /// showing "waiting for a TV" while nothing is advertised sends the user
+    /// looking at the TV for a fault that is on the phone.
     private func advertise() {
-        let name = UIDevice.current.name
-        let service = NetService(
-            domain: "local.", type: Self.serviceType, name: name, port: Int32(Self.httpPort)
-        )
-        service.delegate = self
-        service.publish()
-        self.service = service
+        do {
+            let listener = try NWListener(using: .tcp)
+            // Network framework wants the type WITHOUT a trailing dot, unlike
+            // NetService and unlike the Android constant.
+            listener.service = NWListener.Service(
+                name: UIDevice.current.name,
+                type: Self.serviceType
+            )
+            // We never serve anything on this socket; it exists so the service
+            // has something to advertise.
+            listener.newConnectionHandler = { $0.cancel() }
+            listener.stateUpdateHandler = { [weak self] state in
+                switch state {
+                case .ready:
+                    self?.onAdvertisingChanged?(true, nil)
+                case .failed(let error):
+                    self?.onAdvertisingChanged?(false, error.localizedDescription)
+                case .cancelled:
+                    self?.onAdvertisingChanged?(false, nil)
+                default:
+                    break
+                }
+            }
+            listener.start(queue: .main)
+            advertiser = listener
+        } catch {
+            onAdvertisingChanged?(false, error.localizedDescription)
+        }
     }
 
     // MARK: messaging
@@ -296,13 +332,5 @@ final class PanuraCastServer: NSObject {
             if fallback == nil { fallback = address }
         }
         return fallback
-    }
-}
-
-extension PanuraCastServer: NetServiceDelegate {
-    func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) {
-        // Almost always the local-network permission being denied; the TV simply
-        // never finds us, so surface it rather than failing silently.
-        onClientCountChanged?(0)
     }
 }

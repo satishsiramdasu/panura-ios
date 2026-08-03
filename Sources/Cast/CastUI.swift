@@ -46,10 +46,24 @@ struct CastDevicesView: View {
                             .font(.footnote).foregroundStyle(.secondary)
                     }
                 } else if panura.isAdvertising {
-                    Label("Waiting for a TV…", systemImage: "dot.radiowaves.left.and.right")
+                    Label("Discoverable — waiting for a TV…", systemImage: "dot.radiowaves.left.and.right")
                         .foregroundStyle(.secondary)
+                } else if panura.isServerRunning {
+                    // Sockets are up but Bonjour has not published: the TV cannot
+                    // possibly find us, and saying "waiting" would point the user
+                    // at the TV for a fault that is on this device.
+                    Label("Not discoverable", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
                 } else {
                     Text("Off").foregroundStyle(.secondary)
+                }
+
+                // The address the TV must reach. If this is absent or on a
+                // different subnet from the TV, discovery cannot work whatever
+                // the app does.
+                if panura.isServerRunning, let ip = PanuraCastServer.localIPv4() {
+                    LabeledContent("This device", value: ip)
+                        .font(.footnote)
                 }
 
                 if panura.isCasting {

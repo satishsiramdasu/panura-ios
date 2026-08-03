@@ -12,7 +12,11 @@ import UIKit
 final class PanuraCastManager: ObservableObject {
     static let shared = PanuraCastManager()
 
+    /// Bonjour has actually published us. Driven by the listener's own state —
+    /// never assumed, because a failed publish is invisible otherwise.
     @Published private(set) var isAdvertising = false
+    /// Sockets are bound. Casting needs this; being discoverable is separate.
+    @Published private(set) var isServerRunning = false
     @Published private(set) var isTVConnected = false
     @Published private(set) var connectedTVName = ""
     @Published private(set) var isCasting = false
@@ -34,6 +38,18 @@ final class PanuraCastManager: ObservableObject {
         server.onClientCountChanged = { [weak self] count in
             Task { @MainActor in self?.clientCountChanged(count) }
         }
+        server.onAdvertisingChanged = { [weak self] advertising, error in
+            Task { @MainActor in
+                guard let self else { return }
+                self.isAdvertising = advertising
+                if let error {
+                    self.lastError = "Bonjour could not publish: \(error). Panura needs "
+                        + "Local Network access — check Settings → Panura."
+                } else if advertising {
+                    self.lastError = nil
+                }
+            }
+        }
     }
 
     // MARK: connection
@@ -41,10 +57,10 @@ final class PanuraCastManager: ObservableObject {
     /// Starts advertising. Idempotent — casting calls this first, so the user
     /// never has to "connect" before picking a video.
     func start() {
-        guard !isAdvertising else { return }
+        guard !isServerRunning else { return }
         if server.start() {
-            isAdvertising = true
-            lastError = nil
+            isServerRunning = true
+            // isAdvertising is NOT set here — it follows the listener going ready.
             // Announce ourselves to whoever is already listening.
             var hello = CastMessage(type: "hello")
             hello.deviceName = UIDevice.current.name
@@ -59,6 +75,7 @@ final class PanuraCastManager: ObservableObject {
         server.send(CastMessage(type: "stop"))
         server.stop()
         isAdvertising = false
+        isServerRunning = false
         isTVConnected = false
         connectedTVName = ""
         isCasting = false
@@ -88,7 +105,7 @@ final class PanuraCastManager: ObservableObject {
     /// direct simply moves the rejection onto the TV.
     func cast(_ item: MediaItem) {
         start()
-        guard isAdvertising else { return }
+        guard isServerRunning else { return }
 
         server.streamURL = item.url
         server.headers = item.headers
