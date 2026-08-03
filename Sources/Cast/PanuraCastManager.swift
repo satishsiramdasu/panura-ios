@@ -142,7 +142,9 @@ final class PanuraCastManager: ObservableObject {
         guard isServerRunning else { return }
 
         server.streamURL = item.url
-        server.headers = item.headers
+        // Untrimmed: the TV needs everything the page sent, and the proxy must
+        // fetch on the same terms the TV would.
+        server.headers = item.castHeaders
         guard let proxy = PanuraCastServer.proxyURL(for: item.url) else {
             lastError = "No Wi-Fi address — the TV has no way to reach this device."
             return
@@ -154,7 +156,7 @@ final class PanuraCastManager: ObservableObject {
 
         let skipProbe = forceProxy
         Task { [weak self] in
-            let direct = skipProbe ? nil : await Self.probeDirect(item.url, headers: item.headers)
+            let direct = skipProbe ? nil : await Self.probeDirect(item.url, headers: item.castHeaders)
             guard let self else { return }
 
             // Nonce: the TV keys its player on the URL, so replacing a stream
@@ -173,7 +175,7 @@ final class PanuraCastManager: ObservableObject {
             // Always the full captured set, never the trimmed one — the subtitle
             // host is usually a different origin from the video CDN and often
             // wants the opposite headers.
-            message.subtitleHeaders = item.headers
+            message.subtitleHeaders = item.castHeaders
 
             self.server.send(message)
             self.mode = direct == nil ? "proxy" : "direct"
@@ -209,7 +211,7 @@ final class PanuraCastManager: ObservableObject {
             message.subtitles = item.subtitles.map {
                 CastSubtitle(url: $0.url.absoluteString, label: $0.label, lang: $0.language)
             }
-            message.subtitleHeaders = item.headers
+            message.subtitleHeaders = item.castHeaders
             self.server.send(message)
             self.mode = "proxy"
             self.proxyLog.insert("direct stalled — retrying through this phone", at: 0)

@@ -8,9 +8,19 @@ struct MediaItem: Identifiable, Hashable {
     var isLocal: Bool
     var durationSeconds: Double?
     var thumbnailURL: URL?
-    /// Headers captured during extraction (Referer, cookies, etc.) needed to
-    /// replay gated streams — mirrors the Android "full header set" rule.
+    /// Headers for local playback. Narrowed by the site rule, because requiring
+    /// `Origin` forces the stream through the local relay and libVLC sends the
+    /// rest natively.
     var headers: [String: String] = [:]
+    /// Everything captured at detection, untrimmed — what Android replays on
+    /// every path.
+    ///
+    /// Casting must use this, not `headers`. A rule that lists only
+    /// `user-agent` drops Cookie and Origin, which is fine for libVLC on this
+    /// device and fatal for a TV fetching the same URL: a cookie-gated CDN
+    /// refuses it, the TV stalls, and the stream looks broken on iOS while
+    /// working from Android, which sends the full set.
+    var castHeaders: [String: String] = [:]
     /// Sidecar subtitles sniffed from the page, sideloaded into the player.
     var subtitles: [SubtitleTrack] = []
     /// `hls` | `mp4` | `dash` hint from the manifest rule; drives the cast MIME
@@ -25,6 +35,7 @@ struct MediaItem: Identifiable, Hashable {
         durationSeconds: Double? = nil,
         thumbnailURL: URL? = nil,
         headers: [String: String] = [:],
+        castHeaders: [String: String] = [:],
         subtitles: [SubtitleTrack] = [],
         contentType: String? = nil
     ) {
@@ -35,6 +46,8 @@ struct MediaItem: Identifiable, Hashable {
         self.durationSeconds = durationSeconds
         self.thumbnailURL = thumbnailURL
         self.headers = headers
+        // Falling back keeps every caller that has only one set working.
+        self.castHeaders = castHeaders.isEmpty ? headers : castHeaders
         self.subtitles = subtitles
         self.contentType = contentType
     }
@@ -46,7 +59,10 @@ struct ExtractedVideo: Identifiable, Hashable {
     let id = UUID()
     let url: URL
     let title: String
+    /// Rule-narrowed, for local playback.
     let headers: [String: String]
+    /// Untrimmed, for casting — see `MediaItem.castHeaders`.
+    var castHeaders: [String: String] = [:]
     /// `hls` | `mp4` | `dash` from the manifest rule, when one matched.
     /// Extensionless manifests can't be identified from the URL alone.
     var contentType: String?

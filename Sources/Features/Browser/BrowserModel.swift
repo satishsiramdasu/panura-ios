@@ -90,6 +90,7 @@ final class BrowserModel: ObservableObject {
         url: URL,
         title: String,
         headers: [String: String],
+        castHeaders: [String: String] = [:],
         contentType: String? = nil
     ) {
         let key = url.absoluteString
@@ -97,7 +98,11 @@ final class BrowserModel: ObservableObject {
         seen.insert(key)
         let name = title.isEmpty ? mediaSessionTitle : title
         foundVideos.append(
-            ExtractedVideo(url: url, title: name, headers: headers, contentType: contentType)
+            ExtractedVideo(
+                url: url, title: name, headers: headers,
+                castHeaders: castHeaders.isEmpty ? headers : castHeaders,
+                contentType: contentType
+            )
         )
     }
 
@@ -128,6 +133,7 @@ final class BrowserModel: ObservableObject {
             title: video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title,
             url: video.url,
             headers: video.headers,
+            castHeaders: video.castHeaders,
             subtitles: foundSubtitles,
             contentType: video.contentType
         )

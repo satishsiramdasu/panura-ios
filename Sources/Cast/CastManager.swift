@@ -53,8 +53,11 @@ final class CastManager: NSObject, ObservableObject {
         // Header-gated streams: the BE269497 custom receiver reads
         // customData.headers and re-injects them on every request — same
         // contract as the Android sender (ChromecastManager.loadMedia).
-        if !item.headers.isEmpty {
-            builder.customData = ["headers": item.headers]
+        // Untrimmed, like the Android sender: the receiver fetches from its own
+        // address, so it needs every header the page sent — a rule that narrows
+        // the set for libVLC would drop the cookie this stream is gated on.
+        if !item.castHeaders.isEmpty {
+            builder.customData = ["headers": item.castHeaders]
         }
 
         let request = GCKMediaLoadRequestDataBuilder()

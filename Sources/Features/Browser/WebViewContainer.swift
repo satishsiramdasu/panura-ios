@@ -361,6 +361,20 @@ struct WebViewContainer: UIViewRepresentable {
             let allowed = dict["headers"] as? [String]
             func wants(_ name: String) -> Bool { allowed?.contains(name) ?? true }
 
+            // Untrimmed copy for casting. The rule narrows what libVLC gets —
+            // requiring Origin would force this device's relay — but a TV
+            // fetching the same URL needs everything the page sent, exactly as
+            // Android replays it. Trimming here is what made cookie-gated
+            // streams stall on the TV from iOS and play from Android.
+            var full = headers
+            if let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
+                full["Origin"] = origin
+            }
+            if let ua, !ua.isEmpty { full["User-Agent"] = ua }
+            if let cookie = dict["cookie"] as? String, !cookie.isEmpty {
+                full["Cookie"] = cookie
+            }
+
             if wants("origin"),
                let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
                 headers["Origin"] = origin
@@ -374,7 +388,10 @@ struct WebViewContainer: UIViewRepresentable {
             }
 
             let type = (dict["type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            model.report(url: url, title: title, headers: headers, contentType: type)
+            model.report(
+                url: url, title: title, headers: headers,
+                castHeaders: full, contentType: type
+            )
         }
     }
 }
