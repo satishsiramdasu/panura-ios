@@ -382,6 +382,13 @@ struct WebViewContainer: UIViewRepresentable {
             // proxy fetches from this device, where the cookie is valid.
             var full = headers
             if let ua, !ua.isEmpty { full["User-Agent"] = ua }
+            // Accept is not optional to these CDNs, and its absence is what
+            // actually broke direct casting. streamvin serves the playlist to a
+            // request carrying nothing but `Accept: */*`, and answers "security
+            // error" to a request with a perfect Referer, User-Agent and cookies
+            // and no Accept. ExoPlayer sends none of its own; Android only worked
+            // because it forwards the browser's.
+            full["Accept"] = "*/*"
 
             if wants("origin"),
                let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
