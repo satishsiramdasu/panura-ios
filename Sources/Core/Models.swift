@@ -12,14 +12,15 @@ struct MediaItem: Identifiable, Hashable {
     /// `Origin` forces the stream through the local relay and libVLC sends the
     /// rest natively.
     var headers: [String: String] = [:]
-    /// Everything captured at detection, untrimmed — what Android replays on
-    /// every path.
+    /// What a *second device* should send: Referer and User-Agent, never Origin
+    /// or Cookie.
     ///
-    /// Casting must use this, not `headers`. A rule that lists only
-    /// `user-agent` drops Cookie and Origin, which is fine for libVLC on this
-    /// device and fatal for a TV fetching the same URL: a cookie-gated CDN
-    /// refuses it, the TV stalls, and the stream looks broken on iOS while
-    /// working from Android, which sends the full set.
+    /// Casting must use this, not `headers`. A session cookie is bound to the IP
+    /// and User-Agent that obtained it, so replaying it from a TV is worse than
+    /// sending none — the origin sees a cookie it knows is wrong. Proven by
+    /// casting one video from both phones to the same TV: Android's
+    /// [User-Agent, Referer, …] played; iOS's [Origin, Cookie, Referer,
+    /// User-Agent] got HTTP 200 with a body reading "security error".
     var castHeaders: [String: String] = [:]
     /// Sidecar subtitles sniffed from the page, sideloaded into the player.
     var subtitles: [SubtitleTrack] = []

@@ -361,19 +361,27 @@ struct WebViewContainer: UIViewRepresentable {
             let allowed = dict["headers"] as? [String]
             func wants(_ name: String) -> Bool { allowed?.contains(name) ?? true }
 
-            // Untrimmed copy for casting. The rule narrows what libVLC gets —
-            // requiring Origin would force this device's relay — but a TV
-            // fetching the same URL needs everything the page sent, exactly as
-            // Android replays it. Trimming here is what made cookie-gated
-            // streams stall on the TV from iOS and play from Android.
+            // What a TV should send: Referer and User-Agent, and deliberately
+            // NOT Origin or Cookie.
+            //
+            // Established by casting one video from both phones to the same TV.
+            // Android sent [User-Agent, Referer, sec-ch-ua*, Accept] and played;
+            // iOS sent [Origin, Cookie, Referer, User-Agent] and the CDN answered
+            // HTTP 200 with a body reading "security error". Same URL, same TV,
+            // same second.
+            //
+            // Cookies are the trap. A page's session cookie — cf_clearance above
+            // all — is bound to the IP and User-Agent that obtained it, so
+            // replaying it from a second device is not neutral: it is a cookie
+            // the origin can see is wrong, and it is rejected harder than sending
+            // none. Origin likewise marks the request as cross-site to a CDN that
+            // is happy to serve a plain one.
+            //
+            // A site that genuinely needs a cookie loses nothing: the TV reports
+            // the failure and the proxy takes over within about 12ms, and the
+            // proxy fetches from this device, where the cookie is valid.
             var full = headers
-            if let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
-                full["Origin"] = origin
-            }
             if let ua, !ua.isEmpty { full["User-Agent"] = ua }
-            if let cookie = dict["cookie"] as? String, !cookie.isEmpty {
-                full["Cookie"] = cookie
-            }
 
             if wants("origin"),
                let origin = dict["origin"] as? String, !origin.isEmpty, origin != "null" {
@@ -388,38 +396,10 @@ struct WebViewContainer: UIViewRepresentable {
             }
 
             let type = (dict["type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-
-            // Prefer WebKit's cookie jar over what the page could see. The CDN's
-            // session cookie is routinely HttpOnly, and set on the embed host
-            // rather than the stream host — `document.cookie` misses it on both
-            // counts, which is exactly what a TV's fetch then gets refused for.
-            // Local playback keeps the rule's `wants("cookie")` gate; casting
-            // always carries whatever the jar has.
-            guard let store = message.webView?.configuration.websiteDataStore.httpCookieStore else {
-                model.report(
-                    url: url, title: title, headers: headers,
-                    castHeaders: full, contentType: type
-                )
-                return
-            }
-            let refererURL = headers["Referer"].flatMap { URL(string: $0) }
-            let sendCookie = wants("cookie")
-            // Copied, not captured: the locals are `var`, and a concurrent task
-            // may not reference them.
-            let baseHeaders = headers
-            let baseFull = full
-            Task { @MainActor [model] in
-                var local = baseHeaders
-                var cast = baseFull
-                if let jar = await WebCookies.header(for: url, referer: refererURL, store: store) {
-                    cast["Cookie"] = jar
-                    if sendCookie { local["Cookie"] = jar }
-                }
-                model.report(
-                    url: url, title: title, headers: local,
-                    castHeaders: cast, contentType: type
-                )
-            }
+            model.report(
+                url: url, title: title, headers: headers,
+                castHeaders: full, contentType: type
+            )
         }
     }
 }
