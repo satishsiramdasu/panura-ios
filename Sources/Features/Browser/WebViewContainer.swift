@@ -388,10 +388,38 @@ struct WebViewContainer: UIViewRepresentable {
             }
 
             let type = (dict["type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            model.report(
-                url: url, title: title, headers: headers,
-                castHeaders: full, contentType: type
-            )
+
+            // Prefer WebKit's cookie jar over what the page could see. The CDN's
+            // session cookie is routinely HttpOnly, and set on the embed host
+            // rather than the stream host — `document.cookie` misses it on both
+            // counts, which is exactly what a TV's fetch then gets refused for.
+            // Local playback keeps the rule's `wants("cookie")` gate; casting
+            // always carries whatever the jar has.
+            guard let store = message.webView?.configuration.websiteDataStore.httpCookieStore else {
+                model.report(
+                    url: url, title: title, headers: headers,
+                    castHeaders: full, contentType: type
+                )
+                return
+            }
+            let refererURL = headers["Referer"].flatMap { URL(string: $0) }
+            let sendCookie = wants("cookie")
+            // Copied, not captured: the locals are `var`, and a concurrent task
+            // may not reference them.
+            let baseHeaders = headers
+            let baseFull = full
+            Task { @MainActor [model] in
+                var local = baseHeaders
+                var cast = baseFull
+                if let jar = await WebCookies.header(for: url, referer: refererURL, store: store) {
+                    cast["Cookie"] = jar
+                    if sendCookie { local["Cookie"] = jar }
+                }
+                model.report(
+                    url: url, title: title, headers: local,
+                    castHeaders: cast, contentType: type
+                )
+            }
         }
     }
 }
