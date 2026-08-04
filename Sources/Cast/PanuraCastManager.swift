@@ -69,6 +69,10 @@ final class PanuraCastManager: ObservableObject {
     /// so a stall never downgrades a stream the user has since replaced.
     private var castID = ""
 
+    /// What to re-send if the current direct cast turns out not to play. Held
+    /// only while a direct cast is outstanding.
+    private var pendingDirect: (item: MediaItem, proxyURL: String)?
+
     private init() {
         server.onMessage = { [weak self] message in
             Task { @MainActor in self?.handle(message) }
@@ -160,6 +164,7 @@ final class PanuraCastManager: ObservableObject {
         streamTitle = ""
         mode = ""
         castID = ""
+        pendingDirect = nil
         playback = PanuraPlayback()
     }
 
@@ -227,7 +232,14 @@ final class PanuraCastManager: ObservableObject {
 
             self.server.send(message)
             self.mode = direct == nil ? "proxy" : "direct"
-            if direct != nil { self.watchDirectCast(item, proxyURL: proxyURL) }
+            if direct != nil {
+                // Kept so the TV's own error report can trigger the same fallback
+                // the watchdog would, without waiting out its grace period.
+                self.pendingDirect = (item, proxyURL)
+                self.watchDirectCast(item, proxyURL: proxyURL)
+            } else {
+                self.pendingDirect = nil
+            }
         }
     }
 
@@ -243,27 +255,33 @@ final class PanuraCastManager: ObservableObject {
         let expected = item.url.absoluteString
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(12))
-            guard let self,
-                  self.isCasting,
-                  self.mode == "direct",
-                  self.castID == expected,
-                  self.playback.positionMs == 0,
-                  !self.playback.isPlaying
-            else { return }
-
-            var message = CastMessage(type: "stream")
-            message.streamUrl = proxyURL
-            message.proxyUrl = proxyURL
-            message.title = item.title
-            message.mode = "proxy"
-            message.subtitles = item.subtitles.map {
-                CastSubtitle(url: $0.url.absoluteString, label: $0.label, lang: $0.language)
-            }
-            message.subtitleHeaders = item.castHeaders
-            self.server.send(message)
-            self.mode = "proxy"
-            self.log("direct stalled after 12s — retrying through this phone")
+            guard let self, self.castID == expected else { return }
+            self.fallBackToProxy(item, proxyURL: proxyURL, why: "direct stalled after 12s")
         }
+    }
+
+    /// Re-sends the current cast through this phone. Safe to call twice — the
+    /// mode check makes the second one a no-op.
+    private func fallBackToProxy(_ item: MediaItem, proxyURL: String, why: String) {
+        guard isCasting,
+              mode == "direct",
+              castID == item.url.absoluteString,
+              playback.positionMs == 0,
+              !playback.isPlaying
+        else { return }
+
+        var message = CastMessage(type: "stream")
+        message.streamUrl = proxyURL
+        message.proxyUrl = proxyURL
+        message.title = item.title
+        message.mode = "proxy"
+        message.subtitles = item.subtitles.map {
+            CastSubtitle(url: $0.url.absoluteString, label: $0.label, lang: $0.language)
+        }
+        message.subtitleHeaders = item.castHeaders
+        server.send(message)
+        mode = "proxy"
+        log("\(why) — retrying through this phone")
     }
 
     /// The probe's verdict and, in plain words, what decided it.
@@ -278,27 +296,20 @@ final class PanuraCastManager: ObservableObject {
     /// Referer/Origin/Sec-Fetch removed — some CDNs reject a Referer they didn't
     /// issue, and those stream fine bare.
     private static func probeDirect(_ url: URL, headers: [String: String]) async -> Probe {
-        switch await inspectSegments(url, headers: headers) {
-        // A CDN that prefixes its segments with a decoy image must be proxied
-        // however willing it is to serve the TV. The receiver plays through
-        // ExoPlayer, whose TS extractor probes the first bytes and refuses on
-        // seeing PNG/JPEG/GIF magic — the stream simply never starts, which is
-        // what "plays on the phone, loads forever on the TV" means. libVLC hunts
-        // for the sync byte and survives it, and our proxy strips it outright.
-        case .decoy:
-            return Probe(headers: nil, reason: "segments carry a decoy image header")
-        // The playlist being served says nothing about the segments: gating them
-        // separately is common, and the TV then fetches a perfectly good playlist
-        // and stalls on the first segment. Probing only the manifest is what let
-        // that reach the TV and cost 12s before the watchdog noticed.
-        case .refused(let status):
-            return Probe(
-                headers: nil,
-                reason: "playlist served, segments refused (\(describe(status)))")
-        case .playable, .unknown:
-            break
-        }
-
+        // HEAD only, and never a GET — the probe must not *consume* the stream.
+        //
+        // Walking the playlist down to a segment looked like the more thorough
+        // check, and it cost us direct mode outright: these tokens bind to the
+        // first client that actually fetches them, so the phone's own probe
+        // claimed the URL and the TV was then answered with `HTTP 200
+        // "security error"` no matter which headers it sent. Android has always
+        // done a single HEAD (CastManager.tryDirectCast) and casts the same sites
+        // direct without trouble.
+        //
+        // Nothing is lost by not predicting: the TV now reports a playback
+        // failure the moment it happens, so anything this cannot foresee — a
+        // decoy-prefixed segment, a gated chunk — falls back to the proxy in
+        // about two seconds rather than being guessed at from the wrong device.
         let full = await head(url, headers: headers)
         if let full, (200...299).contains(full) {
             return Probe(headers: headers, reason: "CDN answered \(full) with the page's headers")
@@ -323,95 +334,6 @@ final class PanuraCastManager: ObservableObject {
     private static func describe(_ status: Int?) -> String {
         guard let status else { return "no response" }
         return "HTTP \(status)"
-    }
-
-    private enum SegmentVerdict {
-        /// Fetched, and the opening bytes are a container ExoPlayer accepts.
-        case playable
-        /// Fetched, but prefixed with an image ExoPlayer's TS extractor rejects.
-        case decoy
-        /// The CDN would not serve the segment to a client sending these headers.
-        case refused(Int?)
-        /// Not HLS, or the playlist could not be walked — direct stays available.
-        case unknown
-    }
-
-    /// Follows the playlist down to a real segment and reports what a TV-side
-    /// fetch would actually get.
-    ///
-    /// Both halves matter and they fail differently. A refusal means the CDN gates
-    /// segments even though it served the manifest; a decoy means it served the
-    /// bytes and ExoPlayer will not take them. Everything unrecognised stays
-    /// `unknown` and leaves direct available — guessing the other way would tether
-    /// the phone for every stream we cannot classify.
-    private static func inspectSegments(_ url: URL, headers: [String: String]) async -> SegmentVerdict {
-        guard let playlist = await text(url, headers: headers, bytes: 65_535),
-              playlist.contains("#EXTM3U")
-        else { return .unknown }
-
-        // One level down a master playlist to reach real segments.
-        var mediaPlaylist = playlist
-        var base = url
-        if playlist.contains("#EXT-X-STREAM-INF"),
-           let variant = firstURI(in: playlist, base: url) {
-            guard let nested = await text(variant, headers: headers, bytes: 65_535) else {
-                return .refused(nil)
-            }
-            mediaPlaylist = nested
-            base = variant
-        }
-
-        guard let segment = firstURI(in: mediaPlaylist, base: base) else { return .unknown }
-        let (status, body) = await fetch(segment, headers: headers, count: 8)
-        guard let status, (200...299).contains(status) else { return .refused(status) }
-        guard let head = body, head.count >= 4 else { return .unknown }
-
-        // Images first, and GIF is the reason why: its magic is 47 49 46 38, and
-        // that leading 0x47 is also the MPEG-TS sync byte. Testing for TS first
-        // would wave every GIF-prefixed segment through as clean.
-        let png: [UInt8] = [0x89, 0x50, 0x4E, 0x47]
-        let jpeg: [UInt8] = [0xFF, 0xD8, 0xFF]
-        let gif: [UInt8] = [0x47, 0x49, 0x46, 0x38]
-        if Array(head.prefix(4)) == png { return .decoy }
-        if Array(head.prefix(3)) == jpeg { return .decoy }
-        if Array(head.prefix(4)) == gif { return .decoy }
-
-        if head[0] == 0x47 { return .playable }                                // clean MPEG-TS
-        if head.count >= 8, Array(head[4..<8]) == Array("ftyp".utf8) { return .playable }
-        if head.count >= 8, Array(head[4..<8]) == Array("styp".utf8) { return .playable }
-        return .unknown
-    }
-
-    /// First non-comment URI in a playlist, resolved against `base`.
-    private static func firstURI(in playlist: String, base: URL) -> URL? {
-        for line in playlist.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { continue }
-            return URL(string: trimmed, relativeTo: base)?.absoluteURL
-        }
-        return nil
-    }
-
-    private static func text(_ url: URL, headers: [String: String], bytes limit: Int) async -> String? {
-        let (status, data) = await fetch(url, headers: headers, count: limit)
-        guard let status, (200...299).contains(status), let data else { return nil }
-        return String(data: Data(data), encoding: .utf8)
-    }
-
-    /// Ranged GET returning the status alongside the opening bytes. The status is
-    /// the point: a refusal and an unreadable body are different verdicts, and
-    /// collapsing both to nil is what let a segment-gated stream pass the probe.
-    private static func fetch(
-        _ url: URL, headers: [String: String], count: Int
-    ) async -> (Int?, [UInt8]?) {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 8
-        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
-        request.setValue("bytes=0-\(count - 1)", forHTTPHeaderField: "Range")
-        guard let (data, response) = try? await URLSession.shared.data(for: request) else {
-            return (nil, nil)
-        }
-        return ((response as? HTTPURLResponse)?.statusCode, [UInt8](data))
     }
 
     /// The status the CDN gives this URL for a plain client with these headers,
@@ -468,6 +390,14 @@ final class PanuraCastManager: ObservableObject {
             server.send(CastMessage(type: "pong"))
         case "hello":
             connectedTVName = message.deviceName
+        case "error":
+            // The TV could not play what we sent. It is the only party that knows
+            // this, and it knows within a second or two — the watchdog's 12s was
+            // only ever a stand-in for being told.
+            log("TV reports \(message.command.isEmpty ? "a playback error" : message.command)")
+            if let pending = pendingDirect {
+                fallBackToProxy(pending.item, proxyURL: pending.proxyURL, why: "TV refused direct")
+            }
         case "status":
             playback = PanuraPlayback(
                 positionMs: message.positionMs,
