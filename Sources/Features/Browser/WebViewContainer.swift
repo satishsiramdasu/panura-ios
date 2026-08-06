@@ -224,6 +224,16 @@ struct WebViewContainer: UIViewRepresentable {
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction
         ) async -> WKNavigationActionPolicy {
+            // A scheme we don't render is an app handoff — youtube://, intent://,
+            // itms-apps:// and friends. WKWebView passes those to the system,
+            // which is how a page throws the user out of the browser mid-session
+            // (YouTube does it on sign-in). A tab should stay a tab, so they are
+            // dropped. Nothing here opens them; the browser simply ignores them.
+            if let scheme = navigationAction.request.url?.scheme?.lowercased(),
+               !Self.webSchemes.contains(scheme) {
+                return .cancel
+            }
+
             if let rawURL = navigationAction.request.url,
                VideoURL.looksLikeVideo(rawURL) {
                 // Same context capture as the JS path: the page we're leaving
@@ -244,6 +254,10 @@ struct WebViewContainer: UIViewRepresentable {
             }
             return .allow
         }
+
+        /// Schemes the web view actually renders. Everything else is a handoff
+        /// to some other app, which a browser tab has no business performing.
+        private static let webSchemes: Set<String> = ["http", "https", "about", "data", "blob"]
 
         /// UA captured from the page, reused for hits found via navigation.
         private var lastUserAgent: String?
