@@ -34,7 +34,11 @@ struct BrowserView: View {
         .sheet(isPresented: $showFoundSheet) { foundSheet }
         .onChange(of: model.currentURL) { url in
             if let url, !editingAddress { addressText = url.absoluteString }
-            if let url { store.recordVisit(url: url, title: model.pageTitle) }
+            // No title yet: at this instant `pageTitle` still holds the page we
+            // just left, and passing it filed the new site under the old one's
+            // name. The entry lands with the host as a placeholder and the
+            // onChange below fills it in when the real title arrives.
+            if let url { store.recordVisit(url: url, title: "") }
         }
         // Record again when the title lands — WebKit fires it after didFinish, so
         // the first write usually has an empty title.

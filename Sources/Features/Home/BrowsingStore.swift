@@ -117,14 +117,44 @@ final class BrowsingStore: ObservableObject {
     private let historyLimit = 300
     private let resumeLimit = 30
 
-    /// Last URL passed to `recordVisit`, so the browser's two calls per page
-    /// (URL, then title) count as one visit.
-    private var lastRecordedURL: String?
+    /// Last host passed to `recordVisit`, so the browser's two calls per page
+    /// (URL, then title) count as one visit — and so does clicking through
+    /// several pages of the same site in a row.
+    private var lastRecordedHost: String?
 
     private init() {
         shortcuts = Self.load(shortcutsKey) ?? []
-        history = Self.load(historyKey) ?? []
+        history = Self.collapseByHost(Self.load(historyKey) ?? [])
         resumes = Self.load(resumeKey) ?? []
+    }
+
+    /// Earlier builds keyed history by full URL, so an existing install carries
+    /// dozens of rows per site. Fold them together on load; without this the
+    /// duplicates simply persist, since nothing else ever revisits old entries.
+    ///
+    /// Visits are summed rather than maxed — they were all real visits to the
+    /// same site, just filed separately.
+    private static func collapseByHost(_ entries: [SiteEntry]) -> [SiteEntry] {
+        var merged: [String: SiteEntry] = [:]
+        for entry in entries {
+            let key = entry.host
+            guard var existing = merged[key] else {
+                var seed = entry
+                if let u = URL(string: entry.url), let s = u.scheme, let h = u.host {
+                    seed.url = "\(s)://\(h)/"
+                }
+                merged[key] = seed
+                continue
+            }
+            existing.visits += entry.visits
+            existing.lastVisit = max(existing.lastVisit, entry.lastVisit)
+            // Prefer a title that isn't just the host standing in for one.
+            if existing.title == key, entry.title != key, !entry.title.isEmpty {
+                existing.title = entry.title
+            }
+            merged[key] = existing
+        }
+        return Array(merged.values)
     }
 
     // MARK: derived lists
@@ -181,16 +211,33 @@ final class BrowsingStore: ObservableObject {
     /// repeat of the URL just landed on only refreshes the title.
     func recordVisit(url: URL, title: String) {
         guard recordHistory else { return }
-        guard let scheme = url.scheme, scheme.hasPrefix("http") else { return }
-        let key = url.absoluteString
-        let isRestatement = key == lastRecordedURL
-        lastRecordedURL = key
-        if let i = history.firstIndex(where: { $0.url == key }) {
+        guard let scheme = url.scheme, scheme.hasPrefix("http"), let rawHost = url.host else { return }
+
+        // Keyed by host — the same derivation `faviconURL` already uses. Keying
+        // by absoluteString gave every page, and every query-string variant of
+        // a page, its own tile: correct icon, per-page title, and one site able
+        // to fill the entire row on its own.
+        let host = rawHost.hasPrefix("www.") ? String(rawHost.dropFirst(4)) : rawHost
+        let isRestatement = host == lastRecordedHost
+        lastRecordedHost = host
+
+        // Tiles point at the site root rather than whichever deep link happened
+        // to be open. Those carry episode ids and expiring tokens, so a tile
+        // built from one is stale by the time it is tapped.
+        let landing = "\(scheme)://\(rawHost)/"
+        let isRoot = url.path.isEmpty || url.path == "/"
+
+        if let i = history.firstIndex(where: { $0.host == host }) {
             if !isRestatement { history[i].visits += 1 }
             history[i].lastVisit = Date()
-            if !title.isEmpty { history[i].title = title }
+            // The site's own front-page title is what names a tile well. A deep
+            // page's title ("Episode 4", "Player") only fills a gap, and never
+            // overwrites a title already earned from the root.
+            if !title.isEmpty, isRoot || history[i].title == host {
+                history[i].title = title
+            }
         } else {
-            history.append(SiteEntry(url: key, title: title.isEmpty ? (url.host ?? key) : title))
+            history.append(SiteEntry(url: landing, title: title.isEmpty ? host : title))
         }
         if history.count > historyLimit {
             // Drop the least useful: fewest visits, oldest first.
