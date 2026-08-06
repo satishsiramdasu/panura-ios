@@ -88,11 +88,11 @@ enum ExtractionScript {
       // first URL is classified, so it is read on each call, never memoised.
       function matchedSite() { return window.__panuraRule || null; }
 
-      // stream is a list of DOMAINLESS regexes — any match counts.
+      // pattern is a list of DOMAINLESS regexes — any match counts.
       function matchesStream(site, url) {
-        if (!site || !site.stream || !site.stream.length) return false;
-        for (var i = 0; i < site.stream.length; i++) {
-          try { if (new RegExp(site.stream[i]).test(url)) return true; } catch (e) {}
+        if (!site || !site.pattern || !site.pattern.length) return false;
+        for (var i = 0; i < site.pattern.length; i++) {
+          try { if (new RegExp(site.pattern[i]).test(url)) return true; } catch (e) {}
         }
         return false;
       }
@@ -150,7 +150,7 @@ enum ExtractionScript {
 
       // `proven` = the body came back starting with #EXTM3U, so this URL is a
       // manifest as a matter of fact. Proof outranks every URL-shape rule and
-      // outranks strict mode: a stale `stream` pattern must not hide a real
+      // outranks strict mode: a stale `pattern` entry must not hide a real
       // stream we have already confirmed.
       // `src` names the hook that saw the URL — without it the log says what was
       // decided but not which layer (if any) ever observed the request.
@@ -174,7 +174,7 @@ enum ExtractionScript {
           if (proven) confirmed[abs] = true;
 
           var site = matchedSite();
-          var strict = !!(site && site.stream && site.stream.length);
+          var strict = !!(site && site.pattern && site.pattern.length);
 
           if (!strict) { dbg(abs, 'emitted (no rule)', src); emit(abs, title, site, proven); return; }
 

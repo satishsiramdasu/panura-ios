@@ -249,10 +249,10 @@ struct WebViewContainer: UIViewRepresentable {
         private var lastUserAgent: String?
 
         /// `window.__panuraRule = {…}` for the frame — the manifest entry minus
-        /// its `h` hashes (the page has no use for them and shouldn't see them).
+        /// its `id` hashes (the page has no use for them and shouldn't see them).
         static func ruleInjectionJS(_ rule: [String: Any]) -> String? {
             var r = rule
-            r.removeValue(forKey: "h")
+            r.removeValue(forKey: "id")
             guard let data = try? JSONSerialization.data(withJSONObject: r),
                   let json = String(data: data, encoding: .utf8) else { return nil }
             return "window.__panuraRule = \(json);"

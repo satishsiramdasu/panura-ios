@@ -4,19 +4,24 @@ import Foundation
 /// Reads the remote detection manifest so rules can be fixed without shipping an
 /// app update — which matters far more on iOS, where a release takes days.
 ///
-/// The deployed manifest names no domains: each site's `h` is a list of
-/// HMAC-SHA256 hashes of its hostnames. We hash the *frame's own* hostname here,
-/// natively, and match. The salt (`ManifestSalt`) never enters a web view, so a
-/// page can neither read our target list nor brute-force it — and a plain fetch
-/// of the manifest is just opaque hashes.
+/// The deployed manifest names no domains: each site's `id` IS a list of
+/// HMAC-SHA256 hashes of its hostnames — the rule has no readable name at all.
+/// We hash the *frame's own* hostname here, natively, and match. The salt
+/// (`ManifestSalt`) never enters a web view, so a page can neither read our
+/// target list nor brute-force it — and a plain fetch of the manifest is just
+/// opaque hashes.
+///
+/// Schema v3 renamed `h` -> `id` and `stream` -> `pattern`. There is no v2
+/// fallback: an unrecognised manifest simply matches nothing, which drops
+/// detection to the generic sniffer rather than breaking playback.
 enum ManifestStore {
     private static let url = URL(string: "https://panura.app/manifest.json")!
     private static let ttl: TimeInterval = 6 * 60 * 60   // Android refreshes every 6h
     private static let cacheFile = "manifest.json"
     private static let lastFetchKey = "manifest_last_fetch"
 
-    /// Hashed site entries verbatim (each has `h`: [hex hmac], plus optional
-    /// stream/type/referer/headers). Order preserved — first host match wins.
+    /// Hashed site entries verbatim (each has `id`: [hex hmac], plus optional
+    /// type/pattern/referer/headers). Order preserved — first host match wins.
     static func sites() async -> [[String: Any]] {
         guard let data = await load(),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -26,13 +31,14 @@ enum ManifestStore {
 
     /// The rule for `host`, or nil — the first entry whose hashed host list
     /// contains the HMAC of the host or any of its parent domains. Returned
-    /// verbatim (still carrying `h`); the caller strips it before use.
+    /// verbatim (still carrying `id`); the caller strips it before use.
     static func rule(forHost host: String) async -> [String: Any]? {
         let sites = await sites()
         guard !sites.isEmpty else { return nil }
         let candidateHashes = Set(hostCandidates(host).map(hash))
         for site in sites {
-            if let h = site["h"] as? [String], h.contains(where: candidateHashes.contains) {
+            if let hashes = site["id"] as? [String],
+               hashes.contains(where: candidateHashes.contains) {
                 return site
             }
         }
