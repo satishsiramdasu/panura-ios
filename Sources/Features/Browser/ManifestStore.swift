@@ -22,10 +22,13 @@ enum ManifestStore {
 
     /// Hashed site entries verbatim (each has `id`: [hex hmac], plus optional
     /// type/pattern/referer/headers). Order preserved — first host match wins.
+    ///
+    /// They live under `presets` in the served file: the deployed manifest is
+    /// meant to read as ordinary player config, not as a list of targets.
     static func sites() async -> [[String: Any]] {
         guard let data = await load(),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let sites = root["sites"] as? [[String: Any]] else { return [] }
+              let sites = root["presets"] as? [[String: Any]] else { return [] }
         return sites
     }
 
