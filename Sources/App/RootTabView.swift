@@ -7,6 +7,22 @@ import SwiftUI
 /// App Review 5.2.3 problem in this app, and a flag-gated feature still ships the
 /// code — so it is removed rather than disabled.
 struct RootTabView: View {
+    init() { Self.configureCompactTabBar() }
+
+    /// Icon-only, translucent bar. UIKit owns the bar's height, so "compact"
+    /// here means dropping the label row and letting content sit under a blur
+    /// rather than a solid slab — the same read as Brave's bottom bar.
+    ///
+    /// `scrollEdgeAppearance` matters as much as the standard one: without it
+    /// the bar turns opaque the moment a list reaches the bottom, which is the
+    /// thing that makes a tab bar look heavy.
+    private static func configureCompactTabBar() {
+        let appearance = UITabBarAppearance()
+        appearance.configureWithDefaultBackground()
+        UITabBar.appearance().standardAppearance = appearance
+        UITabBar.appearance().scrollEdgeAppearance = appearance
+    }
+
     @State private var selection: Tab = .home
     /// Address typed on Home, waiting for the Browser tab to pick it up. The
     /// browser owns its WebView across tab switches, so the hand-off has to be
@@ -21,23 +37,28 @@ struct RootTabView: View {
                 pendingAddress = address
                 selection = .browser
             })
-                .tabItem { Label("Home", systemImage: "house.fill") }
+                .tabItem { Image(systemName: "house.fill") }
+                .accessibilityLabel("Home")
                 .tag(Tab.home)
 
             BrowserView(pendingAddress: $pendingAddress)
-                .tabItem { Label("Browser", systemImage: "globe") }
+                .tabItem { Image(systemName: "globe") }
+                .accessibilityLabel("Browser")
                 .tag(Tab.browser)
 
             StreamView()
-                .tabItem { Label("Stream", systemImage: "link") }
+                .tabItem { Image(systemName: "link") }
+                .accessibilityLabel("Stream")
                 .tag(Tab.stream)
 
             LocalVideosView()
-                .tabItem { Label("Videos", systemImage: "film.fill") }
+                .tabItem { Image(systemName: "film.fill") }
+                .accessibilityLabel("Videos")
                 .tag(Tab.videos)
 
             SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
+                .tabItem { Image(systemName: "gearshape.fill") }
+                .accessibilityLabel("Settings")
                 .tag(Tab.settings)
         }
         .tint(PanuraTheme.accent)
