@@ -64,6 +64,34 @@ final class BrowserModel: ObservableObject {
         }
     }
 
+    /// Put the playing video into PiP, which is the only thing that actually
+    /// survives backgrounding — a `.playback` session alone keeps <audio>
+    /// alive, but iOS suspends inline <video> the moment the app deactivates.
+    ///
+    /// Called straight off the toggle because `webkitSetPresentationMode`
+    /// wants a user gesture, and the tap is one. Deferring it to
+    /// `willResignActive` looks tidier and fails the gesture check.
+    ///
+    /// Main frame only: cross-origin iframes are unreachable from here, so an
+    /// embedded player still needs its own PiP button. `completion` reports
+    /// whether a video was actually found and switched.
+    func enterPictureInPicture(completion: @escaping (Bool) -> Void) {
+        let js = """
+        (function () {
+          var v = document.querySelector('video');
+          if (!v || v.paused) return false;
+          if (typeof v.webkitSetPresentationMode !== 'function') return false;
+          if (!v.webkitSupportsPresentationMode ||
+              !v.webkitSupportsPresentationMode('picture-in-picture')) return false;
+          v.webkitSetPresentationMode('picture-in-picture');
+          return true;
+        })();
+        """
+        webView?.evaluateJavaScript(js) { result, _ in
+            completion((result as? Bool) ?? (result as? NSNumber)?.boolValue ?? false)
+        }
+    }
+
     private weak var webView: WKWebView?
     private var seen = Set<String>()
     private var seenSubs = Set<String>()
