@@ -249,7 +249,10 @@ struct WebViewContainer: UIViewRepresentable {
                 if let ua = lastUserAgent { headers["User-Agent"] = ua }
                 // Explicit instruction beats the inferred page URL.
                 if let fragmentReferer { headers["Referer"] = fragmentReferer }
-                model.report(url: url, title: webView.title ?? "", headers: headers)
+                // Same rule as the JS path: the browser's page title, not
+                // whichever frame or extraction view happened to catch this.
+                let pageTitle = model.pageTitle.isEmpty ? (webView.title ?? "") : model.pageTitle
+                model.report(url: url, title: pageTitle, headers: headers)
                 return .cancel
             }
             return .allow
@@ -349,7 +352,17 @@ struct WebViewContainer: UIViewRepresentable {
             // Every JS hook funnels through here, so stripping `#referer=` once
             // covers xhr/fetch/src/DOM-scan and the PanuraExtractor bridge.
             let (url, fragmentReferer) = RefererFragment.split(rawURL)
-            let title = dict["title"] as? String ?? ""
+            // Main-frame title, matching Android's `view.title`. The JS reports
+            // its own frame's document.title, which on an embed is the player
+            // iframe's — "Player", the CDN's name, or empty — never the title
+            // of the page the user is actually watching.
+            //
+            // `model.pageTitle` is the right source even for offscreen embed
+            // extraction: that web view loads the embed as its own main frame,
+            // so its `.title` is the embed's, while the model still holds the
+            // browser's page.
+            let reported = dict["title"] as? String ?? ""
+            let title = model.pageTitle.isEmpty ? reported : model.pageTitle
 
             // Replay the exact context the page used, or the CDN rejects us.
             // The JS already applied the rule's referer mode (origin vs full URL).
