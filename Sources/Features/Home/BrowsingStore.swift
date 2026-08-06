@@ -1,4 +1,33 @@
+import CryptoKit
 import Foundation
+
+/// Frames captured for the Continue Watching row.
+///
+/// Caches rather than Documents: these are regenerated the next time an item
+/// plays, so they must not count against the user's storage or be backed up.
+/// Every read therefore has to tolerate the file having vanished.
+enum ResumeThumbnails {
+    static var directory: URL {
+        let dir = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("resume-thumbs", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    /// Hashed rather than derived from the URL: stream URLs carry query strings
+    /// and tokens that are neither filename-safe nor length-bounded.
+    static func path(for url: URL) -> String {
+        let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
+        let name = digest.map { String(format: "%02x", $0) }.joined().prefix(32)
+        return directory.appendingPathComponent("\(name).jpg").path
+    }
+
+    static func remove(_ path: String?) {
+        guard let path else { return }
+        try? FileManager.default.removeItem(atPath: path)
+    }
+}
 
 /// A site the user pinned (shortcut) or visited (history). One shape for both —
 /// the two lists differ only in how they are ordered and trimmed.
@@ -33,6 +62,9 @@ struct ResumeEntry: Codable, Identifiable, Hashable {
     var headers: [String: String] = [:]
     var contentType: String?
     var updated: Date = .init()
+    /// Frame grabbed during playback. Optional on purpose — it lives in Caches,
+    /// so the system may evict it at any time and the card falls back to a glyph.
+    var thumbnailPath: String?
 
     var id: String { url }
 
@@ -224,6 +256,7 @@ final class BrowsingStore: ObservableObject {
 
         // Watched to the end — drop it.
         if position >= duration - 15 {
+            ResumeThumbnails.remove(resumes[i].thumbnailPath)
             resumes.remove(at: i)
             persistResumes()
             return
@@ -240,14 +273,32 @@ final class BrowsingStore: ObservableObject {
         persistResumes()
     }
 
+    /// Attach a captured frame. Separate from `updateWatching` because the
+    /// snapshot lands asynchronously, well after the position that triggered it.
+    func setThumbnail(url: URL, path: String) {
+        let key = url.absoluteString
+        guard let i = resumes.firstIndex(where: { $0.url == key }) else { return }
+        resumes[i].thumbnailPath = path
+        persistResumes()
+    }
+
     func removeWatching(url: String) {
+        for entry in resumes where entry.url == url {
+            ResumeThumbnails.remove(entry.thumbnailPath)
+        }
         resumes.removeAll { $0.url == url }
         persistResumes()
     }
 
     private func trimResumes() {
         guard resumes.count > resumeLimit else { return }
-        resumes = Array(resumes.sorted { $0.updated > $1.updated }.prefix(resumeLimit))
+        let kept = Array(resumes.sorted { $0.updated > $1.updated }.prefix(resumeLimit))
+        // Drop the frames of everything that fell off, or Caches grows forever.
+        let keptURLs = Set(kept.map(\.url))
+        for entry in resumes where !keptURLs.contains(entry.url) {
+            ResumeThumbnails.remove(entry.thumbnailPath)
+        }
+        resumes = kept
     }
 
     // MARK: storage

@@ -332,15 +332,29 @@ private struct MostVisitedTile: View {
 private struct ContinueWatchingCard: View {
     let entry: ResumeEntry
 
+    /// Decoded once when the card appears, off the main thread. A computed
+    /// property would re-read the file on every layout pass, and the row is a
+    /// horizontal scroller. The file lives in Caches and may be gone, so a
+    /// failed load is ordinary and simply leaves the glyph in place.
+    @State private var thumbnail: UIImage?
+
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(.secondarySystemBackground))
 
-            Image(systemName: entry.isLocal ? "film.fill" : "link")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 140, height: 90)
+                    .clipped()
+            } else {
+                Image(systemName: entry.isLocal ? "film.fill" : "link")
+                    .font(.title3)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
 
             Image(systemName: "play.circle.fill")
                 .font(.title)
@@ -380,6 +394,10 @@ private struct ContinueWatchingCard: View {
         .frame(width: 140, height: 90)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
+        .task(id: entry.thumbnailPath) {
+            guard let path = entry.thumbnailPath else { thumbnail = nil; return }
+            thumbnail = await Task.detached { UIImage(contentsOfFile: path) }.value
+        }
     }
 }
 

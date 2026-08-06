@@ -153,6 +153,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // Surface it on Home right away — the user may leave before the first
         // position save, and an item that never appears can't be resumed from.
         BrowsingStore.shared.beginWatching(item)
+        thumbnailCaptured = false
 
         buildAndPlay()
         setupRemoteCommands()
@@ -270,7 +271,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             let saved = UserDefaults.standard.double(forKey: Self.resumeKey(newItem.url))
             if saved > 15 { pendingResumeSeconds = saved }
         }
+        // A quality switch carries a different URL, so it becomes its own resume
+        // entry and needs its own frame.
         BrowsingStore.shared.beginWatching(newItem)
+        thumbnailCaptured = false
         buildAndPlay()
         loadQualities()
     }
@@ -627,6 +631,34 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         }
         // Same rule drives the Home row: finished (or barely started) drops off.
         BrowsingStore.shared.updateWatching(url: item.url, position: e, duration: total)
+        captureThumbnailIfNeeded()
+    }
+
+    /// One frame per played item, for the Continue Watching card.
+    private var thumbnailCaptured = false
+
+    /// Asks libVLC for the frame rather than snapshotting `drawableView`: VLC
+    /// renders into its own surface, so a UIView capture comes back empty.
+    ///
+    /// Deliberately late — a frame grabbed during the first seconds is usually
+    /// a title card or black, and by 15s the item has also earned its place on
+    /// Home, so the two thresholds are the same one.
+    private func captureThumbnailIfNeeded() {
+        guard !thumbnailCaptured, let item, player.isPlaying else { return }
+        // No guard against audio-only media: libVLC simply writes no file, and
+        // the existence check below is already the arbiter.
+        guard elapsedSeconds > 15 else { return }
+        thumbnailCaptured = true
+
+        let path = ResumeThumbnails.path(for: item.url)
+        player.saveVideoSnapshot(at: path, withWidth: 280, andHeight: 0)
+
+        // The write is asynchronous with no completion, so confirm the file
+        // landed before pointing an entry at it.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            guard FileManager.default.fileExists(atPath: path) else { return }
+            BrowsingStore.shared.setThumbnail(url: item.url, path: path)
+        }
     }
 
     // MARK: track loading
