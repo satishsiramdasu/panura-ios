@@ -1,16 +1,38 @@
 name: iOS Build
 
+# macOS runners bill at 10x, so a 10-minute build costs 100 of the 2,000
+# included minutes. Everything here exists to keep that number down:
+# build on demand, never twice at once, and never for a docs-only change.
 on:
+  workflow_dispatch:
   push:
     branches: [main]
-  pull_request:
-  workflow_dispatch:
+    paths-ignore:
+      - '**/*.md'
+      - '.gitignore'
+      - 'docs/**'
+
+# A second push supersedes the first instead of paying for both.
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
+
+      # VLCKit is a ~200 MB binary xcframework. Without this it is re-resolved
+      # and re-downloaded on every run, at 10x.
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          restore-keys: spm-${{ runner.os }}-
 
       # The manifest names no domains; it hashes them with this salt. The app
       # must hold the SAME salt to match. Injected from a secret rather than
@@ -37,7 +59,9 @@ jobs:
           xcode-version: latest-stable
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        # NO_AUTO_UPDATE: brew otherwise spends a minute or two updating itself
+        # first, which at 10x is the most expensive no-op in the file.
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -52,16 +76,11 @@ jobs:
           done
           exit 1
 
-      # Compile-check on the simulator.
-      - name: Build (unsigned, simulator)
-        run: |
-          xcodebuild \
-            -project PanuraPlayer.xcodeproj \
-            -scheme PanuraPlayer \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+      # The simulator compile-check that used to run here is gone. It was a
+      # second full compile of the same sources against a different SDK, and the
+      # archive below already fails on any compile error. Nothing here ever runs
+      # in a simulator — the IPA is the deliverable — so it bought nothing and
+      # cost roughly half the build.
 
       # Archive for a real device WITHOUT signing, then hand-package a .ipa.
       # Sideloadly / AltStore re-sign this on install with a free Apple ID.
