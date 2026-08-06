@@ -38,9 +38,12 @@ jobs:
       # must hold the SAME salt to match. Injected from a secret rather than
       # committed. Keep it equal to .manifest-src/salt.txt in the panura repo.
       #
-      # Sources/Core/ManifestSalt.swift now carries the real salt (this repo is
-      # private), so a build with no secret is correct, not a dud. The secret is
-      # kept as the override path: set it to rotate the salt without a commit.
+      # ⚠️ This repo is PUBLIC as of 2026-08-06 and Sources/Core/ManifestSalt.swift
+      # still carries the real salt, so that value is burned (see the header of
+      # that file). Builds with no secret still work, they just use a salt the
+      # whole internet can read. Rotation is deferred until testing is finished;
+      # after it, set MANIFEST_SALT here and blank the committed literal, so the
+      # secret becomes the only copy rather than an optional override.
       - name: Inject manifest salt
         env:
           MANIFEST_SALT: ${{ secrets.MANIFEST_SALT }}
