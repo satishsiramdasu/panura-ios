@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import WebKit
 
@@ -27,6 +28,40 @@ final class BrowserModel: ObservableObject {
         let host: String
         /// Which hook saw it — xhr, fetch, setAttribute, media-event, dom-scan…
         let source: String
+    }
+
+    /// Keep the page's own media running once the app leaves the foreground —
+    /// the standard browser behaviour (Safari, Brave). Two halves: native PiP,
+    /// enabled on the config, and a `.playback` audio session, claimed here.
+    ///
+    /// Off by default and only claimed on demand, because holding a `.playback`
+    /// session interrupts whatever else the phone is playing.
+    @Published var backgroundPlayback = UserDefaults.standard.bool(forKey: BrowserModel.backgroundKey) {
+        didSet {
+            UserDefaults.standard.set(backgroundPlayback, forKey: Self.backgroundKey)
+            applyAudioSession()
+        }
+    }
+
+    private static let backgroundKey = "browser_background_play"
+
+    /// Without a `.playback` session iOS suspends web media the moment the app
+    /// resigns active, whatever the page itself does. Paired with the `audio`
+    /// entry in UIBackgroundModes, which the VLC player already required.
+    ///
+    /// This only decides whether *we* keep the pipeline alive. A page whose
+    /// player pauses itself on `visibilitychange` still pauses; that is the
+    /// site's own behaviour and nothing here overrides it.
+    func applyAudioSession() {
+        let session = AVAudioSession.sharedInstance()
+        if backgroundPlayback {
+            try? session.setCategory(.playback, mode: .moviePlayback)
+            try? session.setActive(true)
+        } else {
+            // `.ambient` stops on lock and mixes rather than interrupting.
+            // VLCPlayerModel re-claims `.playback` when it starts a stream.
+            try? session.setCategory(.ambient)
+        }
     }
 
     private weak var webView: WKWebView?

@@ -55,6 +55,10 @@ struct WebViewContainer: UIViewRepresentable {
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        // Native PiP for the page's own <video>. Already the default, but it is
+        // half of what "play in background" means, so it is stated rather than
+        // inherited — the other half is the audio session (see BrowserModel).
+        config.allowsPictureInPictureMediaPlayback = true
         // Block the pop-under/new-window ads these sites open on tap.
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         return config
@@ -383,7 +387,7 @@ struct WebViewContainer: UIViewRepresentable {
             var full = headers
             if let ua, !ua.isEmpty { full["User-Agent"] = ua }
             // Accept is not optional to these CDNs, and its absence is what
-            // actually broke direct casting. streamvin serves the playlist to a
+            // actually broke direct casting. One site serves the playlist to a
             // request carrying nothing but `Accept: */*`, and answers "security
             // error" to a request with a perfect Referer, User-Agent and cookies
             // and no Accept. ExoPlayer sends none of its own; Android only worked

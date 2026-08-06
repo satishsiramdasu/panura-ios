@@ -44,7 +44,11 @@ struct BrowserView: View {
             }
         }
         .onChange(of: pendingAddress) { _ in consumePending() }
-        .onAppear { consumePending() }
+        .onAppear {
+            consumePending()
+            // The toggle persists, so re-claim the session on a cold launch.
+            model.applyAudioSession()
+        }
     }
 
     /// Load whatever Home handed over, then clear it.
@@ -116,6 +120,10 @@ struct BrowserView: View {
                     model.desktopMode ? "Request mobile site" : "Request desktop site",
                     systemImage: model.desktopMode ? "iphone" : "desktopcomputer"
                 )
+            }
+
+            Toggle(isOn: $model.backgroundPlayback) {
+                Label("Play in background", systemImage: "moon.zzz")
             }
 
             if let url = model.currentURL {
