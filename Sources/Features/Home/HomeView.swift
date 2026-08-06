@@ -194,7 +194,10 @@ struct HomeView: View {
                                 .onTapGesture { onOpenBrowser(item.url) }
                                 .contextMenu {
                                     Button(role: .destructive) {
-                                        store.removeHistory(url: item.url)
+                                        // Tiles come from the host tally, not
+                                        // from history — removing the row would
+                                        // leave the tile sitting there.
+                                        store.removeHostVisit(host: item.host)
                                     } label: { Label("Remove", systemImage: "trash") }
                                 }
                         }
@@ -242,7 +245,11 @@ struct HomeView: View {
                     } label: { SiteRow(entry: item) }
                         .buttonStyle(.plain)
                 }
-                .onDelete { store.removeHistory(url: store.mostVisited[$0.first ?? 0].url) }
+                .onDelete { offsets in
+                    for index in offsets {
+                        store.removeHostVisit(host: store.mostVisited[index].host)
+                    }
+                }
             }
             .navigationTitle("Most Visited")
             .navigationBarTitleDisplayMode(.inline)

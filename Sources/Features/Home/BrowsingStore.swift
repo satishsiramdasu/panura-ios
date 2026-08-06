@@ -52,6 +52,27 @@ struct SiteEntry: Codable, Identifiable, Hashable {
     }
 }
 
+/// Per-host tally behind Most Visited, kept apart from the per-URL history the
+/// way browsers do it: history answers "which page did I open", top sites
+/// answers "which site do I use". One store cannot answer both — key it by URL
+/// and every page becomes its own tile; key it by host and the recents list
+/// collapses to one row per site.
+///
+/// `label` is the site's name, not the last page's title. See `recordVisit`.
+struct HostVisit: Codable, Identifiable, Hashable {
+    var host: String
+    var label: String
+    var visits: Int = 1
+    var lastVisit: Date = .init()
+
+    var id: String { host }
+
+    /// Rendered through the same `SiteEntry` row as everything else on Home.
+    var asEntry: SiteEntry {
+        SiteEntry(url: "https://\(host)/", title: label, visits: visits, lastVisit: lastVisit)
+    }
+}
+
 /// A partially-watched item, enough to rebuild the `MediaItem` and resume it.
 struct ResumeEntry: Codable, Identifiable, Hashable {
     var url: String
@@ -103,7 +124,11 @@ final class BrowsingStore: ObservableObject {
     static let shared = BrowsingStore()
 
     @Published private(set) var shortcuts: [SiteEntry] = []
+    /// Per-URL, as a browser's history is: every distinct page is its own row.
     @Published private(set) var history: [SiteEntry] = []
+    /// Per-host, feeding Most Visited. Deliberately not capped to the history
+    /// window, so a site you use constantly survives a burst of other browsing.
+    @Published private(set) var hostVisits: [HostVisit] = []
     @Published private(set) var resumes: [ResumeEntry] = []
 
     /// Off (incognito, or the user cleared it) suppresses history writes only —
@@ -112,45 +137,43 @@ final class BrowsingStore: ObservableObject {
 
     private let shortcutsKey = "home_shortcuts"
     private let historyKey = "home_history"
+    private let hostVisitsKey = "home_host_visits"
     private let resumeKey = "home_resume"
 
     private let historyLimit = 300
+    private let hostVisitLimit = 60
     private let resumeLimit = 30
 
-    /// Last host passed to `recordVisit`, so the browser's two calls per page
-    /// (URL, then title) count as one visit — and so does clicking through
-    /// several pages of the same site in a row.
-    private var lastRecordedHost: String?
+    /// Last URL passed to `recordVisit`, so the browser's two calls per page
+    /// (URL first, title once it lands) count as a single visit.
+    private var lastRecordedURL: String?
 
     private init() {
         shortcuts = Self.load(shortcutsKey) ?? []
-        history = Self.collapseByHost(Self.load(historyKey) ?? [])
+        history = Self.load(historyKey) ?? []
         resumes = Self.load(resumeKey) ?? []
+        hostVisits = Self.load(hostVisitsKey) ?? Self.seedHostVisits(from: history)
     }
 
-    /// Earlier builds keyed history by full URL, so an existing install carries
-    /// dozens of rows per site. Fold them together on load; without this the
-    /// duplicates simply persist, since nothing else ever revisits old entries.
-    ///
-    /// Visits are summed rather than maxed — they were all real visits to the
-    /// same site, just filed separately.
-    private static func collapseByHost(_ entries: [SiteEntry]) -> [SiteEntry] {
-        var merged: [String: SiteEntry] = [:]
+    /// First run after the split: derive the tally from whatever history the
+    /// install already has, so Most Visited is populated rather than empty.
+    private static func seedHostVisits(from entries: [SiteEntry]) -> [HostVisit] {
+        var merged: [String: HostVisit] = [:]
         for entry in entries {
             let key = entry.host
             guard var existing = merged[key] else {
-                var seed = entry
-                if let u = URL(string: entry.url), let s = u.scheme, let h = u.host {
-                    seed.url = "\(s)://\(h)/"
-                }
-                merged[key] = seed
+                merged[key] = HostVisit(
+                    host: key,
+                    label: entry.title.isEmpty ? key : entry.title,
+                    visits: entry.visits,
+                    lastVisit: entry.lastVisit
+                )
                 continue
             }
             existing.visits += entry.visits
             existing.lastVisit = max(existing.lastVisit, entry.lastVisit)
-            // Prefer a title that isn't just the host standing in for one.
-            if existing.title == key, entry.title != key, !entry.title.isEmpty {
-                existing.title = entry.title
+            if existing.label == key, !entry.title.isEmpty, entry.title != key {
+                existing.label = entry.title
             }
             merged[key] = existing
         }
@@ -159,13 +182,17 @@ final class BrowsingStore: ObservableObject {
 
     // MARK: derived lists
 
-    /// Most-visited first; ties broken by recency so a fresh install still ranks.
+    /// One tile per site, most-visited first; ties broken by recency so a fresh
+    /// install still ranks. Drawn from the host tally, not from history — that
+    /// is the whole point of keeping the two apart.
     var mostVisited: [SiteEntry] {
-        history.sorted {
-            $0.visits == $1.visits ? $0.lastVisit > $1.lastVisit : $0.visits > $1.visits
-        }
+        hostVisits
+            .sorted { $0.visits == $1.visits ? $0.lastVisit > $1.lastVisit : $0.visits > $1.visits }
+            .map(\.asEntry)
     }
 
+    /// Per-page, newest first — the address bar wants the actual page you were
+    /// on, not the site it belonged to.
     var recentlyVisited: [SiteEntry] {
         history.sorted { $0.lastVisit > $1.lastVisit }
     }
@@ -213,51 +240,82 @@ final class BrowsingStore: ObservableObject {
         guard recordHistory else { return }
         guard let scheme = url.scheme, scheme.hasPrefix("http"), let rawHost = url.host else { return }
 
-        // Keyed by host — the same derivation `faviconURL` already uses. Keying
-        // by absoluteString gave every page, and every query-string variant of
-        // a page, its own tile: correct icon, per-page title, and one site able
-        // to fill the entire row on its own.
-        let host = rawHost.hasPrefix("www.") ? String(rawHost.dropFirst(4)) : rawHost
-        let isRestatement = host == lastRecordedHost
-        lastRecordedHost = host
+        let key = url.absoluteString
+        let isRestatement = key == lastRecordedURL
+        lastRecordedURL = key
 
-        // Tiles point at the site root rather than whichever deep link happened
-        // to be open. Those carry episode ids and expiring tokens, so a tile
-        // built from one is stale by the time it is tapped.
-        let landing = "\(scheme)://\(rawHost)/"
-        let isRoot = url.path.isEmpty || url.path == "/"
-
-        if let i = history.firstIndex(where: { $0.host == host }) {
+        // History: one row per page, as a browser's history is. The title
+        // arrives in a second call once the page reports it, which must refresh
+        // the row rather than count another visit.
+        if let i = history.firstIndex(where: { $0.url == key }) {
             if !isRestatement { history[i].visits += 1 }
             history[i].lastVisit = Date()
-            // The site's own front-page title is what names a tile well. A deep
-            // page's title ("Episode 4", "Player") only fills a gap, and never
-            // overwrites a title already earned from the root.
-            if !title.isEmpty, isRoot || history[i].title == host {
-                history[i].title = title
-            }
+            if !title.isEmpty { history[i].title = title }
         } else {
-            history.append(SiteEntry(url: landing, title: title.isEmpty ? host : title))
+            history.append(SiteEntry(url: key, title: title.isEmpty ? (url.host ?? key) : title))
         }
         if history.count > historyLimit {
-            // Drop the least useful: fewest visits, oldest first.
-            history = Array(
-                history.sorted {
-                    $0.visits == $1.visits ? $0.lastVisit > $1.lastVisit : $0.visits > $1.visits
-                }.prefix(historyLimit)
-            )
+            // Recency alone here: the visit-weighted ranking belongs to the host
+            // tally, which is uncapped, so trimming history cannot cost a
+            // frequently-used site its tile.
+            history = Array(history.sorted { $0.lastVisit > $1.lastVisit }.prefix(historyLimit))
         }
         persistHistory()
+
+        bumpHost(rawHost, title: title, isRoot: url.path.isEmpty || url.path == "/", counts: !isRestatement)
     }
 
+    /// The Most Visited side of a visit.
+    ///
+    /// `label` deliberately prefers the site's own front page. Taking whichever
+    /// title came last renames a site's tile to "Episode 4" or "Player" — the
+    /// tile names a site, not the last thing you opened on it. A deep page's
+    /// title is still better than nothing, so it fills a placeholder.
+    private func bumpHost(_ rawHost: String, title: String, isRoot: Bool, counts: Bool) {
+        let host = rawHost.hasPrefix("www.") ? String(rawHost.dropFirst(4)) : rawHost
+        guard !host.isEmpty else { return }
+
+        if let i = hostVisits.firstIndex(where: { $0.host == host }) {
+            if counts { hostVisits[i].visits += 1 }
+            hostVisits[i].lastVisit = Date()
+            if !title.isEmpty, title != host, isRoot || hostVisits[i].label == host {
+                hostVisits[i].label = title
+            }
+        } else {
+            hostVisits.append(
+                HostVisit(host: host, label: title.isEmpty ? host : title)
+            )
+        }
+        if hostVisits.count > hostVisitLimit {
+            hostVisits = Array(
+                hostVisits.sorted {
+                    $0.visits == $1.visits ? $0.lastVisit > $1.lastVisit : $0.visits > $1.visits
+                }.prefix(hostVisitLimit)
+            )
+        }
+        persistHostVisits()
+    }
+
+    /// Removing one page leaves the site's tile alone — the user dismissed a
+    /// row from recents, not a site they use. Dismissing a tile is the separate
+    /// `removeHostVisit`.
     func removeHistory(url: String) {
         history.removeAll { $0.url == url }
         persistHistory()
     }
 
+    func removeHostVisit(host: String) {
+        hostVisits.removeAll { $0.host == host }
+        persistHostVisits()
+    }
+
+    /// "Clear history" means both, as it does in a browser: leaving the tiles
+    /// behind would still show where the user had been.
     func clearHistory() {
         history.removeAll()
+        hostVisits.removeAll()
         persistHistory()
+        persistHostVisits()
     }
 
     // MARK: continue watching
@@ -352,6 +410,7 @@ final class BrowsingStore: ObservableObject {
 
     private func persistShortcuts() { Self.save(shortcuts, shortcutsKey) }
     private func persistHistory() { Self.save(history, historyKey) }
+    private func persistHostVisits() { Self.save(hostVisits, hostVisitsKey) }
     private func persistResumes() { Self.save(resumes, resumeKey) }
 
     private static func load<T: Decodable>(_ key: String) -> T? {
