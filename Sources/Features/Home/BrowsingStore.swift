@@ -205,20 +205,39 @@ final class BrowsingStore: ObservableObject {
         persistResumes()
     }
 
-    /// Position update from the player. A finished item (or one rewound to the
-    /// start) drops off the row instead of sitting there at 100%.
+    /// Position update from the player. A finished item drops off the row
+    /// instead of sitting there at 100%.
+    ///
+    /// The three cases below are deliberately separate. Collapsing them into
+    /// one "save if in range, else delete" is what emptied the row entirely:
+    /// the first tick of every playback arrives with duration still 0 (VLC has
+    /// not parsed it) or position under the threshold, so it deleted the entry
+    /// `beginWatching` had just created — and the guard then stopped anything
+    /// from bringing it back for the rest of the session.
     func updateWatching(url: URL, position: Double, duration: Double) {
         let key = url.absoluteString
         guard let i = resumes.firstIndex(where: { $0.url == key }) else { return }
-        if duration > 0, position > 15, position < duration - 15 {
-            resumes[i].position = position
-            resumes[i].duration = duration
-            resumes[i].updated = Date()
-            persistResumes()
-        } else {
+
+        // Nothing known yet. Leave the entry alone rather than reading the
+        // absence of a duration as "finished".
+        guard duration > 0 else { return }
+
+        // Watched to the end — drop it.
+        if position >= duration - 15 {
             resumes.remove(at: i)
             persistResumes()
+            return
         }
+
+        // Too early to be worth resuming from, but the item is legitimately
+        // being watched: keep it on Home, just without a position, so it starts
+        // from the beginning if tapped.
+        guard position > 15 else { return }
+
+        resumes[i].position = position
+        resumes[i].duration = duration
+        resumes[i].updated = Date()
+        persistResumes()
     }
 
     func removeWatching(url: String) {
