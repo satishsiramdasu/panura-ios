@@ -14,8 +14,6 @@ struct BrowserView: View {
     @State private var showFoundSheet = false
     @State private var showPanuraControls = false
     @State private var editingAddress = false
-    /// Toggle turned on with no playable main-frame video to hand to PiP.
-    @State private var pipUnavailable = false
     @AppStorage("debug_detection") private var debugDetection = false
 
     var body: some View {
@@ -46,26 +44,7 @@ struct BrowserView: View {
             }
         }
         .onChange(of: pendingAddress) { _ in consumePending() }
-        .onChange(of: model.backgroundPlayback) { on in
-            // Entering PiP is what actually survives backgrounding; the audio
-            // session only covers <audio>. Done here rather than on
-            // willResignActive, which is past the user gesture.
-            guard on else { return }
-            model.enterPictureInPicture { started in
-                if !started { pipUnavailable = true }
-            }
-        }
-        .alert("Nothing to keep playing", isPresented: $pipUnavailable) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Start the video first, then turn this on. If the video sits "
-                 + "in an embedded player, use its own Picture-in-Picture button.")
-        }
-        .onAppear {
-            consumePending()
-            // The toggle persists, so re-claim the session on a cold launch.
-            model.applyAudioSession()
-        }
+        .onAppear { consumePending() }
     }
 
     /// Load whatever Home handed over, then clear it.
@@ -137,10 +116,6 @@ struct BrowserView: View {
                     model.desktopMode ? "Request mobile site" : "Request desktop site",
                     systemImage: model.desktopMode ? "iphone" : "desktopcomputer"
                 )
-            }
-
-            Toggle(isOn: $model.backgroundPlayback) {
-                Label("Play in background", systemImage: "moon.zzz")
             }
 
             if let url = model.currentURL {

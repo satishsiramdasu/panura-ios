@@ -55,10 +55,6 @@ struct WebViewContainer: UIViewRepresentable {
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
-        // Native PiP for the page's own <video>. Already the default, but it is
-        // half of what "play in background" means, so it is stated rather than
-        // inherited — the other half is the audio session (see BrowserModel).
-        config.allowsPictureInPictureMediaPlayback = true
         // Block the pop-under/new-window ads these sites open on tap.
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         return config

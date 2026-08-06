@@ -1,4 +1,3 @@
-import AVFoundation
 import SwiftUI
 import WebKit
 
@@ -28,68 +27,6 @@ final class BrowserModel: ObservableObject {
         let host: String
         /// Which hook saw it — xhr, fetch, setAttribute, media-event, dom-scan…
         let source: String
-    }
-
-    /// Keep the page's own media running once the app leaves the foreground —
-    /// the standard browser behaviour (Safari, Brave). Two halves: native PiP,
-    /// enabled on the config, and a `.playback` audio session, claimed here.
-    ///
-    /// Off by default and only claimed on demand, because holding a `.playback`
-    /// session interrupts whatever else the phone is playing.
-    @Published var backgroundPlayback = UserDefaults.standard.bool(forKey: BrowserModel.backgroundKey) {
-        didSet {
-            UserDefaults.standard.set(backgroundPlayback, forKey: Self.backgroundKey)
-            applyAudioSession()
-        }
-    }
-
-    private static let backgroundKey = "browser_background_play"
-
-    /// Without a `.playback` session iOS suspends web media the moment the app
-    /// resigns active, whatever the page itself does. Paired with the `audio`
-    /// entry in UIBackgroundModes, which the VLC player already required.
-    ///
-    /// This only decides whether *we* keep the pipeline alive. A page whose
-    /// player pauses itself on `visibilitychange` still pauses; that is the
-    /// site's own behaviour and nothing here overrides it.
-    func applyAudioSession() {
-        let session = AVAudioSession.sharedInstance()
-        if backgroundPlayback {
-            try? session.setCategory(.playback, mode: .moviePlayback)
-            try? session.setActive(true)
-        } else {
-            // `.ambient` stops on lock and mixes rather than interrupting.
-            // VLCPlayerModel re-claims `.playback` when it starts a stream.
-            try? session.setCategory(.ambient)
-        }
-    }
-
-    /// Put the playing video into PiP, which is the only thing that actually
-    /// survives backgrounding — a `.playback` session alone keeps <audio>
-    /// alive, but iOS suspends inline <video> the moment the app deactivates.
-    ///
-    /// Called straight off the toggle because `webkitSetPresentationMode`
-    /// wants a user gesture, and the tap is one. Deferring it to
-    /// `willResignActive` looks tidier and fails the gesture check.
-    ///
-    /// Main frame only: cross-origin iframes are unreachable from here, so an
-    /// embedded player still needs its own PiP button. `completion` reports
-    /// whether a video was actually found and switched.
-    func enterPictureInPicture(completion: @escaping (Bool) -> Void) {
-        let js = """
-        (function () {
-          var v = document.querySelector('video');
-          if (!v || v.paused) return false;
-          if (typeof v.webkitSetPresentationMode !== 'function') return false;
-          if (!v.webkitSupportsPresentationMode ||
-              !v.webkitSupportsPresentationMode('picture-in-picture')) return false;
-          v.webkitSetPresentationMode('picture-in-picture');
-          return true;
-        })();
-        """
-        webView?.evaluateJavaScript(js) { result, _ in
-            completion((result as? Bool) ?? (result as? NSNumber)?.boolValue ?? false)
-        }
     }
 
     private weak var webView: WKWebView?
