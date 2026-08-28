@@ -319,7 +319,45 @@ struct WebViewContainer: UIViewRepresentable {
                 model.report(url: url, title: pageTitle, headers: headers)
                 return .cancel
             }
+
+            // Universal links. Tapping a youtube.com result in Google hands the
+            // page to the YouTube app: WebKit resolves universal links itself,
+            // before the URL is ever loaded, and it does that for exactly one
+            // kind of navigation — a user's tap on a link that leaves the
+            // current site. Allowing it here is what throws the user out of the
+            // browser mid-session.
+            //
+            // So the tap is cancelled and the same URL loaded programmatically.
+            // A load the app starts is never handed to another app, which is
+            // also why the pop-under path above (`createWebViewWith`) is safe.
+            // Everything else about the navigation survives: it enters the back
+            // list normally, and the Referer WebKit would have sent is set by
+            // hand, since a programmatic load carries none.
+            if navigationAction.navigationType == .linkActivated,
+               navigationAction.targetFrame?.isMainFrame == true,
+               let url = navigationAction.request.url,
+               navigationAction.request.httpMethod.map({ $0 == "GET" }) ?? true,
+               // A same-page anchor is not a navigation to re-issue — reloading
+               // the page to reach #section would lose the page's state.
+               !Self.isSamePageAnchor(url, from: webView.url) {
+                var request = URLRequest(url: url)
+                if let page = webView.url {
+                    request.setValue(page.absoluteString, forHTTPHeaderField: "Referer")
+                }
+                webView.load(request)
+                return .cancel
+            }
             return .allow
+        }
+
+        /// True when the two URLs differ only by fragment.
+        private static func isSamePageAnchor(_ url: URL, from current: URL?) -> Bool {
+            guard let current, url.fragment != nil else { return false }
+            var a = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            var b = URLComponents(url: current, resolvingAgainstBaseURL: false)
+            a?.fragment = nil
+            b?.fragment = nil
+            return a?.url == b?.url
         }
 
         /// Schemes the web view actually renders. Everything else is a handoff

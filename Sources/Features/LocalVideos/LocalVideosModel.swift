@@ -63,10 +63,21 @@ final class LocalVideosModel: ObservableObject {
     @Published var album: VideoAlbum?
     @Published var search = ""
     @Published var sort: SortOrder = .newest
+    /// Title of the video currently being made playable. Getting a file out of
+    /// the Photos library is not instant — an iCloud video has to come down
+    /// first — and a tap that looks like it did nothing is the whole complaint.
+    @Published var preparing: String?
+    /// Why the last attempt failed, for the banner.
+    @Published var error: String?
 
     private let imageManager = PHCachingImageManager()
     /// Everything loaded, before search and sort. The published list is derived.
     private var all: [LocalVideoAsset] = []
+    /// Identifies the current load. Switching album starts a new fetch while the
+    /// previous one is still walking its thumbnails; without this the old run
+    /// finishes last and publishes the previous album's videos over the new
+    /// ones — the grid then holds assets the album does not contain.
+    private var loadToken = UUID()
 
     /// What the grid shows: the album's videos, narrowed by the search box and
     /// put in the chosen order.
@@ -105,6 +116,8 @@ final class LocalVideosModel: ObservableObject {
     func reload() async { await fetch() }
 
     private func fetch() async {
+        let token = UUID()
+        loadToken = token
         let options = PHFetchOptions()
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
         options.predicate = NSPredicate(format: "mediaType = %d", PHAssetMediaType.video.rawValue)
@@ -117,6 +130,7 @@ final class LocalVideosModel: ObservableObject {
         }
 
         await loadAlbums()
+        guard loadToken == token else { return }
 
         guard result.count > 0 else {
             all = []
@@ -131,7 +145,7 @@ final class LocalVideosModel: ObservableObject {
         }
         all = items
         state = .loaded(items)
-        await loadThumbnails(for: items)
+        await loadThumbnails(for: items, token: token)
     }
 
     /// Albums holding at least one video. An album of stills is noise in a video
@@ -166,7 +180,7 @@ final class LocalVideosModel: ObservableObject {
         ).firstObject
     }
 
-    private func loadThumbnails(for items: [LocalVideoAsset]) async {
+    private func loadThumbnails(for items: [LocalVideoAsset], token: UUID) async {
         var updated = items
         let size = CGSize(width: 300, height: 200)
         // highQualityFormat delivers a single callback; combined with the
@@ -192,26 +206,91 @@ final class LocalVideosModel: ObservableObject {
                     cont.resume(returning: img)
                 }
             }
+            // Another album started loading while this was running; its list is
+            // on screen and must not be overwritten with this one.
+            guard loadToken == token else { return }
             updated[i].thumbnail = image
-            // Assigning the whole array each time would relayout the grid per
-            // thumbnail; the list is published once the batch is in.
-            if i == items.count - 1 {
+            // Assigning the whole array per thumbnail would relayout the grid
+            // every time one arrives, so they go up a dozen at a time — a big
+            // library then fills in as it loads instead of staying grey until
+            // the last one is home.
+            if i % 12 == 11 || i == items.count - 1 {
                 all = updated
                 state = .loaded(updated)
             }
         }
     }
 
+    /// A playable file for one library video.
+    ///
+    /// Two paths, because `requestAVAsset` alone does not cover the library.
+    /// It hands back an `AVURLAsset` for an ordinary recording, but an edited,
+    /// slow-motion or otherwise composed video arrives as an `AVComposition`
+    /// with no URL at all, and an iCloud video that has not come down yet
+    /// arrives as nothing. Both cases used to end as `nil`, and a `nil` here
+    /// meant the tap did nothing and said nothing — which is what "sometimes I
+    /// can't play a video" was.
+    ///
+    /// So the fallback copies the original out of the library with
+    /// `PHAssetResourceManager`, which downloads from iCloud when it has to and
+    /// works for every asset the picker can show.
     func resolveURL(for item: LocalVideoAsset) async -> URL? {
+        error = nil
+        preparing = item.title
+        defer { preparing = nil }
+
+        if let url = await avAssetURL(for: item) { return url }
+        if let url = await copyOriginal(for: item) { return url }
+        error = "Couldn't open \"\(item.title)\". It may still be downloading from iCloud."
+        return nil
+    }
+
+    private func avAssetURL(for item: LocalVideoAsset) async -> URL? {
         await withCheckedContinuation { cont in
             var resumed = false
             let options = PHVideoRequestOptions()
             options.isNetworkAccessAllowed = true
             options.deliveryMode = .highQualityFormat
+            options.version = .current
             imageManager.requestAVAsset(forVideo: item.asset, options: options) { avAsset, _, _ in
                 guard !resumed else { return }
                 resumed = true
                 cont.resume(returning: (avAsset as? AVURLAsset)?.url)
+            }
+        }
+    }
+
+    /// Writes the asset's own file into the temporary directory and plays that.
+    /// The copy is kept and reused — the same video played twice should not be
+    /// fetched twice — and lives in the temporary directory, which the system
+    /// clears on its own terms.
+    private func copyOriginal(for item: LocalVideoAsset) async -> URL? {
+        let resources = PHAssetResource.assetResources(for: item.asset)
+        guard let resource = resources.first(where: { $0.type == .video })
+                ?? resources.first(where: { $0.type == .fullSizeVideo })
+                ?? resources.first
+        else { return nil }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("panura-library", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        // The identifier, not the filename: two videos can share a name, and an
+        // identifier carries characters a path cannot.
+        let key = String(item.id.prefix(36)).replacingOccurrences(of: "/", with: "_")
+        let ext = (resource.originalFilename as NSString).pathExtension
+        let destination = directory
+            .appendingPathComponent(key)
+            .appendingPathExtension(ext.isEmpty ? "mov" : ext)
+        if FileManager.default.fileExists(atPath: destination.path) { return destination }
+
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        return await withCheckedContinuation { cont in
+            PHAssetResourceManager.default().writeData(
+                for: resource, toFile: destination, options: options
+            ) { failure in
+                cont.resume(returning: failure == nil ? destination : nil)
             }
         }
     }
