@@ -34,6 +34,23 @@ enum ExtractionScript {
         try { window.webkit.messageHandlers.panura.postMessage(payload); } catch (e) {}
       }
 
+      // Pages routinely write media URLs into the document as JSON, where every
+      // slash is escaped — "videoUrl":"https:\/\/host\/…\/master.m3u8". Left
+      // as they are, several scan patterns hardcode a literal "//" after the
+      // scheme and match nothing at all, and the ones that do match hand back a
+      // URL full of backslashes — which URL(), VLCKit, the cast server and the
+      // proxy do not agree on. Normalise at the door so only one shape ever
+      // leaves here. Harmless on network-observed URLs: a valid URL contains
+      // none of these sequences.
+      function unesc(s) {
+        try {
+          if (!s || (s.indexOf('\\') === -1 && s.indexOf('&amp;') === -1)) return s;
+          return s.replace(/\\u002f/gi, '/').replace(/\\u0026/gi, '&')
+                  .replace(/\\\//g, '/').replace(/&amp;/g, '&');
+        } catch (e) { return s; }
+      }
+      window.__panuraUnescape = unesc;
+
       // Announce this frame so the app can resolve its rule (by hashing the
       // frame's own host natively) and push it in as window.__panuraRule.
       post({ kind: 'ready' });
@@ -68,6 +85,13 @@ enum ExtractionScript {
         if (l.indexOf('127.0.0.1') !== -1) return false; // our own proxy
         if (lower.indexOf('bytestart=') !== -1 && lower.indexOf('byteend=') !== -1) return false;
         if (/\.(js|mjs|css|json|woff|woff2|ts|m4s|png|jpg|jpeg|svg|gif|ico|webp|xml)$/.test(l)) return false;
+        // imgproxy/thumbor-style *derivatives* of a video: the real filename
+        // sits mid-path and everything after it is transform directives —
+        // .../original_48177725.mp4/plain/rs:fit:480:270/vts:360. The server
+        // renders a poster strip from those, never the video, so they can only
+        // ever reach the list as unplayable rows named "vts:360".
+        var deriv = l.match(/\.(mp4|webm|mkv|m3u8|mpd)\//);
+        if (deriv && l.slice(l.indexOf(deriv[0])).indexOf(':') !== -1) return false;
         if (/\.txt$/.test(l) && (l.indexOf('/v4/') !== -1 || l.indexOf('master') !== -1 ||
             l.indexOf('index') !== -1 || l.indexOf('playlist') !== -1 || l.indexOf('/hls') !== -1)) return true;
         if (/\.(m3u8|mp4|webm|mkv|mpd)$/.test(l)) return true;
@@ -156,6 +180,7 @@ enum ExtractionScript {
       // decided but not which layer (if any) ever observed the request.
       function report(url, title, proven, src) {
         try {
+          url = unesc(String(url));
           if (!proven && !isVideoUrl(url)) { dbg(url, 'rejected: not video', src); return; }
           var abs = absolute(url);
           if (!proven && isSegmentUrl(abs)) { dbg(abs, 'rejected: segment', src); return; }
@@ -248,6 +273,7 @@ enum ExtractionScript {
       }
       function reportSub(url, label, lang) {
         try {
+          url = unesc(String(url));
           if (!isSubUrl(url)) return;
           var abs = absolute(url);
           if (subsReported[abs]) return;
@@ -504,6 +530,32 @@ enum ExtractionScript {
           var s = el.currentSrc || el.src || el.getAttribute('src');
           if (s) report(s, '', false, 'dom-scan');
         } catch (e) {}
+        forcePreload(el);
+      }
+
+      // Some sites ship preload="none" on purpose: nothing is requested until a
+      // play click, and that click is what opens their popup. Forcing the load
+      // makes the request happen on its own, so the hooks above see the real URL
+      // — and the headers that go with it — without anyone clicking.
+      //
+      // "metadata", not "auto": enough to make the request fire, without pulling
+      // whole files down for every video on the page, ad creatives included.
+      //
+      // Two cases it deliberately skips, because there it would do harm and no
+      // good: a blob: src means an MSE player owns the fetch and preload governs
+      // nothing, and an element already loading or playing would be restarted
+      // from scratch by load().
+      function forcePreload(el) {
+        try {
+          if (!el || el.tagName !== 'VIDEO' || el.__panuraPreload) return;
+          var s = el.currentSrc || el.src || el.getAttribute('src');
+          if (!s || s.indexOf('blob:') === 0) return;
+          if (el.readyState > 0 || !el.paused) return;
+          el.__panuraPreload = true;
+          el.preload = 'metadata';
+          el.setAttribute('preload', 'metadata');
+          el.load();
+        } catch (e) {}
       }
 
       function scan() {
@@ -516,16 +568,34 @@ enum ExtractionScript {
         try { document.querySelectorAll('video, source').forEach(scanElement); } catch (e) {}
         try { document.querySelectorAll('track').forEach(scanTrack); } catch (e) {}
         try {
-          document.querySelectorAll('script:not([src])').forEach(function (s) {
-            var text = s.textContent || '';
-            if (text.length > 500000) return;
+          // Unescape each body ONCE rather than teaching nine patterns about
+          // escaping: several of them hardcode a literal "//" after the scheme
+          // and silently match nothing against JSON-escaped source.
+          var found = 0;
+          function scanText(text, src) {
+            if (!text || text.length > 500000) return;
+            text = unesc(text);
             scriptPatterns.forEach(function (pat) {
               pat.lastIndex = 0;
               var m;
-              while ((m = pat.exec(text)) !== null && m[1]) report(m[1], '', false, 'inline-script');
+              while ((m = pat.exec(text)) !== null && m[1]) { report(m[1], '', false, src); found++; }
             });
             scanSubsInText(text);
+          }
+
+          document.querySelectorAll('script:not([src])').forEach(function (s) {
+            scanText(s.textContent || '', 'inline-script');
           });
+
+          // Fallback only: some players keep their config in a data-attribute or
+          // in plain markup rather than a <script> body. Gated on the inline scan
+          // coming up empty, because sweeping the serialized DOM also sees ad
+          // creatives and preview clips — noise worth accepting only when there
+          // is nothing else.
+          if (!found) {
+            var html = document.documentElement ? document.documentElement.innerHTML : '';
+            if (html && html.length < 500000) scanText(html, 'dom-html');
+          }
         } catch (e) {}
       }
 
@@ -551,7 +621,7 @@ enum ExtractionScript {
           });
           window.__panura_observer.observe(
             document.documentElement || document,
-            { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] }
+            { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'preload'] }
           );
         }
       } catch (e) {}

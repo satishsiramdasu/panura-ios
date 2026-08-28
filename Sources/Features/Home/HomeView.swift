@@ -5,6 +5,10 @@ import SwiftUI
 struct HomeView: View {
     /// Hands a raw address-bar string (URL or search terms) to the Browser tab.
     var onOpenBrowser: (String) -> Void
+    /// Home is the hub for everything without a seat in the bottom bar, so the
+    /// Options grid needs a way to send you there.
+    var onOpenSection: (AppDestination) -> Void = { _ in }
+    var onOpenCast: () -> Void = {}
 
     @ObservedObject private var store = BrowsingStore.shared
 
@@ -13,6 +17,7 @@ struct HomeView: View {
     @State private var showMostVisitedSheet = false
     @State private var editingShortcut: SiteEntry?
     @State private var playItem: MediaItem?
+    @State private var confirmClearHistory = false
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -26,6 +31,7 @@ struct HomeView: View {
                     shortcutsSection
                     if !store.continueWatching.isEmpty { continueWatchingSection }
                     mostVisitedSection
+                    optionsSection
                 }
                 .padding(.vertical, 20)
             }
@@ -45,6 +51,57 @@ struct HomeView: View {
         .sheet(isPresented: $showShortcutsSheet) { shortcutsSheet }
         .sheet(isPresented: $showMostVisitedSheet) { mostVisitedSheet }
         .sheet(item: $editingShortcut) { ShortcutEditor(entry: $0) }
+        .confirmationDialog(
+            "Clear browsing history?",
+            isPresented: $confirmClearHistory,
+            titleVisibility: .visible
+        ) {
+            Button("Clear history", role: .destructive) { store.clearHistory() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Most Visited and recent pages are removed. Shortcuts and Continue Watching are kept.")
+        }
+    }
+
+    // MARK: options
+
+    /// The destinations and housekeeping actions that have no seat in the bar.
+    /// Home is where they live now, which is what lets the bar stay down to the
+    /// three places you actually switch between.
+    private var optionsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Options")
+            HStack(spacing: 10) {
+                optionTile("Settings", systemImage: "gearshape.fill") { onOpenSection(.settings) }
+                optionTile("Network Stream", systemImage: "link") { onOpenSection(.stream) }
+                optionTile("Cast to TV", systemImage: "tv") { onOpenCast() }
+                optionTile("Clear History", systemImage: "trash") { confirmClearHistory = true }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func optionTile(
+        _ title: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 6) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 18))
+                    .foregroundStyle(PanuraTheme.accent)
+                Text(title)
+                    .font(.caption2)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: header — address pill, same shape as the browser's top bar

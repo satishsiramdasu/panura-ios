@@ -1,66 +1,115 @@
 import SwiftUI
 
-/// Mirrors the Android `HomeScreen` tab layout, minus Downloads:
-/// Home · Browser · Stream · Videos · Settings.
+/// The app's shell: every destination stacked, one bar under them, and the
+/// sections grid hanging above that bar.
 ///
-/// iOS ships no download feature at all. Saving streamed content is the clearest
-/// App Review 5.2.3 problem in this app, and a flag-gated feature still ships the
-/// code — so it is removed rather than disabled.
+/// Mirrors Android's `HomeScreen` after the nav rebuild — Home, Web and Videos
+/// in the bar, Network Stream and Settings behind the grid. It is deliberately
+/// NOT a `TabView`: five co-equal tabs said all five were places you switch
+/// between, when only three are, and a `UITabBar` cannot draw the one-label
+/// pill the bar now uses to say where you are.
+///
+/// Every destination stays composed and is hidden by opacity rather than being
+/// rebuilt. The browser owns a live `WKWebView`, a page mid-load and a set of
+/// detections; taking a trip to Home must not cost any of that.
+///
+/// iOS ships no download feature at all — saving streamed content is the
+/// clearest App Review 5.2.3 problem in this app, and a flag-gated feature still
+/// ships the code — so the bar has no Downloads seat to trade Videos for, as
+/// Android's does inside the browser.
 struct RootTabView: View {
-    init() { Self.configureCompactTabBar() }
-
-    /// Icon-only, translucent bar. UIKit owns the bar's height, so "compact"
-    /// here means dropping the label row and letting content sit under a blur
-    /// rather than a solid slab — the same read as Brave's bottom bar.
-    ///
-    /// `scrollEdgeAppearance` matters as much as the standard one: without it
-    /// the bar turns opaque the moment a list reaches the bottom, which is the
-    /// thing that makes a tab bar look heavy.
-    private static func configureCompactTabBar() {
-        let appearance = UITabBarAppearance()
-        appearance.configureWithDefaultBackground()
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
-    }
-
-    @State private var selection: Tab = .home
-    /// Address typed on Home, waiting for the Browser tab to pick it up. The
-    /// browser owns its WebView across tab switches, so the hand-off has to be
-    /// state here rather than a fresh `BrowserView(url:)`.
+    @State private var selection: AppDestination = .home
+    @State private var showMenu = false
+    /// Address typed on Home, waiting for the Browser to pick it up. The browser
+    /// owns its WebView across switches, so the hand-off has to be state here
+    /// rather than a fresh `BrowserView(url:)`.
     @State private var pendingAddress: String?
-
-    enum Tab: Hashable { case home, browser, stream, videos, settings }
+    @State private var showCast = false
 
     var body: some View {
-        TabView(selection: $selection) {
-            HomeView(onOpenBrowser: { address in
-                pendingAddress = address
-                selection = .browser
-            })
-                .tabItem { Image(systemName: "house.fill") }
-                .accessibilityLabel("Home")
-                .tag(Tab.home)
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                destinations
+                AppBarRow(
+                    selection: selection,
+                    menuOpen: showMenu,
+                    onSelect: select,
+                    onToggleMenu: { withAnimation(.easeOut(duration: 0.2)) { showMenu.toggle() } }
+                )
+            }
 
-            BrowserView(pendingAddress: $pendingAddress)
-                .tabItem { Image(systemName: "globe") }
-                .accessibilityLabel("Browser")
-                .tag(Tab.browser)
+            if showMenu {
+                // Scrim first: dismisses on tap without stealing the panel's own
+                // taps. It stops at the bar, so the control that opened the panel
+                // is the one that closes it.
+                Color.black.opacity(0.32)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { showMenu = false } }
 
-            StreamView()
-                .tabItem { Image(systemName: "link") }
-                .accessibilityLabel("Stream")
-                .tag(Tab.stream)
-
-            LocalVideosView()
-                .tabItem { Image(systemName: "film.fill") }
-                .accessibilityLabel("Videos")
-                .tag(Tab.videos)
-
-            SettingsView()
-                .tabItem { Image(systemName: "gearshape.fill") }
-                .accessibilityLabel("Settings")
-                .tag(Tab.settings)
+                AppMenuPanel(items: menuItems, current: selection)
+                    .padding(.bottom, AppBarRow.height)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
-        .tint(PanuraTheme.accent)
+        .sheet(isPresented: $showCast) {
+            NavigationStack { CastDevicesView() }
+        }
+    }
+
+    /// All five, always composed. The outgoing one keeps the higher `zIndex`
+    /// until it has faded, or the incoming one shows through it.
+    private var destinations: some View {
+        ZStack {
+            layer(.home) {
+                HomeView(
+                    onOpenBrowser: { address in
+                        pendingAddress = address
+                        select(.web)
+                    },
+                    onOpenSection: select,
+                    onOpenCast: { showCast = true }
+                )
+            }
+            layer(.web) { BrowserView(pendingAddress: $pendingAddress) }
+            layer(.videos) { LocalVideosView() }
+            layer(.stream) { StreamView() }
+            layer(.settings) { SettingsView() }
+        }
+    }
+
+    @ViewBuilder
+    private func layer<Content: View>(
+        _ destination: AppDestination,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        let active = selection == destination
+        content()
+            .opacity(active ? 1 : 0)
+            // A hidden layer must not eat taps meant for the visible one, and an
+            // invisible screen should not be reachable by VoiceOver either.
+            .allowsHitTesting(active)
+            .accessibilityHidden(!active)
+            .zIndex(active ? 1 : 0)
+    }
+
+    private func select(_ destination: AppDestination) {
+        withAnimation(.easeInOut(duration: 0.22)) {
+            selection = destination
+            showMenu = false
+        }
+    }
+
+    /// What the grid holds: the destinations with no seat, plus the one action
+    /// that belongs with them.
+    private var menuItems: [AppMenuPanel.Item] {
+        [
+            AppMenuPanel.Item(icon: "link", label: "Network Stream") { select(.stream) },
+            AppMenuPanel.Item(icon: "tv", label: "Cast to TV") {
+                withAnimation(.easeOut(duration: 0.2)) { showMenu = false }
+                showCast = true
+            },
+            AppMenuPanel.Item(icon: "gearshape.fill", label: "Settings") { select(.settings) },
+        ]
     }
 }

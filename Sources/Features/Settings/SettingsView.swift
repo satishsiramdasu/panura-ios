@@ -12,6 +12,11 @@ struct SettingsView: View {
     @State private var rulesRefreshed = false
     /// Read by WebViewContainer at web-view creation and by the found-videos sheet.
     @AppStorage("debug_detection") private var debugDetection = false
+    /// Read by WebViewContainer at web-view creation. The one injection that
+    /// touches the page rather than observing it, so it gets a switch.
+    @AppStorage("auto_play_click") private var autoPlayClick = true
+    @ObservedObject private var versions = VersionStore.shared
+    @State private var checkedForUpdates = false
 
     var body: some View {
         NavigationStack {
@@ -42,11 +47,12 @@ struct SettingsView: View {
                         )
                     }
                     .disabled(rulesRefreshed)
+                    Toggle("Press play automatically", isOn: $autoPlayClick)
                     Toggle("Diagnostics", isOn: $debugDetection)
                 } header: {
                     Text("Detection")
                 } footer: {
-                    Text("Re-downloads the site detection rules. Reopen the Browser tab afterwards to apply them.\n\nDiagnostics logs every media URL a page requests and why it was kept or filtered, shown under the detected-videos sheet.")
+                    Text("Re-downloads the site detection rules. Reopen the Browser tab afterwards to apply them.\n\nSome sites request nothing until their play button is pressed; Panura presses it for them so the stream can be found. Turn this off first if a page starts behaving oddly on load.\n\nDiagnostics logs every media URL a page requests and why it was kept or filtered, shown under the detected-videos sheet.")
                 }
 
                 Section("Community") {
@@ -54,12 +60,44 @@ struct SettingsView: View {
                         Label("Join our Telegram", systemImage: "paperplane.fill")
                     }
                 }
-                Section("About") {
+                Section {
                     LabeledContent("Version", value: appVersion)
+                    NavigationLink {
+                        WhatsNewView()
+                    } label: {
+                        Label("What's New", systemImage: "sparkles")
+                    }
+                    Button {
+                        Task {
+                            await versions.load(force: true)
+                            checkedForUpdates = true
+                        }
+                    } label: {
+                        HStack {
+                            Label("Check for Updates", systemImage: "arrow.down.circle")
+                            Spacer()
+                            if versions.isLoading { ProgressView() }
+                        }
+                    }
+                    .disabled(versions.isLoading)
+                    // Only ever shown when there is something to go and get.
+                    if versions.updateAvailable, let latest = versions.ios?.versionName {
+                        Link(destination: VersionStore.storeURL) {
+                            Label("Update to \(latest)", systemImage: "arrow.up.forward.app")
+                                .foregroundStyle(PanuraTheme.accent)
+                        }
+                    }
                     Link("Privacy Policy", destination: URL(string: "https://panura.pages.dev/privacy")!)
+                } header: {
+                    Text("About")
+                } footer: {
+                    if checkedForUpdates, !versions.isLoading, !versions.updateAvailable {
+                        Text("You're on the latest version.")
+                    }
                 }
             }
             .navigationTitle("Settings")
+            .task { await versions.load() }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) { CastButton() }
             }

@@ -537,6 +537,14 @@ struct PlayerView: View {
         VStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(.orange)
             Text(text).font(.callout).foregroundStyle(.white).multilineTextAlignment(.center)
+            // Said out loud rather than deleted silently, and only when
+            // something was actually removed.
+            if model.resumeEntryRemoved {
+                Text("This link is no longer available, so it has been removed from Continue Watching.")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(24)
     }

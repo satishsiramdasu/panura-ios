@@ -10,6 +10,10 @@ final class BrowserModel: ObservableObject {
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var desktopMode = false
+    /// Private browsing. The web view is rebuilt on a non-persistent data store
+    /// when this flips (see `BrowserView`), and history recording stops — the
+    /// two halves of what "private" has to mean.
+    @Published private(set) var privateMode = false
     @Published var foundVideos: [ExtractedVideo] = []
     /// Sidecar subtitles sniffed from the page; attached to whatever the user plays.
     @Published var foundSubtitles: [SubtitleTrack] = []
@@ -56,6 +60,19 @@ final class BrowserModel: ObservableObject {
     func reload() { clearFindings(); webView?.reload() }
     func stop() { webView?.stopLoading() }
 
+    /// Turn private browsing on or off.
+    ///
+    /// The caller rebuilds the web view (a data store cannot be swapped on a
+    /// live one), so this only has to say what the mode is and stop — or resume
+    /// — history recording. Cookies and cache go with the store; shortcuts and
+    /// resume points do not, because those are explicit user actions.
+    func setPrivateMode(_ on: Bool) {
+        guard privateMode != on else { return }
+        privateMode = on
+        BrowsingStore.shared.recordHistory = !on
+        clearFindings()
+    }
+
     func toggleDesktopMode() {
         desktopMode.toggle()
         webView?.customUserAgent = desktopMode ? Self.desktopUA : nil
@@ -86,24 +103,81 @@ final class BrowserModel: ObservableObject {
 
     // MARK: detection
 
+    /// Best playable stream first — see `byQuality()`. Everything that shows a
+    /// list of detections reads this, and the found-bar speaks for its first
+    /// entry, so the stream named on the bar is the one Play would have picked.
+    var orderedVideos: [ExtractedVideo] { foundVideos.byQuality() }
+
     func report(
         url: URL,
         title: String,
         headers: [String: String],
         castHeaders: [String: String] = [:],
-        contentType: String? = nil
+        contentType: String? = nil,
+        ruleMatched: Bool = false
     ) {
         let key = url.absoluteString
         guard !seen.contains(key) else { return }
         seen.insert(key)
         let name = title.isEmpty ? mediaSessionTitle : title
-        foundVideos.append(
-            ExtractedVideo(
-                url: url, title: name, headers: headers,
-                castHeaders: castHeaders.isEmpty ? headers : castHeaders,
-                contentType: contentType
-            )
+        // An embed page has nothing to probe; direct media is probed at once,
+        // because the bar wants its quality and size the moment it appears.
+        let direct = StreamProbe.isDirectMedia(url) || contentType != nil
+        let video = ExtractedVideo(
+            url: url, title: name, headers: headers,
+            castHeaders: castHeaders.isEmpty ? headers : castHeaders,
+            contentType: contentType,
+            ruleMatched: ruleMatched,
+            probeState: direct ? .pending : .skipped
         )
+        foundVideos.append(video)
+        if direct { startProbe(video) }
+    }
+
+    /// Probes one detection and folds the answer back into its row.
+    ///
+    /// An inactive result drops the row outright rather than listing it: only
+    /// 404/410 reach that state (see `StreamProbe`), so it is proof the link is
+    /// gone — and a re-probe could only ever confirm it again.
+    private func startProbe(_ video: ExtractedVideo) {
+        let key = video.url.absoluteString
+        Task { [weak self] in
+            let outcome = await StreamProbe.probe(
+                url: video.url, headers: video.headers, ruleMatched: video.ruleMatched
+            )
+            await MainActor.run {
+                guard let self,
+                      let i = self.foundVideos.firstIndex(where: { $0.url.absoluteString == key })
+                else { return }
+                guard outcome.active else {
+                    self.foundVideos.remove(at: i)
+                    self.reportDebug(
+                        url: key, verdict: "dropped: probe says gone",
+                        host: video.url.host ?? "", source: "probe"
+                    )
+                    return
+                }
+                self.foundVideos[i].probeState = .active
+                self.foundVideos[i].probeResult = outcome.result
+            }
+        }
+    }
+
+    /// Re-probe everything still listed — the sheet's refresh. Rows go back to
+    /// `.pending` so the bar says a check is running rather than showing stale
+    /// numbers as if they were fresh.
+    func refreshProbes() {
+        for i in foundVideos.indices where foundVideos[i].probeState != .skipped {
+            foundVideos[i].probeState = .pending
+            foundVideos[i].probeResult = nil
+            startProbe(foundVideos[i])
+        }
+    }
+
+    /// Drop one detection by hand. It stays in `seen`, so the same URL sighted
+    /// again cannot resurrect the row the user just dismissed.
+    func remove(_ video: ExtractedVideo) {
+        foundVideos.removeAll { $0.id == video.id }
     }
 
     /// Drop a hit later proven to be a segment. It stays in `seen` so the same

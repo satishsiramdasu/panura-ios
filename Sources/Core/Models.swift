@@ -67,6 +67,58 @@ struct ExtractedVideo: Identifiable, Hashable {
     /// `hls` | `mp4` | `dash` from the manifest rule, when one matched.
     /// Extensionless manifests can't be identified from the URL alone.
     var contentType: String?
+    /// True when a manifest site rule claimed this URL. The probe must not read
+    /// such a stream: those hosts hand out single-use tokens, and a probe that
+    /// spends one leaves the player with a 410.
+    var ruleMatched: Bool = false
+    /// Liveness, from `StreamProbe`. `.skipped` for anything that isn't direct
+    /// media — an embed page has nothing to probe.
+    var probeState: StreamProbe.State = .skipped
+    /// Resolution / size / HLS kind, once the probe has answered.
+    var probeResult: StreamProbe.Result?
+
+    /// Filename for the found-bar. The last path segment, except when that is a
+    /// generic playlist name (`master.m3u8` and friends), where the descriptive
+    /// parent segment says far more —
+    /// `…/1080P_4000K_54254475.mp4/master.m3u8` → `1080P_4000K_54254475.mp4`.
+    var fileLabel: String {
+        let segments = url.path.split(separator: "/").filter { !$0.isEmpty }
+        guard let last = segments.last else { return url.host ?? "Stream" }
+        let generic: Set<String> = [
+            "master.m3u8", "index.m3u8", "playlist.m3u8", "video.m3u8", "media.m3u8",
+            "master.txt", "index.txt", "manifest.mpd", "stream.m3u8",
+        ]
+        if generic.contains(last.lowercased()), segments.count >= 2 {
+            return String(segments[segments.count - 2])
+        }
+        return String(last)
+    }
+}
+
+extension Array where Element == ExtractedVideo {
+    /// List order: reachable streams first, best resolution first inside that,
+    /// dead ones last. Stable, so equal-ranked rows keep detection order.
+    ///
+    /// `.skipped` is an embed page rather than a probed stream — no resolution
+    /// to compare, but nothing says it is dead either, so it sits below
+    /// confirmed streams and above the ones that failed.
+    func byQuality() -> [ExtractedVideo] {
+        func rank(_ v: ExtractedVideo) -> Int {
+            switch v.probeState {
+            case .active: return 0
+            case .pending: return 1
+            case .skipped: return 2
+            case .inactive: return 3
+            }
+        }
+        return enumerated().sorted { a, b in
+            let (ra, rb) = (rank(a.element), rank(b.element))
+            if ra != rb { return ra < rb }
+            let (pa, pb) = (a.element.probeResult?.pixels ?? 0, b.element.probeResult?.pixels ?? 0)
+            if pa != pb { return pa > pb }
+            return a.offset < b.offset
+        }.map(\.element)
+    }
 }
 
 /// A sidecar subtitle track sniffed from the page (`onSubtitleFound`).

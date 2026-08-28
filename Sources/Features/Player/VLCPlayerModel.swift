@@ -18,6 +18,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     @Published var buffering = true
     /// Non-nil when playback failed, so the UI says so instead of spinning.
     @Published var failure: String?
+    /// True once a dead source has cost this item its Continue Watching entry —
+    /// the failure message says so, rather than leaving it a silent deletion.
+    @Published private(set) var resumeEntryRemoved = false
     @Published var rate: Float = 1.0
 
     @Published var audioTracks: [Track] = []
@@ -622,6 +625,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     }
 
     private func saveResume() {
+        // A dead source has already had its row deleted; saving on the way out
+        // would re-add exactly the entry that was just dropped.
+        guard !resumeEntryRemoved else { return }
         guard resumeEnabled, let item else { return }
         let e = elapsedSeconds, total = totalSeconds
         if total > 0, e > 15, e < total - 15 {
@@ -632,6 +638,42 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // Same rule drives the Home row: finished (or barely started) drops off.
         BrowsingStore.shared.updateWatching(url: item.url, position: e, duration: total)
         captureThumbnailIfNeeded()
+    }
+
+    /// A resume entry whose source is gone has to go, or Continue Watching keeps
+    /// offering something that can only ever fail — the entry stores a CDN URL,
+    /// and those expire.
+    ///
+    /// Only when the source is PROVEN gone. libVLC reports one undifferentiated
+    /// error state, with no status code and no distinction between "404" and
+    /// "the Wi-Fi dropped", so the evidence has to be fetched: a local file is
+    /// checked for existence, and a stream is re-probed, where only 404/410
+    /// counts as dead (see `StreamProbe`). Deleting on a timeout instead would
+    /// wipe resume points every time the network dips.
+    private func dropResumeIfSourceIsGone() {
+        guard let item, !resumeEntryRemoved else { return }
+
+        if item.isLocal {
+            // A file that is simply missing. The URL keeps resolving long after
+            // the bytes are gone, which is why the check is on the file itself.
+            guard !FileManager.default.fileExists(atPath: item.url.path) else { return }
+            forgetResume(item)
+            return
+        }
+
+        Task { [weak self] in
+            let outcome = await StreamProbe.probe(
+                url: item.url, headers: item.headers, ruleMatched: false
+            )
+            guard !outcome.active else { return }
+            await MainActor.run { self?.forgetResume(item) }
+        }
+    }
+
+    private func forgetResume(_ item: MediaItem) {
+        UserDefaults.standard.removeObject(forKey: Self.resumeKey(item.url))
+        BrowsingStore.shared.removeWatching(url: item.url.absoluteString)
+        resumeEntryRemoved = true
     }
 
     /// One frame per played item, for the Continue Watching card.
@@ -713,6 +755,7 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
             case .error:
                 buffering = false
                 failure = "This stream could not be opened."
+                dropResumeIfSourceIsGone()
             default: break
             }
             updateNowPlaying()

@@ -28,6 +28,15 @@ final class CastManager: NSObject, ObservableObject {
         GCKCastContext.sharedInstance().sessionManager.add(self)
     }
 
+    /// End the Cast session for real.
+    ///
+    /// The cast dialog's Disconnect used to call PanuraCast's teardown, which
+    /// does nothing whatsoever to a Google Cast session — on a Chromecast the
+    /// button left the device connected. Only the session manager can end one.
+    func endSession() {
+        GCKCastContext.sharedInstance().sessionManager.endSessionAndStopCasting(true)
+    }
+
     /// Load a media item onto the connected receiver.
     func cast(_ item: MediaItem) {
         guard let session = GCKCastContext.sharedInstance()

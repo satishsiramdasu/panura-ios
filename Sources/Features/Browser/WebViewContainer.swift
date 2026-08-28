@@ -11,13 +11,21 @@ import WebKit
 struct WebViewContainer: UIViewRepresentable {
     @ObservedObject var model: BrowserModel
 
+    /// Where the browser lands with nothing loaded. A blank web view reads as a
+    /// broken tab rather than an empty one, so there is deliberately no
+    /// about:blank state — same call as Android's BROWSER_START_URL.
+    static let startPage = URL(string: "https://www.google.com/")!
+
     func makeCoordinator() -> Coordinator { Coordinator(model: model) }
 
     /// Every script and setting the sniffer depends on. Shared so the offscreen
     /// embed extractor is configured identically to the visible browser — a
     /// difference between the two would show up as "detects inline but not in an
     /// embed", which is exactly the bug class that is hardest to find.
-    static func makeConfiguration(handler: WKScriptMessageHandler) -> WKWebViewConfiguration {
+    static func makeConfiguration(
+        handler: WKScriptMessageHandler,
+        privateMode: Bool = false
+    ) -> WKWebViewConfiguration {
         let contentController = WKUserContentController()
         contentController.add(handler, name: "panura")
 
@@ -51,8 +59,24 @@ struct WebViewContainer: UIViewRepresentable {
             forMainFrameOnly: false
         ))
 
+        // Sites that fetch the stream only on a play click. Registered last, so
+        // every hook it exists to feed is already installed when it fires. It is
+        // the one injection that touches the page rather than observing it, so
+        // it is also the first thing to turn off if a page misbehaves on load.
+        if UserDefaults.standard.object(forKey: "auto_play_click") as? Bool ?? true {
+            contentController.addUserScript(WKUserScript(
+                source: AutoPlayClickScript.source,
+                injectionTime: .atDocumentStart,
+                forMainFrameOnly: false
+            ))
+        }
+
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
+        // Private browsing: a data store that is thrown away with the web view,
+        // so cookies, cache and local storage never reach disk. It cannot be
+        // swapped on a live web view, which is why the browser rebuilds one.
+        if privateMode { config.websiteDataStore = .nonPersistent() }
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
         // Block the pop-under/new-window ads these sites open on tap.
@@ -61,11 +85,18 @@ struct WebViewContainer: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> WKWebView {
-        let config = Self.makeConfiguration(handler: context.coordinator)
+        let config = Self.makeConfiguration(
+            handler: context.coordinator, privateMode: model.privateMode
+        )
 
         // Offscreen extraction of gated embeds, reporting into the same model.
         let coordinator = context.coordinator
-        coordinator.embeds.makeConfiguration = { Self.makeConfiguration(handler: coordinator) }
+        let privateMode = model.privateMode
+        coordinator.embeds.makeConfiguration = {
+            // Same store as the visible browser: an offscreen extraction that
+            // wrote cookies to disk would be a hole straight through private mode.
+            Self.makeConfiguration(handler: coordinator, privateMode: privateMode)
+        }
         coordinator.embeds.log = { [weak model] url, verdict in
             Task { @MainActor in
                 model?.reportDebug(url: url, verdict: verdict, host: "embed", source: "frame-relay")
@@ -87,7 +118,7 @@ struct WebViewContainer: UIViewRepresentable {
         )
         webView.scrollView.refreshControl = refresh
         context.coordinator.observe(webView)
-        webView.load(URLRequest(url: URL(string: "https://www.google.com")!))
+        webView.load(URLRequest(url: Self.startPage))
 
         // Ad/tracker rule lists, then one reload so they apply to the current
         // page. Site rules are NOT injected here — the manifest names no domains
@@ -430,9 +461,13 @@ struct WebViewContainer: UIViewRepresentable {
             }
 
             let type = (dict["type"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            // A rule claimed this URL. The probe needs to know: those hosts hand
+            // out single-use tokens, and a probe that spends one leaves the
+            // player with a 410.
+            let ruleMatched = !((dict["siteId"] as? String) ?? "").isEmpty
             model.report(
                 url: url, title: title, headers: headers,
-                castHeaders: full, contentType: type
+                castHeaders: full, contentType: type, ruleMatched: ruleMatched
             )
         }
     }
@@ -457,6 +492,11 @@ enum VideoURL {
         // DASH byte-range segments aren't standalone playable.
         if s.contains("bytestart="), s.contains("byteend=") { return false }
         if rejectedSuffixes.contains(where: path.hasSuffix) { return false }
+        // imgproxy/thumbor-style derivatives — .../original.mp4/rs:fit:480:270/vts:360.
+        // The server renders a poster strip from those, never the video.
+        if let ext = [".mp4/", ".webm/", ".mkv/", ".m3u8/", ".mpd/"]
+            .compactMap({ path.range(of: $0) }).first,
+           path[ext.lowerBound...].contains(":") { return false }
         if acceptedSuffixes.contains(where: path.hasSuffix) { return true }
 
         // Extensionless HLS endpoints.
