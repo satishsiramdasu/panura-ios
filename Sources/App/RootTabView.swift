@@ -47,6 +47,11 @@ struct RootTabView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+            // The stack takes the home-indicator inset back off the system and
+            // lets the bar decide how much of it to keep (8pt, not 34). Without
+            // this the bar floats above an empty band the height of the
+            // indicator area, which is the gap you notice.
+            .ignoresSafeArea(.container, edges: .bottom)
             .animation(.easeOut(duration: 0.2), value: barVisible)
 
             if showMenu {
@@ -59,7 +64,7 @@ struct RootTabView: View {
                     .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { showMenu = false } }
 
                 AppMenuPanel(items: menuItems, current: selection)
-                    .padding(.bottom, AppBarRow.height)
+                    .padding(.bottom, AppBarRow.totalHeight)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }

@@ -59,7 +59,17 @@ struct AppBarRow: View {
     let onSelect: (AppDestination) -> Void
     let onToggleMenu: () -> Void
 
-    static let height: CGFloat = 52
+    /// 48, same as Android's row.
+    static let height: CGFloat = 48
+    /// What the bar keeps under itself instead of the full home-indicator inset.
+    ///
+    /// The shell hands the bar that whole inset (`ignoresSafeArea` on the stack)
+    /// and it gives back only this: the untrimmed 34pt left an empty band under
+    /// the bar as tall as two thirds of the bar itself. 8pt still clears the
+    /// indicator — the pills stop well above it — without the band.
+    static let bottomInset: CGFloat = 8
+    /// Everything the bar takes out of the screen. What the menu panel sits on.
+    static var totalHeight: CGFloat { height + bottomInset }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -91,6 +101,9 @@ struct AppBarRow: View {
         }
         .frame(height: Self.height)
         .frame(maxWidth: .infinity)
+        // Padding inside the background, so the bar's own colour runs down to
+        // the screen edge and the strip below it reads as the bar, not a gap.
+        .padding(.bottom, Self.bottomInset)
         .background(PanuraTheme.surfaceContainer)
     }
 

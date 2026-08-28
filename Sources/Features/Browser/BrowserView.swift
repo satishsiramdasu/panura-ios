@@ -429,7 +429,10 @@ struct BrowserView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 10)
-        .padding(.bottom, 12)
+        // The app bar under this one owns the home-indicator strip. While it is
+        // hidden — scrolled away — this bar is the bottom of the screen and has
+        // to keep that strip itself, or its buttons sit on the indicator.
+        .padding(.bottom, session.barVisible ? 12 : 12 + AppBarRow.bottomInset)
         .background(PanuraTheme.surfaceContainer)
     }
 
