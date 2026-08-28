@@ -19,6 +19,10 @@ struct HomeView: View {
     @State private var playItem: MediaItem?
     @State private var confirmClearHistory = false
     @State private var showReport = false
+    /// URL of the resume card being checked, so it can show it is working.
+    @State private var checkingResume: String?
+    /// Said once, when a card turns out to be dead.
+    @State private var resumeToast: String?
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -37,9 +41,23 @@ struct HomeView: View {
                 .padding(.vertical, 20)
             }
             .background(PanuraTheme.background)
-            .safeAreaInset(edge: .top) { header }
+            .safeAreaInset(edge: .top, spacing: 0) { header }
             .navigationBarHidden(true)
+            .overlay(alignment: .bottom) {
+                if let resumeToast {
+                    Text(resumeToast)
+                        .font(.footnote)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
+                        .padding(.bottom, 16)
+                }
+            }
         }
+        // Sweeps the saved links each time Home comes up. A card is a promise
+        // that tapping it plays something, and browser stream URLs expire in
+        // hours — Android does the same sweep from its Home for the same reason.
+        .task { await store.pruneDeadResumes() }
         .fullScreenCover(isPresented: $showAddress) {
             AddressScreen(
                 onNavigate: { text in
@@ -237,7 +255,20 @@ struct HomeView: View {
                 HStack(spacing: 10) {
                     ForEach(store.continueWatching) { entry in
                         ContinueWatchingCard(entry: entry)
-                            .onTapGesture { playItem = entry.mediaItem }
+                            // Checked before it opens, not after: a saved stream
+                            // URL is a token with an expiry, and the failure it
+                            // produces inside the player is a black screen with
+                            // no explanation.
+                            .overlay {
+                                if checkingResume == entry.url {
+                                    ZStack {
+                                        Color.black.opacity(0.45)
+                                        ProgressView().controlSize(.small)
+                                    }
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+                            }
+                            .onTapGesture { openResume(entry) }
                             .contextMenu {
                                 Button(role: .destructive) {
                                     store.removeWatching(url: entry.url)
@@ -246,6 +277,26 @@ struct HomeView: View {
                     }
                 }
                 .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    /// Verifies before playing, and drops the entry if the link is gone. The
+    /// toast matters: a card vanishing under your finger with no word is a bug,
+    /// the same thing with a line of text is an explanation.
+    private func openResume(_ entry: ResumeEntry) {
+        guard checkingResume == nil else { return }
+        checkingResume = entry.url
+        Task {
+            let alive = await BrowsingStore.isAlive(entry)
+            checkingResume = nil
+            if alive {
+                playItem = entry.mediaItem
+            } else {
+                store.removeWatching(url: entry.url)
+                resumeToast = "That link has expired — open the page again."
+                try? await Task.sleep(nanoseconds: 3_200_000_000)
+                resumeToast = nil
             }
         }
     }

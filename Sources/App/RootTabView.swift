@@ -65,6 +65,11 @@ struct RootTabView: View {
 
                 AppMenuPanel(items: menuItems, current: selection)
                     .padding(.bottom, AppBarRow.totalHeight)
+                    // The panel sits on the bar, and the bar now runs into the
+                    // home-indicator strip. Without this the panel still stops
+                    // at the system's safe area and floats a strip's height
+                    // above the bar it is supposed to rest on.
+                    .ignoresSafeArea(.container, edges: .bottom)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }

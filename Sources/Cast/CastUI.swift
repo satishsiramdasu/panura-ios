@@ -1,6 +1,65 @@
 import SwiftUI
 import GoogleCast
 
+/// The cast icon, drawn rather than borrowed.
+///
+/// SF Symbols has no cast glyph — `tv` is a television, `airplayvideo` is
+/// AirPlay, and neither says "send this to a TV" the way the screen-and-waves
+/// mark does. That mark is what Android uses (Material's `Cast`), what the Cast
+/// SDK's own button draws, and what every user already reads as casting, so the
+/// app draws it: a screen outline with three waves radiating from its lower
+/// left, filled in when something is connected.
+struct CastGlyph: View {
+    var connected = false
+    /// Line weight, at the 24pt reference size. Scales with the frame.
+    var weight: CGFloat = 1.9
+
+    var body: some View {
+        GeometryReader { geo in
+            let u = min(geo.size.width, geo.size.height) / 24
+            let line = weight * u
+            let screen = CGRect(x: 2 * u, y: 4 * u, width: 20 * u, height: 16 * u)
+            // The waves sit inside the screen's lower-left rather than outside
+            // it: kept within the box, the mark stays legible at 17pt, which is
+            // the size it is actually used at.
+            let origin = CGPoint(x: screen.minX + 3.4 * u, y: screen.maxY - 3.4 * u)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 3 * u)
+                    .strokeBorder(style: StrokeStyle(lineWidth: line))
+                    .frame(width: screen.width, height: screen.height)
+                    .position(x: screen.midX, y: screen.midY)
+
+                if connected {
+                    // Material's CastConnected: the same outline with the screen
+                    // lit, so connected and idle differ by fill, not by shape.
+                    RoundedRectangle(cornerRadius: 1.5 * u)
+                        .frame(width: screen.width - 5.5 * u, height: screen.height - 5.5 * u)
+                        .position(x: screen.midX + 1.2 * u, y: screen.midY - 1.2 * u)
+                        .opacity(0.9)
+                }
+
+                // Dot, then two arcs — quarter circles opening up and to the
+                // right, which is where the screen is.
+                Circle()
+                    .frame(width: 2.3 * u, height: 2.3 * u)
+                    .position(origin)
+                ForEach([CGFloat(4.6), CGFloat(8.0)], id: \.self) { radius in
+                    Path { path in
+                        path.addArc(
+                            center: origin, radius: radius * u,
+                            startAngle: .degrees(-90), endAngle: .degrees(0),
+                            clockwise: false
+                        )
+                    }
+                    .stroke(style: StrokeStyle(lineWidth: line, lineCap: .round))
+                }
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
 /// The standard Cast button, usable in any toolbar. Wraps GCKUICastButton.
 struct CastButton: UIViewRepresentable {
     func makeUIView(context: Context) -> GCKUICastButton {
@@ -33,16 +92,21 @@ struct CastToolbarButton: View {
         Button {
             if playing { showControls = true } else { showPicker = true }
         } label: {
-            Image(systemName: connected ? "tv.fill" : "tv")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(connected ? PanuraTheme.accent : Color.secondary)
+            CastGlyph(connected: connected)
+                .frame(width: 22, height: 22)
+                .foregroundStyle(connected ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
                 // Says "trying", without a second glyph: the phone is
                 // discoverable but no TV has answered yet.
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
         }
         .accessibilityLabel(connected ? "Casting — open cast controls" : "Cast to TV")
-        .sheet(isPresented: $showPicker) { NavigationStack { CastDevicesView() } }
-        .sheet(isPresented: $showControls) { PanuraCastControlView() }
+        .sheet(isPresented: $showPicker) {
+            NavigationStack { CastDevicesView() }
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showControls) {
+            PanuraCastControlView().presentationDragIndicator(.visible)
+        }
     }
 }
 
@@ -116,7 +180,10 @@ struct CastDevicesView: View {
                 subtitle: "Plays through the Panura app on your Android TV or Fire TV",
                 note: "Works with any stream — direct play, subtitles, full remote control.",
                 noteGood: true,
-                recommended: true
+                recommended: true,
+                // Panura's own mark, because that is literally what this path
+                // needs: the Panura app, running on the TV.
+                icon: { Image("AppLogo").resizable().scaledToFit() }
             ) {
                 method = .panura
                 panura.start()
@@ -126,7 +193,9 @@ struct CastDevicesView: View {
                 subtitle: "Built-in Chromecast, dongle or Google TV",
                 note: "Limited stream support.",
                 noteGood: false,
-                recommended: false
+                recommended: false,
+                // The generic cast mark — which is Google Cast's own.
+                icon: { CastGlyph() }
             ) {
                 method = .chromecast
             }
@@ -135,17 +204,21 @@ struct CastDevicesView: View {
         }
     }
 
-    private func methodCard(
+    private func methodCard<Icon: View>(
         title: String,
         subtitle: String,
         note: String,
         noteGood: Bool,
         recommended: Bool,
+        @ViewBuilder icon: () -> Icon,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
+                    icon()
+                        .frame(width: 26, height: 26)
+                        .foregroundStyle(PanuraTheme.accent)
                     Text(title).font(.headline)
                     if recommended {
                         Text("Recommended")
@@ -236,10 +309,12 @@ struct CastDevicesView: View {
     private var connectedSection: some View {
         Section {
             if panura.isTVConnected {
-                Label(
-                    panura.connectedTVName.isEmpty ? "Panura TV connected" : panura.connectedTVName,
-                    systemImage: "tv.fill"
-                )
+                HStack(spacing: 10) {
+                    Image("AppLogo").resizable().scaledToFit()
+                        .frame(width: 22, height: 22)
+                    Text(panura.connectedTVName.isEmpty
+                         ? "Panura TV connected" : panura.connectedTVName)
+                }
                 if panura.isCasting, !panura.streamTitle.isEmpty {
                     Label(panura.streamTitle, systemImage: "play.fill")
                         .font(.footnote).foregroundStyle(.secondary)
@@ -251,7 +326,12 @@ struct CastDevicesView: View {
                 }
             }
             if cast.isConnected {
-                Label(cast.connectedDeviceName ?? "Chromecast connected", systemImage: "tv.fill")
+                HStack(spacing: 10) {
+                    CastGlyph(connected: true)
+                        .frame(width: 22, height: 22)
+                        .foregroundStyle(PanuraTheme.accent)
+                    Text(cast.connectedDeviceName ?? "Chromecast connected")
+                }
             }
 
             // Disconnect ends whichever path is actually up. It used to call

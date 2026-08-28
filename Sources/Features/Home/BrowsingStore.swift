@@ -387,6 +387,46 @@ final class BrowsingStore: ObservableObject {
         persistResumes()
     }
 
+    /// Drops the resume entries whose links have died, and answers with how
+    /// many went. Called when Home appears.
+    ///
+    /// Continue Watching remembers a URL, and a browser stream's URL is a
+    /// token with an expiry on it — a day later the same address is a 404, and
+    /// the card is an invitation to a video that cannot play. A local entry
+    /// dies differently: the file it names is a temporary copy of a library
+    /// asset, and the system clears those on its own schedule, so the check
+    /// there is simply whether the file is still on disk.
+    ///
+    /// Fail-safe, exactly like `StreamProbe`: a refusal or a network error
+    /// keeps the entry. Deleting someone's place in a film because the Wi-Fi
+    /// dropped is a far worse failure than showing one dead card.
+    @discardableResult
+    func pruneDeadResumes() async -> Int {
+        let snapshot = resumes
+        guard !snapshot.isEmpty else { return 0 }
+
+        var dead: [String] = []
+        await withTaskGroup(of: (String, Bool).self) { group in
+            for entry in snapshot {
+                group.addTask { (entry.url, await Self.isAlive(entry)) }
+            }
+            for await (url, alive) in group where !alive { dead.append(url) }
+        }
+
+        for url in dead { removeWatching(url: url) }
+        return dead.count
+    }
+
+    /// One entry's liveness — the pre-flight check a tap makes, so a dead card
+    /// says so instead of opening a player that fails.
+    nonisolated static func isAlive(_ entry: ResumeEntry) async -> Bool {
+        guard let url = URL(string: entry.url) else { return false }
+        if entry.isLocal || url.isFileURL {
+            return FileManager.default.fileExists(atPath: url.path)
+        }
+        return await StreamProbe.isAlive(url: url, headers: entry.headers)
+    }
+
     func removeWatching(url: String) {
         for entry in resumes where entry.url == url {
             ResumeThumbnails.remove(entry.thumbnailPath)

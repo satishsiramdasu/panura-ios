@@ -135,7 +135,8 @@ final class BrowserModel: ObservableObject {
         headers: [String: String],
         castHeaders: [String: String] = [:],
         contentType: String? = nil,
-        ruleMatched: Bool = false
+        ruleMatched: Bool = false,
+        source: DetectionSource = .unknown
     ) {
         let key = url.absoluteString
         guard !seen.contains(key) else { return }
@@ -149,6 +150,7 @@ final class BrowserModel: ObservableObject {
             castHeaders: castHeaders.isEmpty ? headers : castHeaders,
             contentType: contentType,
             ruleMatched: ruleMatched,
+            source: source,
             probeState: direct ? .pending : .skipped
         )
         foundVideos.append(video)

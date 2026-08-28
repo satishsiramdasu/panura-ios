@@ -40,7 +40,7 @@ struct LocalVideosView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PanuraTheme.background)
-            .safeAreaInset(edge: .top) { PanuraHeader("Videos") }
+            .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Videos") }
             .navigationBarHidden(true)
         }
         .task { await model.load() }

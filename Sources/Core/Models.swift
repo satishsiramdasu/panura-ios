@@ -54,6 +54,46 @@ struct MediaItem: Identifiable, Hashable {
     }
 }
 
+/// How a stream came to our attention — the badge beside every detection.
+///
+/// Diagnostic, not decoration: when a site misbehaves, "did a rule claim this
+/// or did we guess it off the page text" is the first question asked, and this
+/// answers it without opening Diagnostics. Same three buckets as Android's
+/// `DetectionSource`, so a screenshot from either app reads the same.
+enum DetectionSource: String, Hashable {
+    /// Scanned out of markup or an inline script body.
+    case text
+    /// Seen on the wire — an XHR/fetch hook, or a navigation the app caught.
+    case network
+    /// Claimed by a manifest site rule, or proven by an `#EXTM3U` body.
+    case rule
+    /// Nothing said. Renders no badge rather than a shrug.
+    case unknown
+
+    init(raw: String?) {
+        self = DetectionSource(rawValue: (raw ?? "").lowercased()) ?? .unknown
+    }
+
+    /// Android's mapping: code, swap-vertical, bolt.
+    var icon: String {
+        switch self {
+        case .text: return "chevron.left.forwardslash.chevron.right"
+        case .network: return "arrow.up.arrow.down"
+        case .rule: return "bolt.fill"
+        case .unknown: return "questionmark"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .text: return "Found in page text"
+        case .network: return "Found in network traffic"
+        case .rule: return "Matched a site rule"
+        case .unknown: return ""
+        }
+    }
+}
+
 /// A found video reported by the browser extractor (parallels
 /// `PanuraExtractor.onVideoFound(url, title)` on Android).
 struct ExtractedVideo: Identifiable, Hashable {
@@ -71,6 +111,8 @@ struct ExtractedVideo: Identifiable, Hashable {
     /// such a stream: those hosts hand out single-use tokens, and a probe that
     /// spends one leaves the player with a 410.
     var ruleMatched: Bool = false
+    /// Which hook found this. Drives the badge on the bar and in the sheet.
+    var source: DetectionSource = .unknown
     /// Liveness, from `StreamProbe`. `.skipped` for anything that isn't direct
     /// media — an embed page has nothing to probe.
     var probeState: StreamProbe.State = .skipped

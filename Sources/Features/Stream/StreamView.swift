@@ -23,7 +23,7 @@ struct StreamView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(PanuraTheme.background)
-            .safeAreaInset(edge: .top) { PanuraHeader("Network Stream") }
+            .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Network Stream") }
             .navigationBarHidden(true)
         }
         .fullScreenCover(item: $playItem) { PlayerView(item: $0, playlist: channelPlaylist()) }

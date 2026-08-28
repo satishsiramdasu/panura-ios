@@ -67,7 +67,7 @@ struct SettingsView: View {
             // what stops a destination switch from looking like leaving the app.
             // Pushed screens keep their normal bar, so back stays where iOS
             // users expect it.
-            .safeAreaInset(edge: .top) { PanuraHeader("Settings") }
+            .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Settings") }
             .navigationBarHidden(true)
             .confirmationDialog(
                 "Reset settings?",

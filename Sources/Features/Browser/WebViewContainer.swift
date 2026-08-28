@@ -316,7 +316,11 @@ struct WebViewContainer: UIViewRepresentable {
                 // Same rule as the JS path: the browser's page title, not
                 // whichever frame or extraction view happened to catch this.
                 let pageTitle = model.pageTitle.isEmpty ? (webView.title ?? "") : model.pageTitle
-                model.report(url: url, title: pageTitle, headers: headers)
+                // Caught on the wire rather than in the page: this is a
+                // navigation the app intercepted.
+                model.report(
+                    url: url, title: pageTitle, headers: headers, source: .network
+                )
                 return .cancel
             }
 
@@ -538,7 +542,8 @@ struct WebViewContainer: UIViewRepresentable {
             let ruleMatched = !((dict["siteId"] as? String) ?? "").isEmpty
             model.report(
                 url: url, title: title, headers: headers,
-                castHeaders: full, contentType: type, ruleMatched: ruleMatched
+                castHeaders: full, contentType: type, ruleMatched: ruleMatched,
+                source: DetectionSource(raw: dict["source"] as? String)
             )
         }
     }

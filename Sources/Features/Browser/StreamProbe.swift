@@ -83,6 +83,36 @@ enum StreamProbe {
         return path.hasSuffix(".m3u8") || path.contains("/hls/") || full.contains(".m3u8")
     }
 
+    /// Is this link still worth offering? The question Continue Watching asks,
+    /// which is narrower than `probe` — no quality, no size, just whether the
+    /// resource is definitively gone.
+    ///
+    /// Fail-safe in the same way and for the same reason: a CDN that 403s a
+    /// bare probe usually plays fine for the player, which replays the whole
+    /// captured header set, and a network error proves nothing at all. Only
+    /// 404/410 count as gone. Android's `LocalStreamResumeRepository.probe`
+    /// makes exactly this call and the two must agree, or the same saved stream
+    /// survives on one phone and vanishes on the other.
+    static func isAlive(url: URL, headers: [String: String]) async -> Bool {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 6
+        // A range keeps the probe to a couple of KB of a file that may be
+        // gigabytes; a CDN that ignores it answers 200 and we read nothing more.
+        request.setValue("bytes=0-2047", forHTTPHeaderField: "Range")
+        for (name, value) in headers where !value.isEmpty {
+            let key = name.lowercased()
+            guard key != "host", key != "content-length", key != "range" else { continue }
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        if headers.keys.first(where: { $0.lowercased() == "user-agent" }) == nil {
+            request.setValue("VLC/3.0.20 LibVLC/3.0.20", forHTTPHeaderField: "User-Agent")
+        }
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse
+        else { return true }
+        return !goneStatuses.contains(http.statusCode)
+    }
+
     /// Probes `url`, replaying the headers the browser captured for it.
     ///
     /// `ruleMatched` streams are NOT read: a single-use-token host spends its

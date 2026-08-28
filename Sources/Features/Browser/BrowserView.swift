@@ -59,7 +59,10 @@ struct BrowserView: View {
 
             if showMenu { menuPanel }
         }
-        .safeAreaInset(edge: .bottom) {
+        // spacing 0: the default leaves a gap between the page and the bar, and
+        // the app background showing through it is the dark strip along the
+        // bar's top edge.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             // With diagnostics on the bar must also open when nothing was
             // detected — that is precisely the case worth inspecting.
             if !model.foundVideos.isEmpty || (debugDetection && !model.debugLog.isEmpty) {
@@ -79,9 +82,12 @@ struct BrowserView: View {
                 onDismiss: { showAddress = false }
             )
         }
-        .sheet(isPresented: $showPanuraControls) { PanuraCastControlView() }
+        .sheet(isPresented: $showPanuraControls) {
+            PanuraCastControlView().presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showCastPicker, onDismiss: castPendingIfConnected) {
             NavigationStack { CastDevicesView() }
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
         .sheet(isPresented: $showReport) {
@@ -442,9 +448,10 @@ struct BrowserView: View {
     /// height.
     private func infoRow(_ video: ExtractedVideo) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "play.rectangle.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(PanuraTheme.accent)
+            // Which hook found this, rather than "a video was found" — the count
+            // badges on the right already say that, and how it was found is the
+            // one fact about a detection nothing else on the bar carries.
+            sourceBadge(video.source)
 
             // Pinned beside the glyph, never truncated: quality is what the
             // choice is actually made on, so it has to survive a long filename.
@@ -488,6 +495,33 @@ struct BrowserView: View {
         .contentShape(Rectangle())
     }
 
+    /// Text, network or rule, as a small square beside the stream it describes.
+    ///
+    /// Diagnostic rather than decorative: when a site misbehaves, "did a rule
+    /// claim this or did we guess it off the page text" is the first question,
+    /// and this answers it without opening Diagnostics. An unknown source falls
+    /// back to the plain video glyph rather than drawing a shrug.
+    /// `fallback` fills the slot when nothing said how a URL was found — the
+    /// bar has one glyph there and cannot leave it blank, while a sheet row can
+    /// simply not draw a badge, which is what Android does.
+    @ViewBuilder
+    private func sourceBadge(_ source: DetectionSource, fallback: Bool = true) -> some View {
+        if source == .unknown {
+            if fallback {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(PanuraTheme.accent)
+            }
+        } else {
+            Image(systemName: source.icon)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 26, height: 22)
+                .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .accessibilityLabel(source.label)
+        }
+    }
+
     private func countBadge(systemImage: String, count: Int) -> some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage).font(.system(size: 11))
@@ -519,11 +553,9 @@ struct BrowserView: View {
             Button {
                 castOrConnect(video)
             } label: {
-                streamActionLabel(
-                    castLabel,
-                    icon: castConnected ? "tv.fill" : "tv",
-                    filled: false
-                )
+                streamActionLabel(castLabel, filled: false) {
+                    CastGlyph(connected: castConnected).frame(width: 18, height: 18)
+                }
             }
             .buttonStyle(.plain)
         }
@@ -538,8 +570,20 @@ struct BrowserView: View {
         icon: String,
         filled: Bool
     ) -> some View {
-        HStack(spacing: 6) {
+        streamActionLabel(title, filled: filled) {
             Image(systemName: icon).font(.system(size: 16))
+        }
+    }
+
+    /// The same button with a drawn glyph instead of a symbol name — the cast
+    /// mark is not in SF Symbols, so it arrives as a view.
+    private func streamActionLabel<Glyph: View>(
+        _ title: String,
+        filled: Bool,
+        @ViewBuilder glyph: () -> Glyph
+    ) -> some View {
+        HStack(spacing: 6) {
+            glyph()
             Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
         }
         .frame(maxWidth: .infinity)
@@ -585,6 +629,7 @@ struct BrowserView: View {
                 ForEach(model.orderedVideos) { video in
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
+                            sourceBadge(video.source, fallback: false)
                             Text(video.title.isEmpty ? video.fileLabel : video.title)
                                 .font(.subheadline.weight(.medium))
                                 .lineLimit(2)
@@ -609,11 +654,10 @@ struct BrowserView: View {
                                 showFoundSheet = false
                                 castOrConnect(video)
                             } label: {
-                                streamActionLabel(
-                                    castLabel,
-                                    icon: castConnected ? "tv.fill" : "tv",
-                                    filled: false
-                                )
+                                streamActionLabel(castLabel, filled: false) {
+                                    CastGlyph(connected: castConnected)
+                                        .frame(width: 18, height: 18)
+                                }
                             }
                             .buttonStyle(.plain)
                         }

@@ -138,9 +138,23 @@ enum ExtractionScript {
       var strictSatisfied = false;
       var FALLBACK_MS = 8000;
 
-      function emit(abs, title, site, proven) {
+      // Which hook found a URL, in the three buckets the badge draws: 'text'
+      // (markup or an inline script body), 'network' (seen on the wire — the
+      // XHR/fetch hooks and the src/media hooks that fire from them), 'rule'
+      // (claimed by a site rule, or proven by an #EXTM3U body). Same three
+      // Android reports, so the two apps' badges mean the same thing.
+      function kindOf(src) {
+        var s = String(src || '');
+        if (s === 'playlist-body') return 'rule';
+        if (s === 'dom-scan' || s === 'jwplayer' ||
+            s === 'inline-script' || s === 'dom-html') return 'text';
+        return 'network';
+      }
+
+      function emit(abs, title, site, proven, source) {
         post({
           kind: 'video',
+          source: source || '',
           url: abs,
           title: title || document.title || '',
           referer: refererFor(site),
@@ -201,16 +215,18 @@ enum ExtractionScript {
           var site = matchedSite();
           var strict = !!(site && site.pattern && site.pattern.length);
 
-          if (!strict) { dbg(abs, 'emitted (no rule)', src); emit(abs, title, site, proven); return; }
+          if (!strict) { dbg(abs, 'emitted (no rule)', src); emit(abs, title, site, proven, kindOf(src)); return; }
 
           if (proven || matchesStream(site, abs)) {
             strictSatisfied = true;
             pending = [];               // the real stream won; drop the noise
             dbg(abs, proven ? 'emitted (proven manifest)' : 'emitted (rule match)', src);
-            emit(abs, title, site, proven);
+            // What got this through the gate is what the badge should say,
+            // whichever hook happened to spot the URL first.
+            emit(abs, title, site, proven, 'rule');
           } else {
             dbg(abs, 'held: no rule match', src);
-            pending.push([abs, title]);
+            pending.push([abs, title, src]);
           }
         } catch (e) {}
       }
@@ -256,7 +272,9 @@ enum ExtractionScript {
         try {
           if (strictSatisfied || !pending.length) return;
           var site = matchedSite();
-          for (var i = 0; i < pending.length; i++) emit(pending[i][0], pending[i][1], site, false);
+          for (var i = 0; i < pending.length; i++) {
+            emit(pending[i][0], pending[i][1], site, false, kindOf(pending[i][2]));
+          }
           pending = [];
         } catch (e) {}
       }, FALLBACK_MS);
