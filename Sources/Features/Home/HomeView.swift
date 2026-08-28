@@ -121,7 +121,12 @@ struct HomeView: View {
                     ? PanuraTheme.incognito.opacity(0.22)
                     : PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
-                leading: { EmptyView() },
+                leading: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .frame(width: 34, height: 38)
+                },
                 trailing: {
                     // Same cell Android puts it in: last inside Home's pill. It
                     // is browser state, but this is where a session is started,

@@ -43,13 +43,10 @@ struct AddressScreen: View {
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
     private var isBlank: Bool { trimmed.isEmpty }
 
-    /// A section earns a chip if it has anything in it. The selected one always
-    /// shows, so its empty state is reachable rather than a blank screen.
-    private var chips: [AddressSection] {
-        AddressSection.allCases.filter { s in
-            s == section || !entries(for: s).isEmpty
-        }
-    }
+    /// All three, always. Hiding an empty section hid Shortcuts on any install
+    /// that had not saved one yet — which is exactly the install that needs to
+    /// be told the section exists. Each empty state says what belongs there.
+    private var chips: [AddressSection] { AddressSection.allCases }
 
     private func entries(for section: AddressSection) -> [SiteEntry] {
         switch section {

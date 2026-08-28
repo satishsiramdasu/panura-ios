@@ -29,12 +29,6 @@ struct SettingsView: View {
                         description: "Site rules, automatic play, diagnostics",
                         icon: "wave.3.right"
                     ) { DetectionPreferencesView() }
-
-                    PreferenceRow(
-                        title: "Cast to TV",
-                        description: "Panura Cast and Chromecast",
-                        icon: "tv"
-                    ) { CastDevicesView() }
                 }
 
                 Section("More") {

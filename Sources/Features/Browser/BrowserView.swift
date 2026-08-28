@@ -500,17 +500,13 @@ struct BrowserView: View {
     /// behind the row is for choosing a different stream, not for reaching the
     /// obvious one.
     private func actionRow(_ video: ExtractedVideo) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Button {
                 playItem = model.playable(video)
             } label: {
-                Label("Play", systemImage: "play.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
+                streamActionLabel("Play", icon: "play.fill", filled: true)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(PanuraTheme.accent)
+            .buttonStyle(.plain)
 
             // Always present, connected or not — the same concept as Android's:
             // Cast is how you START casting, so hiding it until a TV is already
@@ -520,14 +516,41 @@ struct BrowserView: View {
             Button {
                 castOrConnect(video)
             } label: {
-                Label(castLabel, systemImage: castConnected ? "tv.fill" : "tv")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 40)
+                streamActionLabel(
+                    castLabel,
+                    icon: castConnected ? "tv.fill" : "tv",
+                    filled: false
+                )
             }
-            .buttonStyle(.bordered)
-            .tint(castConnected ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
+            .buttonStyle(.plain)
         }
+    }
+
+    /// Android's pair exactly: a filled primary button and an outlined one, both
+    /// 12pt-rounded with 8/10 content padding and a 16pt glyph. Built by hand
+    /// rather than with `.borderedProminent`, whose own padding and tinting put
+    /// them a good half-row taller than the Android bar.
+    private func streamActionLabel(
+        _ title: String,
+        icon: String,
+        filled: Bool
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 16))
+            Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 10)
+        .background {
+            if filled {
+                RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.accent)
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(PanuraTheme.outline, lineWidth: 1)
+            }
+        }
+        .foregroundStyle(filled ? PanuraTheme.onAccent : PanuraTheme.accent)
     }
 
     private var castConnected: Bool { panuraCast.isTVConnected || cast.isConnected }
@@ -567,26 +590,29 @@ struct BrowserView: View {
                         }
                         Text(video.url.absoluteString)
                             .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
                             .lineLimit(1)
 
-                        HStack(spacing: 10) {
+                        HStack(spacing: 8) {
                             Button {
                                 showFoundSheet = false
                                 playItem = model.playable(video)
                             } label: {
-                                Label("Play", systemImage: "play.fill")
+                                streamActionLabel("Play", icon: "play.fill", filled: true)
                             }
-                            .buttonStyle(.borderedProminent)
-                            .tint(PanuraTheme.accent)
+                            .buttonStyle(.plain)
 
                             Button {
                                 showFoundSheet = false
                                 castOrConnect(video)
                             } label: {
-                                Label(castLabel, systemImage: castConnected ? "tv.fill" : "tv")
+                                streamActionLabel(
+                                    castLabel,
+                                    icon: castConnected ? "tv.fill" : "tv",
+                                    filled: false
+                                )
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.plain)
                         }
                     }
                     .padding(.vertical, 4)
