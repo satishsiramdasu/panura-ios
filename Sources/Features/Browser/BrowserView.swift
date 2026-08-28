@@ -19,6 +19,10 @@ struct BrowserView: View {
     @State private var playItem: MediaItem?
     @State private var showFoundSheet = false
     @State private var showPanuraControls = false
+    /// The cast picker, opened by a Cast tap with no TV connected. The video
+    /// that asked for it waits here and goes as soon as one is.
+    @State private var showCastPicker = false
+    @State private var pendingCast: MediaItem?
     @State private var showMenu = false
     @State private var showAddress = false
     @State private var showReport = false
@@ -76,6 +80,9 @@ struct BrowserView: View {
             )
         }
         .sheet(isPresented: $showPanuraControls) { PanuraCastControlView() }
+        .sheet(isPresented: $showCastPicker, onDismiss: castPendingIfConnected) {
+            NavigationStack { CastDevicesView() }
+        }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
         .sheet(isPresented: $showReport) {
             ReportIssueSheet(
@@ -113,6 +120,20 @@ struct BrowserView: View {
         }
         .onChange(of: pendingAddress) { _ in consumePending() }
         .onAppear { consumePending() }
+    }
+
+    /// A cast that had to wait for a TV. Sending it on dismissal rather than
+    /// making the user find the button again is the whole point of remembering
+    /// which video asked.
+    private func castPendingIfConnected() {
+        guard let item = pendingCast else { return }
+        pendingCast = nil
+        if panuraCast.isTVConnected {
+            panuraCast.cast(item)
+            showPanuraControls = true
+        } else if cast.isConnected {
+            cast.cast(item)
+        }
     }
 
     /// Load whatever Home handed over, then clear it.
@@ -394,49 +415,55 @@ struct BrowserView: View {
             } else {
                 Button { showFoundSheet = true } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: "ladybug.fill")
-                        Text("Sniffer log (\(model.debugLog.count))").fontWeight(.medium)
+                        Image(systemName: "ladybug.fill").font(.system(size: 18))
+                        Text("Sniffer log (\(model.debugLog.count))")
+                            .font(.subheadline.weight(.medium))
                         Spacer()
                         Image(systemName: "chevron.up").font(.footnote)
                     }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .frame(height: 30)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
         .background(PanuraTheme.surfaceContainer)
     }
 
+    /// Sized like the thing it is — the reason the page was opened — rather
+    /// than a footnote under it. Text a step up from caption, a 44pt row so the
+    /// whole thing is a comfortable target, and the actions below at full
+    /// height.
     private func infoRow(_ video: ExtractedVideo) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "play.rectangle.fill")
-                .font(.footnote)
+                .font(.system(size: 18))
                 .foregroundStyle(PanuraTheme.accent)
 
             // Pinned beside the glyph, never truncated: quality is what the
             // choice is actually made on, so it has to survive a long filename.
             if let tag = video.probeResult?.qualityTag {
                 Text(tag)
-                    .font(.caption.weight(.bold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(PanuraTheme.accent)
             }
             if let size = video.probeResult?.fileSize {
                 // Deliberately not the quality colour: the two sit side by side
                 // and answer different questions.
                 Text(size)
-                    .font(.caption.weight(.medium))
+                    .font(.subheadline.weight(.medium))
                     .foregroundStyle(PanuraTheme.tertiary)
             }
             if video.probeState == .pending {
-                ProgressView().controlSize(.mini)
+                ProgressView().controlSize(.small)
             }
 
             Text(video.fileLabel)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 .lineLimit(1)
                 .truncationMode(.middle)
 
@@ -451,62 +478,79 @@ struct BrowserView: View {
                 countBadge(systemImage: "captions.bubble.fill", count: model.foundSubtitles.count)
             }
             Image(systemName: "chevron.up")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
         }
+        .frame(height: 30)
         .contentShape(Rectangle())
     }
 
     private func countBadge(systemImage: String, count: Int) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: systemImage).font(.system(size: 9))
-            Text("\(count)").font(.caption2.weight(.bold))
+        HStack(spacing: 4) {
+            Image(systemName: systemImage).font(.system(size: 11))
+            Text("\(count)").font(.caption.weight(.bold))
         }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 2)
-        .background(PanuraTheme.accent, in: RoundedRectangle(cornerRadius: 6))
-        .foregroundStyle(.white)
+        .padding(.horizontal, 7)
+        .frame(height: 22)
+        .background(PanuraTheme.accent, in: RoundedRectangle(cornerRadius: 8))
+        .foregroundStyle(PanuraTheme.onAccent)
     }
 
     /// The top pick's actions, in the bar whatever the count is — the list
     /// behind the row is for choosing a different stream, not for reaching the
     /// obvious one.
     private func actionRow(_ video: ExtractedVideo) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             Button {
                 playItem = model.playable(video)
             } label: {
                 Label("Play", systemImage: "play.fill")
                     .font(.subheadline.weight(.semibold))
                     .frame(maxWidth: .infinity)
+                    .frame(height: 40)
             }
             .buttonStyle(.borderedProminent)
             .tint(PanuraTheme.accent)
 
-            if cast.isConnected {
-                Button {
-                    cast.cast(model.playable(video))
-                } label: {
-                    Label("Cast", systemImage: "tv")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
+            // Always present, connected or not — the same concept as Android's:
+            // Cast is how you START casting, so hiding it until a TV is already
+            // linked meant the button only ever appeared once it was no longer
+            // needed. With nothing connected it opens the picker, and the video
+            // that asked goes as soon as one is.
+            Button {
+                castOrConnect(video)
+            } label: {
+                Label(castLabel, systemImage: castConnected ? "tv.fill" : "tv")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 40)
             }
-
-            if panuraCast.isTVConnected {
-                Button {
-                    panuraCast.cast(model.playable(video))
-                    showPanuraControls = true
-                } label: {
-                    Label("Panura TV", systemImage: "appletv.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-            }
+            .buttonStyle(.bordered)
+            .tint(castConnected ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
         }
-        .controlSize(.small)
+    }
+
+    private var castConnected: Bool { panuraCast.isTVConnected || cast.isConnected }
+
+    private var castLabel: String {
+        if panuraCast.isTVConnected { return "Panura TV" }
+        if cast.isConnected { return "Cast" }
+        return "Cast to TV"
+    }
+
+    /// Panura TV first when both are linked: it plays what this app plays, and
+    /// Chromecast is limited to what its receiver accepts.
+    private func castOrConnect(_ video: ExtractedVideo) {
+        let item = model.playable(video)
+        if panuraCast.isTVConnected {
+            panuraCast.cast(item)
+            showPanuraControls = true
+        } else if cast.isConnected {
+            cast.cast(item)
+        } else {
+            pendingCast = item
+            showCastPicker = true
+        }
     }
 
     private var foundSheet: some View {
@@ -536,26 +580,13 @@ struct BrowserView: View {
                             .buttonStyle(.borderedProminent)
                             .tint(PanuraTheme.accent)
 
-                            if cast.isConnected {
-                                Button {
-                                    showFoundSheet = false
-                                    cast.cast(model.playable(video))
-                                } label: {
-                                    Label("Cast", systemImage: "tv")
-                                }
-                                .buttonStyle(.bordered)
+                            Button {
+                                showFoundSheet = false
+                                castOrConnect(video)
+                            } label: {
+                                Label(castLabel, systemImage: castConnected ? "tv.fill" : "tv")
                             }
-
-                            if panuraCast.isTVConnected {
-                                Button {
-                                    showFoundSheet = false
-                                    panuraCast.cast(model.playable(video))
-                                    showPanuraControls = true
-                                } label: {
-                                    Label("Panura TV", systemImage: "appletv.fill")
-                                }
-                                .buttonStyle(.bordered)
-                            }
+                            .buttonStyle(.bordered)
                         }
                     }
                     .padding(.vertical, 4)
