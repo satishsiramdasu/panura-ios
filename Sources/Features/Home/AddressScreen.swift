@@ -75,7 +75,7 @@ struct AddressScreen: View {
             Divider()
             list
         }
-        .background(Color(.systemBackground))
+        .background(PanuraTheme.background)
         .onAppear {
             section = startSection
             focused = true
@@ -128,11 +128,11 @@ struct AddressScreen: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
-            .background(Color(.secondarySystemBackground), in: Capsule())
+            .background(PanuraTheme.surfaceVariant, in: Capsule())
         }
         .padding(.horizontal, 8)
         .frame(height: PanuraHeader<AnyView>.height)
-        .background(.bar)
+        .background(PanuraTheme.surfaceContainer)
     }
 
     // MARK: results
@@ -221,7 +221,7 @@ struct AddressScreen: View {
                             .frame(height: 32)
                             .background(
                                 Capsule().fill(
-                                    s == section ? PanuraTheme.accentSoft : Color(.secondarySystemBackground)
+                                    s == section ? PanuraTheme.accentSoft : PanuraTheme.surfaceVariant
                                 )
                             )
                             .foregroundStyle(s == section ? PanuraTheme.accent : Color.primary)
@@ -254,7 +254,7 @@ struct AddressScreen: View {
                 .foregroundStyle(.secondary)
             }
             .padding(12)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
         }
@@ -297,7 +297,7 @@ struct AddressScreen: View {
                 .padding(.horizontal, 12)
                 .frame(height: 34)
                 .background(
-                    Capsule().fill(primary ? PanuraTheme.accentSoft : Color(.secondarySystemBackground))
+                    Capsule().fill(primary ? PanuraTheme.accentSoft : PanuraTheme.surfaceVariant)
                 )
                 .foregroundStyle(primary ? PanuraTheme.accent : Color.primary)
         }

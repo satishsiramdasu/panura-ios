@@ -24,18 +24,30 @@ struct RootTabView: View {
     /// owns its WebView across switches, so the hand-off has to be state here
     /// rather than a fresh `BrowserView(url:)`.
     @State private var pendingAddress: String?
+    @ObservedObject private var session = BrowserSession.shared
 
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
                 destinations
-                AppBarRow(
-                    selection: selection,
-                    menuOpen: showMenu,
-                    onSelect: select,
-                    onToggleMenu: { withAnimation(.easeOut(duration: 0.2)) { showMenu.toggle() } }
-                )
+                // Hidden while the browser is scrolled down, and only there: the
+                // page needs the height, and every other destination is a list
+                // that can reach its own end. The height animates away in place
+                // rather than the bar sliding over the content, so nothing it
+                // covers can end up unreachable.
+                if barVisible {
+                    AppBarRow(
+                        selection: selection,
+                        menuOpen: showMenu,
+                        onSelect: select,
+                        onToggleMenu: {
+                            withAnimation(.easeOut(duration: 0.2)) { showMenu.toggle() }
+                        }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .animation(.easeOut(duration: 0.2), value: barVisible)
 
             if showMenu {
                 // Scrim first: dismisses on tap without stealing the panel's own
@@ -94,7 +106,14 @@ struct RootTabView: View {
             .zIndex(active ? 1 : 0)
     }
 
+    /// The bar can only be hidden by the browser, and only while you are in it
+    /// — leaving the Web tab must never strand it off screen.
+    private var barVisible: Bool {
+        selection != .web || session.barVisible || showMenu
+    }
+
     private func select(_ destination: AppDestination) {
+        session.showBar()
         withAnimation(.easeInOut(duration: 0.22)) {
             selection = destination
             showMenu = false

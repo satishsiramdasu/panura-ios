@@ -16,6 +16,8 @@ struct SettingsView: View {
     /// touches the page rather than observing it, so it gets a switch.
     @AppStorage("auto_play_click") private var autoPlayClick = true
     @ObservedObject private var versions = VersionStore.shared
+    /// Read by PanuraApp; "dark" matches Android's default.
+    @AppStorage("appearance") private var appearance = "dark"
     @State private var checkedForUpdates = false
 
     var body: some View {
@@ -53,6 +55,18 @@ struct SettingsView: View {
                     Text("Detection")
                 } footer: {
                     Text("Re-downloads the site detection rules. Reopen the Browser tab afterwards to apply them.\n\nSome sites request nothing until their play button is pressed; Panura presses it for them so the stream can be found. Turn this off first if a page starts behaving oddly on load.\n\nDiagnostics logs every media URL a page requests and why it was kept or filtered, shown under the detected-videos sheet.")
+                }
+
+                Section {
+                    Picker("Appearance", selection: $appearance) {
+                        Text("Dark").tag("dark")
+                        Text("Light").tag("light")
+                        Text("System").tag("system")
+                    }
+                } header: {
+                    Text("Interface")
+                } footer: {
+                    Text("Panura is designed dark, in the same amber scheme as the Android app. Light is complete, and System follows your device.")
                 }
 
                 Section("Community") {
@@ -101,6 +115,8 @@ struct SettingsView: View {
             // what stops a destination switch from looking like leaving the app.
             // Pushed screens keep their normal bar, so back stays where iOS
             // users expect it.
+            .scrollContentBackground(.hidden)
+            .background(PanuraTheme.background)
             .safeAreaInset(edge: .top) { PanuraHeader("Settings") }
             .navigationBarHidden(true)
             .task { await versions.load() }

@@ -75,6 +75,8 @@ struct CastDevicesView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(PanuraTheme.background)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -180,7 +182,7 @@ struct CastDevicesView: View {
                 // possibly find us, and saying "waiting" would point the user at
                 // the TV for a fault that is on this device.
                 Label("Not discoverable", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(PanuraTheme.tertiary)
             } else {
                 Button("Make this phone discoverable") { panura.start() }
             }
@@ -192,7 +194,7 @@ struct CastDevicesView: View {
             }
 
             if let error = panura.lastError {
-                Text(error).font(.footnote).foregroundStyle(.red)
+                Text(error).font(.footnote).foregroundStyle(PanuraTheme.error)
                 Button {
                     // Deep-links to Panura's own settings page, where the Local
                     // Network toggle lives.

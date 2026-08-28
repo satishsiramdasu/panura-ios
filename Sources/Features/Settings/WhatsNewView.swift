@@ -62,6 +62,8 @@ struct WhatsNewView: View {
                 }
             }
         }
+        .scrollContentBackground(.hidden)
+        .background(PanuraTheme.background)
         .navigationTitle("What's New")
         .navigationBarTitleDisplayMode(.inline)
         .task { await versions.load() }

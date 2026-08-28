@@ -86,12 +86,12 @@ struct WebViewContainer: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let config = Self.makeConfiguration(
-            handler: context.coordinator, privateMode: model.privateMode
+            handler: context.coordinator, privateMode: BrowserSession.shared.privateMode
         )
 
         // Offscreen extraction of gated embeds, reporting into the same model.
         let coordinator = context.coordinator
-        let privateMode = model.privateMode
+        let privateMode = BrowserSession.shared.privateMode
         coordinator.embeds.makeConfiguration = {
             // Same store as the visible browser: an offscreen extraction that
             // wrote cookies to disk would be a hole straight through private mode.
@@ -172,7 +172,27 @@ struct WebViewContainer: UIViewRepresentable {
                 webView.observe(\.url, options: [.new]) { [weak self] wv, _ in
                     Task { @MainActor in self?.documentChanged(wv.url) }
                 },
+                // Scrolling down hides the app's bottom bar; scrolling up brings
+                // it back, as on Android. Observed rather than taken from the
+                // scroll view's delegate, which belongs to WKWebView — it
+                // implements real behaviour through it, and replacing it costs
+                // that.
+                webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
+                    Task { @MainActor in self?.scrolled(sv) }
+                },
             ]
+
+        }
+
+        @MainActor
+        private func scrolled(_ scrollView: UIScrollView) {
+            let y = scrollView.contentOffset.y
+            // Rubber-banding at either end is not a scroll in that direction;
+            // reading it as one hides the bar on a bounce.
+            let bottom = scrollView.contentSize.height - scrollView.bounds.height
+            guard y > 0, y < bottom else { return }
+            BrowserSession.shared.scrolled(by: y - lastScrollY)
+            lastScrollY = y
         }
 
         /// Last document we counted as "a page": host + path only.
@@ -199,7 +219,16 @@ struct WebViewContainer: UIViewRepresentable {
 
             model.clearFindings()
             embeds.reset()
+            // A new page starts at the top with the bar up: carrying the old
+            // page's scroll offset over would read the jump back to zero as a
+            // downward scroll and hide the bar on arrival.
+            lastScrollY = 0
+            BrowserSession.shared.showBar()
         }
+
+        /// Where the page was when we last looked, so a scroll can be given a
+        /// direction.
+        private var lastScrollY: CGFloat = 0
 
         @objc func handleRefresh(_ sender: UIRefreshControl) {
             webView?.reload()

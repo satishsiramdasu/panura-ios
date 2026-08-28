@@ -13,6 +13,8 @@ struct BrowserView: View {
     @StateObject private var model = BrowserModel()
     @ObservedObject private var store = BrowsingStore.shared
     @ObservedObject private var panuraCast = PanuraCastManager.shared
+    /// Private mode lives here, not on the model: Home's pill toggles it too.
+    @ObservedObject private var session = BrowserSession.shared
     @EnvironmentObject private var cast: CastManager
     @State private var playItem: MediaItem?
     @State private var showFoundSheet = false
@@ -28,11 +30,6 @@ struct BrowserView: View {
     /// Only read to rebuild the web view when it changes: user scripts are fixed
     /// at creation, so a toggle in Settings means nothing until a new one exists.
     @AppStorage("auto_play_click") private var autoPlayClick = true
-
-    /// Android's private-browsing violet, not the app accent: the pill has to
-    /// read as "private" in any theme, and the accent is what everything else in
-    /// the header already wears.
-    private static let privateTint = Color(red: 0.78, green: 0.66, blue: 1.0)
 
     private var pageUsable: Bool {
         guard let url = model.currentURL?.absoluteString else { return false }
@@ -50,7 +47,7 @@ struct BrowserView: View {
                     // list and the cookie jar, which is exactly what switching
                     // modes means. The auto-click flag rides along for the same
                     // reason: user scripts are registered once, at creation.
-                    .id("\(model.privateMode)-\(autoPlayClick)")
+                    .id("\(session.privateMode)-\(autoPlayClick)")
             }
 
             if showMenu { menuPanel }
@@ -130,9 +127,9 @@ struct BrowserView: View {
                 title: model.pageTitle,
                 url: model.currentURL?.absoluteString ?? "",
                 placeholder: "Search or enter website",
-                background: model.privateMode
-                    ? Self.privateTint.opacity(0.22)
-                    : Color(.secondarySystemBackground),
+                background: session.privateMode
+                    ? PanuraTheme.incognito.opacity(0.22)
+                    : PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
                 leading: {
                     // Same slot Android gives it: first cell inside the pill.
@@ -152,7 +149,7 @@ struct BrowserView: View {
                         let saved = store.isShortcut(model.currentURL?.absoluteString ?? "")
                         Image(systemName: saved ? "star.fill" : "star")
                             .font(.system(size: 15))
-                            .foregroundStyle(saved ? PanuraTheme.accent : Color.secondary)
+                            .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
                             .frame(width: 38, height: 38)
                     }
                     .buttonStyle(.plain)
@@ -169,7 +166,7 @@ struct BrowserView: View {
                     } label: {
                         Image(systemName: showMenu ? "chevron.up" : "line.3.horizontal")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(showMenu ? PanuraTheme.accent : Color.secondary)
+                            .foregroundStyle(showMenu ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
                             .frame(width: 38, height: 38)
                     }
                     .buttonStyle(.plain)
@@ -210,7 +207,7 @@ struct BrowserView: View {
                         // slots when the bottom bar became app-wide.
                         Button {
                             showMenu = false
-                            if model.privateMode {
+                            if session.privateMode {
                                 // Only worth asking about when there is a page to lose.
                                 if pageUsable { confirmLeavingPrivate = true }
                                 else { leavePrivateMode(keepPage: false) }
@@ -219,11 +216,13 @@ struct BrowserView: View {
                             }
                         } label: {
                             Label(
-                                model.privateMode ? "Private browsing On" : "Private browsing Off",
+                                session.privateMode ? "Private browsing On" : "Private browsing Off",
                                 systemImage: "eyeglasses"
                             )
                             .font(.footnote.weight(.medium))
-                            .foregroundStyle(model.privateMode ? Self.privateTint : Color.secondary)
+                            .foregroundStyle(
+                                session.privateMode ? PanuraTheme.incognito : PanuraTheme.onSurfaceVariant
+                            )
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
@@ -275,7 +274,7 @@ struct BrowserView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 10)
                 }
-                .background(BottomRoundedRectangle(radius: 20).fill(Material.bar))
+                .background(BottomRoundedRectangle(radius: 20).fill(PanuraTheme.surfaceContainer))
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
@@ -322,7 +321,7 @@ struct BrowserView: View {
             Image(systemName: icon)
                 .font(.system(size: 18))
                 .frame(width: 42, height: 42)
-                .background(Circle().fill(Color(.secondarySystemBackground)))
+                .background(Circle().fill(PanuraTheme.surfaceVariant))
             Text(label)
                 .font(.system(size: 11))
                 .lineLimit(2)
@@ -341,7 +340,7 @@ struct BrowserView: View {
                 .font(.footnote)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(.ultraThinMaterial, in: Capsule())
+                .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
                 .padding(.bottom, 90)
                 .transition(.opacity)
         }
@@ -405,7 +404,7 @@ struct BrowserView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.bar)
+        .background(PanuraTheme.surfaceContainer)
     }
 
     private func infoRow(_ video: ExtractedVideo) -> some View {
@@ -426,7 +425,7 @@ struct BrowserView: View {
                 // and answer different questions.
                 Text(size)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(PanuraTheme.tertiary)
             }
             if video.probeState == .pending {
                 ProgressView().controlSize(.mini)
@@ -571,7 +570,7 @@ struct BrowserView: View {
                                 Text("\(entry.source) → \(entry.verdict)")
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(
-                                        entry.verdict.hasPrefix("emitted") ? Color.green : .secondary
+                                        entry.verdict.hasPrefix("emitted") ? PanuraTheme.success : PanuraTheme.onSurfaceVariant
                                     )
                                 Text(entry.host)
                                     .font(.caption2)
@@ -630,14 +629,14 @@ struct BrowserView: View {
                     Text(tag).font(.caption2.weight(.bold)).foregroundStyle(PanuraTheme.accent)
                 }
                 if let size = video.probeResult?.fileSize {
-                    Text(size).font(.caption2).foregroundStyle(.orange)
+                    Text(size).font(.caption2).foregroundStyle(PanuraTheme.tertiary)
                 }
                 if let kind = video.probeResult?.hlsType, video.probeResult?.qualityTag == nil {
                     Text(kind).font(.caption2).foregroundStyle(.secondary)
                 }
             }
         case .inactive:
-            Text("Dead").font(.caption2.weight(.medium)).foregroundStyle(.red)
+            Text("Dead").font(.caption2.weight(.medium)).foregroundStyle(PanuraTheme.error)
         case .skipped:
             Text("Page").font(.caption2).foregroundStyle(.secondary)
         }

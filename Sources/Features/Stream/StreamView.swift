@@ -23,6 +23,7 @@ struct StreamView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(PanuraTheme.background)
             .safeAreaInset(edge: .top) { PanuraHeader("Network Stream") }
             .navigationBarHidden(true)
         }

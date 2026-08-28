@@ -91,7 +91,7 @@ struct AppBarRow: View {
         }
         .frame(height: Self.height)
         .frame(maxWidth: .infinity)
-        .background(.bar)
+        .background(PanuraTheme.surfaceContainer)
     }
 
     private func seat(_ destination: AppDestination) -> some View {
@@ -126,7 +126,7 @@ struct AppBarRow: View {
                         .lineLimit(1)
                 }
             }
-            .foregroundStyle(selected ? PanuraTheme.accent : Color.secondary)
+            .foregroundStyle(selected ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
             .frame(height: 38)
             .padding(.horizontal, label == nil ? 14 : 12)
             .background(
@@ -170,7 +170,7 @@ struct AppMenuPanel: View {
                                 Circle().fill(
                                     current?.title == item.label
                                         ? PanuraTheme.accentSoft
-                                        : Color(.secondarySystemBackground)
+                                        : PanuraTheme.surfaceVariant
                                 )
                             )
                             .foregroundStyle(
@@ -191,7 +191,7 @@ struct AppMenuPanel: View {
         .padding(.top, 16)
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity)
-        .background(TopRoundedRectangle(radius: 20).fill(Material.bar))
+        .background(TopRoundedRectangle(radius: 20).fill(PanuraTheme.surfaceContainer))
     }
 }
 

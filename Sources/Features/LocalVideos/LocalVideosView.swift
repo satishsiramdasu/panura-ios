@@ -35,6 +35,7 @@ struct LocalVideosView: View {
                     ProgressView()
                 }
             }
+            .background(PanuraTheme.background)
             .safeAreaInset(edge: .top) { PanuraHeader("Videos") }
             .navigationBarHidden(true)
         }

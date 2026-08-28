@@ -10,10 +10,6 @@ final class BrowserModel: ObservableObject {
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var desktopMode = false
-    /// Private browsing. The web view is rebuilt on a non-persistent data store
-    /// when this flips (see `BrowserView`), and history recording stops — the
-    /// two halves of what "private" has to mean.
-    @Published private(set) var privateMode = false
     @Published var foundVideos: [ExtractedVideo] = []
     /// Sidecar subtitles sniffed from the page; attached to whatever the user plays.
     @Published var foundSubtitles: [SubtitleTrack] = []
@@ -76,16 +72,17 @@ final class BrowserModel: ObservableObject {
     func reload() { clearFindings(); webView?.reload() }
     func stop() { webView?.stopLoading() }
 
-    /// Turn private browsing on or off.
-    ///
+    /// Private browsing lives on `BrowserSession`, not here: Home's address
+    /// pill toggles it too, and that view owns no web view. This is the
+    /// browser's own read of it.
+    var privateMode: Bool { BrowserSession.shared.privateMode }
+
     /// The caller rebuilds the web view (a data store cannot be swapped on a
-    /// live one), so this only has to say what the mode is and stop — or resume
-    /// — history recording. Cookies and cache go with the store; shortcuts and
-    /// resume points do not, because those are explicit user actions.
+    /// live one); this only has to say what the mode is and drop the findings
+    /// that belonged to the session being thrown away.
     func setPrivateMode(_ on: Bool) {
-        guard privateMode != on else { return }
-        privateMode = on
-        BrowsingStore.shared.recordHistory = !on
+        guard BrowserSession.shared.privateMode != on else { return }
+        BrowserSession.shared.setPrivateMode(on)
         clearFindings()
     }
 

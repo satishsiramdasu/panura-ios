@@ -10,6 +10,7 @@ struct HomeView: View {
     var onOpenSection: (AppDestination) -> Void = { _ in }
 
     @ObservedObject private var store = BrowsingStore.shared
+    @ObservedObject private var session = BrowserSession.shared
 
     @State private var showAddress = false
     @State private var showShortcutsSheet = false
@@ -35,6 +36,7 @@ struct HomeView: View {
                 }
                 .padding(.vertical, 20)
             }
+            .background(PanuraTheme.background)
             .safeAreaInset(edge: .top) { header }
             .navigationBarHidden(true)
         }
@@ -100,7 +102,7 @@ struct HomeView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
+            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)
     }
@@ -112,11 +114,36 @@ struct HomeView: View {
             AddressPill(
                 title: "",
                 url: "",
-                placeholder: "Search Google or enter website",
-                background: Color(.secondarySystemBackground),
+                placeholder: session.privateMode
+                    ? "Search privately"
+                    : "Search Google or enter website",
+                background: session.privateMode
+                    ? PanuraTheme.incognito.opacity(0.22)
+                    : PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
                 leading: { EmptyView() },
-                trailing: { EmptyView() }
+                trailing: {
+                    // Same cell Android puts it in: last inside Home's pill. It
+                    // is browser state, but this is where a session is started,
+                    // so this is where it has to be switchable — the browser's
+                    // own copy of the switch is in its options panel.
+                    Button {
+                        session.setPrivateMode(!session.privateMode)
+                    } label: {
+                        Image(systemName: "eyeglasses")
+                            .font(.system(size: 15))
+                            .foregroundStyle(
+                                session.privateMode
+                                    ? PanuraTheme.incognito
+                                    : PanuraTheme.onSurfaceVariant
+                            )
+                            .frame(width: 38, height: 38)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        session.privateMode ? "Turn off private browsing" : "Private browsing"
+                    )
+                }
             )
         }
     }
@@ -348,7 +375,7 @@ private struct ShortcutTile: View {
         VStack(spacing: 4) {
             Favicon(entry: entry, size: 30)
                 .padding(13)
-                .background(Color(.secondarySystemBackground), in: Circle())
+                .background(PanuraTheme.surfaceVariant, in: Circle())
             Text(entry.title)
                 .font(.caption2)
                 .lineLimit(2)
@@ -373,7 +400,7 @@ private struct MostVisitedTile: View {
         }
         .padding(.horizontal, 8)
         .frame(width: 170, height: 44)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+        .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
     }
 }
@@ -390,7 +417,7 @@ private struct ContinueWatchingCard: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(PanuraTheme.surfaceVariant)
 
             if let thumbnail {
                 Image(uiImage: thumbnail)
@@ -437,7 +464,7 @@ private struct ContinueWatchingCard: View {
                     .lineLimit(1)
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(.systemBackground).opacity(0.75))
+                    .background(PanuraTheme.background.opacity(0.75))
             }
         }
         .frame(width: 140, height: 90)

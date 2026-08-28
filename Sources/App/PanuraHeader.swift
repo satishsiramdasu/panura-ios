@@ -31,7 +31,7 @@ struct PanuraHeader<Content: View>: View {
         }
         .padding(.horizontal, 6)
         .frame(height: Self.height)
-        .background(.bar)
+        .background(PanuraTheme.surfaceContainer)
     }
 
     @ViewBuilder
