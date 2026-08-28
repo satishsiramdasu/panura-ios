@@ -10,9 +10,10 @@ import SwiftUI
 /// The glyph and the cast control hold the same pixel on every screen, so only
 /// the middle changes as you move.
 ///
-/// The glyph is an SF Symbol rather than the app icon: iOS ships the icon only
-/// as an `AppIcon` asset, which cannot be drawn inside the app, and adding a
-/// second copy of the artwork to the bundle to fake it is not worth the bytes.
+/// The glyph is the app's own launcher artwork — the adaptive icon's foreground,
+/// trimmed of its safe-zone padding — so the header wears the same mark as the
+/// home screen, as Android's does. `AppIcon` cannot be drawn inside the app, so
+/// the glyph ships as its own image set.
 struct PanuraHeader<Content: View>: View {
     /// Tapping the glyph goes Home, as it does on Android's browser. nil leaves
     /// it decorative, which is what every screen that IS a destination wants.
@@ -36,9 +37,10 @@ struct PanuraHeader<Content: View>: View {
 
     @ViewBuilder
     private var glyph: some View {
-        let icon = Image(systemName: "play.rectangle.fill")
-            .font(.system(size: 24))
-            .foregroundStyle(PanuraTheme.accent)
+        let icon = Image("AppLogo")
+            .resizable()
+            .scaledToFit()
+            .frame(width: 30, height: 30)
             .frame(width: 44, height: 44)
         if let onTapGlyph {
             Button(action: onTapGlyph) { icon }

@@ -4,10 +4,6 @@ import GoogleMobileAds
 @main
 struct PanuraApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-    /// "dark" | "light" | "system". Dark by default, as on Android, where the
-    /// amber-on-near-black scheme is the one the app is designed around; the
-    /// light scheme exists and is complete, but it is not the house style.
-    @AppStorage("appearance") private var appearance = "dark"
 
     var body: some Scene {
         WindowGroup {
@@ -17,9 +13,10 @@ struct PanuraApp: App {
                 // text cursor — so nothing keeps iOS blue next to the amber.
                 .tint(PanuraTheme.accent)
                 .background(PanuraTheme.background)
-                .preferredColorScheme(
-                    appearance == "light" ? .light : (appearance == "dark" ? .dark : nil)
-                )
+                // Dark only, as the Android app ships: every surface, every
+                // hex in PanuraTheme and the launch screen are the one scheme.
+                // There is no light build to switch to.
+                .preferredColorScheme(.dark)
         }
     }
 }

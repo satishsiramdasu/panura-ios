@@ -38,7 +38,15 @@ final class BrowserModel: ObservableObject {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
         "(KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
-    func attach(_ webView: WKWebView) { self.webView = webView }
+    func attach(_ webView: WKWebView) {
+        self.webView = webView
+        // The stored default decides which UA a fresh web view starts on; the
+        // browser menu still flips a single session from under it.
+        if UserDefaults.standard.bool(forKey: "desktop_mode_default") {
+            desktopMode = true
+            webView.customUserAgent = Self.desktopUA
+        }
+    }
 
     // MARK: navigation
 

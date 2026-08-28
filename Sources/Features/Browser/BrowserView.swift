@@ -30,6 +30,9 @@ struct BrowserView: View {
     /// Only read to rebuild the web view when it changes: user scripts are fixed
     /// at creation, so a toggle in Settings means nothing until a new one exists.
     @AppStorage("auto_play_click") private var autoPlayClick = true
+    /// Same reason: content-blocker lists are attached to a configuration, so
+    /// turning the ad blocker on or off means a new web view.
+    @AppStorage("ad_block") private var adBlock = true
 
     private var pageUsable: Bool {
         guard let url = model.currentURL?.absoluteString else { return false }
@@ -47,7 +50,7 @@ struct BrowserView: View {
                     // list and the cookie jar, which is exactly what switching
                     // modes means. The auto-click flag rides along for the same
                     // reason: user scripts are registered once, at creation.
-                    .id("\(session.privateMode)-\(autoPlayClick)")
+                    .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)")
             }
 
             if showMenu { menuPanel }

@@ -52,7 +52,16 @@ targets:
         CFBundleDisplayName: Panura
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        UILaunchScreen: {}
+        # Android's splash, matched: the launcher glyph centred on #0F0F0E,
+        # which is also the app's background — so the launch image dissolves
+        # into the first screen instead of flashing white before it.
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchLogo
+          UIImageRespectsSafeAreaInsets: false
+        # Dark only, like the Android app. Without this the system paints its
+        # own chrome light while every surface we draw is near-black.
+        UIUserInterfaceStyle: Dark
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft

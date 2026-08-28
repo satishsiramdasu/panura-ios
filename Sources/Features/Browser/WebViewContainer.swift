@@ -125,12 +125,16 @@ struct WebViewContainer: UIViewRepresentable {
         // and the salt must never enter a web view. Instead each frame posts
         // `ready` and we push back only that frame's own resolved rule (see the
         // message handler).
-        Task { @MainActor in
-            let lists = await FilterListUpdater.current()
-            for list in lists {
-                webView.configuration.userContentController.add(list)
+        // Off means no lists compiled and none applied — the setting is not a
+        // filter over a running blocker, it decides whether one exists.
+        if UserDefaults.standard.object(forKey: "ad_block") as? Bool ?? true {
+            Task { @MainActor in
+                let lists = await FilterListUpdater.current()
+                for list in lists {
+                    webView.configuration.userContentController.add(list)
+                }
+                webView.reload()
             }
-            webView.reload()
         }
         return webView
     }
