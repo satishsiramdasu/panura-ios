@@ -291,7 +291,7 @@ struct BrowserView: View {
                             flash("Cache cleared")
                         }
                         gridCell(
-                            model.desktopMode ? "iphone" : "desktopcomputer",
+                            model.desktopMode ? "iphone" : "display",
                             model.desktopMode ? "Mobile Site" : "Desktop Site"
                         ) {
                             model.toggleDesktopMode()
@@ -553,9 +553,11 @@ struct BrowserView: View {
             Button {
                 castOrConnect(video)
             } label: {
-                streamActionLabel(castLabel, filled: false) {
-                    CastGlyph(connected: castConnected).frame(width: 18, height: 18)
-                }
+                streamActionLabel(
+                    castLabel,
+                    icon: castConnected ? "tv.fill" : "tv",
+                    filled: false
+                )
             }
             .buttonStyle(.plain)
         }
@@ -570,20 +572,8 @@ struct BrowserView: View {
         icon: String,
         filled: Bool
     ) -> some View {
-        streamActionLabel(title, filled: filled) {
-            Image(systemName: icon).font(.system(size: 16))
-        }
-    }
-
-    /// The same button with a drawn glyph instead of a symbol name — the cast
-    /// mark is not in SF Symbols, so it arrives as a view.
-    private func streamActionLabel<Glyph: View>(
-        _ title: String,
-        filled: Bool,
-        @ViewBuilder glyph: () -> Glyph
-    ) -> some View {
         HStack(spacing: 6) {
-            glyph()
+            Image(systemName: icon).font(.system(size: 16))
             Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
         }
         .frame(maxWidth: .infinity)
@@ -654,10 +644,11 @@ struct BrowserView: View {
                                 showFoundSheet = false
                                 castOrConnect(video)
                             } label: {
-                                streamActionLabel(castLabel, filled: false) {
-                                    CastGlyph(connected: castConnected)
-                                        .frame(width: 18, height: 18)
-                                }
+                                streamActionLabel(
+                                    castLabel,
+                                    icon: castConnected ? "tv.fill" : "tv",
+                                    filled: false
+                                )
                             }
                             .buttonStyle(.plain)
                         }
