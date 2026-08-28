@@ -11,6 +11,41 @@ struct CastButton: UIViewRepresentable {
     func updateUIView(_ uiView: GCKUICastButton, context: Context) {}
 }
 
+/// The app's cast control, top-right on every screen — the same slot and the
+/// same job as Android's toolbar cast icon.
+///
+/// Deliberately not `CastButton` (GCKUICastButton): that one knows about
+/// Chromecast and nothing else, so on a phone linked to a Panura TV it showed
+/// "not connected" while a cast was running. This reflects whichever path is up
+/// and opens the screen that can act on it — the controls when something is
+/// actually playing, the picker when nothing is.
+struct CastToolbarButton: View {
+    @EnvironmentObject private var cast: CastManager
+    @ObservedObject private var panura = PanuraCastManager.shared
+    @State private var showPicker = false
+    @State private var showControls = false
+
+    private var connected: Bool { cast.isConnected || panura.isTVConnected }
+    /// Something is on the TV right now, so the remote is the useful screen.
+    private var playing: Bool { panura.isCasting }
+
+    var body: some View {
+        Button {
+            if playing { showControls = true } else { showPicker = true }
+        } label: {
+            Image(systemName: connected ? "tv.fill" : "tv")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(connected ? PanuraTheme.accent : Color.secondary)
+                // Says "trying", without a second glyph: the phone is
+                // discoverable but no TV has answered yet.
+                .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
+        }
+        .accessibilityLabel(connected ? "Casting — open cast controls" : "Cast to TV")
+        .sheet(isPresented: $showPicker) { NavigationStack { CastDevicesView() } }
+        .sheet(isPresented: $showControls) { PanuraCastControlView() }
+    }
+}
+
 /// Cast screen, in two steps: pick how you want to connect, then do it.
 ///
 /// Ported from Android's rebuilt cast dialog. The two paths are not equivalent

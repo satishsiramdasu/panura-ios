@@ -8,7 +8,6 @@ struct HomeView: View {
     /// Home is the hub for everything without a seat in the bottom bar, so the
     /// Options grid needs a way to send you there.
     var onOpenSection: (AppDestination) -> Void = { _ in }
-    var onOpenCast: () -> Void = {}
 
     @ObservedObject private var store = BrowsingStore.shared
 
@@ -18,6 +17,7 @@ struct HomeView: View {
     @State private var editingShortcut: SiteEntry?
     @State private var playItem: MediaItem?
     @State private var confirmClearHistory = false
+    @State private var showReport = false
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -51,6 +51,7 @@ struct HomeView: View {
         .sheet(isPresented: $showShortcutsSheet) { shortcutsSheet }
         .sheet(isPresented: $showMostVisitedSheet) { mostVisitedSheet }
         .sheet(item: $editingShortcut) { ShortcutEditor(entry: $0) }
+        .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
         .confirmationDialog(
             "Clear browsing history?",
             isPresented: $confirmClearHistory,
@@ -74,7 +75,7 @@ struct HomeView: View {
             HStack(spacing: 10) {
                 optionTile("Settings", systemImage: "gearshape.fill") { onOpenSection(.settings) }
                 optionTile("Network Stream", systemImage: "link") { onOpenSection(.stream) }
-                optionTile("Cast to TV", systemImage: "tv") { onOpenCast() }
+                optionTile("Report Issue", systemImage: "ladybug") { showReport = true }
                 optionTile("Clear History", systemImage: "trash") { confirmClearHistory = true }
             }
             .padding(.horizontal, 16)
@@ -107,33 +108,17 @@ struct HomeView: View {
     // MARK: header — address pill, same shape as the browser's top bar
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "play.rectangle.fill")
-                .font(.title2)
-                .foregroundStyle(PanuraTheme.accent)
-
-            Button { showAddress = true } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Text("Search Google or enter website")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 11)
-                .background(PanuraTheme.accentSoft, in: Capsule())
-            }
-            .buttonStyle(.plain)
-
-            CastButton().frame(width: 30, height: 30)
+        PanuraHeader {
+            AddressPill(
+                title: "",
+                url: "",
+                placeholder: "Search Google or enter website",
+                background: Color(.secondarySystemBackground),
+                onTap: { showAddress = true },
+                leading: { EmptyView() },
+                trailing: { EmptyView() }
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
     }
 
     // MARK: brand + action links

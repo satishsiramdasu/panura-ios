@@ -24,7 +24,6 @@ struct RootTabView: View {
     /// owns its WebView across switches, so the hand-off has to be state here
     /// rather than a fresh `BrowserView(url:)`.
     @State private var pendingAddress: String?
-    @State private var showCast = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -52,9 +51,6 @@ struct RootTabView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .sheet(isPresented: $showCast) {
-            NavigationStack { CastDevicesView() }
-        }
     }
 
     /// All five, always composed. The outgoing one keeps the higher `zIndex`
@@ -67,11 +63,16 @@ struct RootTabView: View {
                         pendingAddress = address
                         select(.web)
                     },
-                    onOpenSection: select,
-                    onOpenCast: { showCast = true }
+                    onOpenSection: select
                 )
             }
-            layer(.web) { BrowserView(pendingAddress: $pendingAddress) }
+            layer(.web) {
+                BrowserView(
+                    pendingAddress: $pendingAddress,
+                    onGoHome: { select(.home) },
+                    onOpenSettings: { select(.settings) }
+                )
+            }
             layer(.videos) { LocalVideosView() }
             layer(.stream) { StreamView() }
             layer(.settings) { SettingsView() }
@@ -100,15 +101,14 @@ struct RootTabView: View {
         }
     }
 
-    /// What the grid holds: the destinations with no seat, plus the one action
-    /// that belongs with them.
+    /// What the grid holds: the destinations with no seat in the bar.
+    ///
+    /// Cast is deliberately NOT here. It is a control rather than a place, it
+    /// has to be reachable from whatever screen you are on, and it now lives
+    /// top-right in the header of every one of them — same slot as Android's.
     private var menuItems: [AppMenuPanel.Item] {
         [
             AppMenuPanel.Item(icon: "link", label: "Network Stream") { select(.stream) },
-            AppMenuPanel.Item(icon: "tv", label: "Cast to TV") {
-                withAnimation(.easeOut(duration: 0.2)) { showMenu = false }
-                showCast = true
-            },
             AppMenuPanel.Item(icon: "gearshape.fill", label: "Settings") { select(.settings) },
         ]
     }

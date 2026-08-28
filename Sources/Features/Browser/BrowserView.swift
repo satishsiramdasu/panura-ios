@@ -4,16 +4,23 @@ struct BrowserView: View {
     /// Address handed over from Home. Cleared once loaded so the same entry
     /// isn't replayed on every tab switch.
     @Binding var pendingAddress: String?
+    /// The header glyph goes Home, exactly as Android's does.
+    var onGoHome: () -> Void = {}
+    /// The options panel's Settings cell. Android sends this straight to the
+    /// browser section; iOS has one settings screen, so it lands there.
+    var onOpenSettings: () -> Void = {}
 
     @StateObject private var model = BrowserModel()
     @ObservedObject private var store = BrowsingStore.shared
     @ObservedObject private var panuraCast = PanuraCastManager.shared
     @EnvironmentObject private var cast: CastManager
-    @State private var addressText = ""
     @State private var playItem: MediaItem?
     @State private var showFoundSheet = false
     @State private var showPanuraControls = false
-    @State private var editingAddress = false
+    @State private var showMenu = false
+    @State private var showAddress = false
+    @State private var showReport = false
+    @State private var toast: String?
     /// Asked when private browsing is switched OFF with a page still open — the
     /// session is live and is about to start being recorded again.
     @State private var confirmLeavingPrivate = false
@@ -22,22 +29,31 @@ struct BrowserView: View {
     /// at creation, so a toggle in Settings means nothing until a new one exists.
     @AppStorage("auto_play_click") private var autoPlayClick = true
 
-    /// Deliberately not the app accent, which the address pill already wears:
-    /// a private session has to be visible at a glance, and a slightly different
-    /// purple would read as the same pill. A cool slate reads as "not normal".
-    private static let privateTint = Color(red: 0.24, green: 0.28, blue: 0.42)
+    /// Android's private-browsing violet, not the app accent: the pill has to
+    /// read as "private" in any theme, and the accent is what everything else in
+    /// the header already wears.
+    private static let privateTint = Color(red: 0.78, green: 0.66, blue: 1.0)
+
+    private var pageUsable: Bool {
+        guard let url = model.currentURL?.absoluteString else { return false }
+        return !url.isEmpty && url != "about:blank"
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            addressBar
-            progressBar
-            WebViewContainer(model: model)
-                // A data store cannot be swapped on a live web view, so private
-                // mode gets a new one. Rebuilding also drops the back list and
-                // the cookie jar, which is exactly what switching modes means.
-                // The auto-click flag rides along for the same reason: user
-                // scripts are registered once, at creation.
-                .id("\(model.privateMode)-\(autoPlayClick)")
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                header
+                progressBar
+                WebViewContainer(model: model)
+                    // A data store cannot be swapped on a live web view, so
+                    // private mode gets a new one. Rebuilding also drops the back
+                    // list and the cookie jar, which is exactly what switching
+                    // modes means. The auto-click flag rides along for the same
+                    // reason: user scripts are registered once, at creation.
+                    .id("\(model.privateMode)-\(autoPlayClick)")
+            }
+
+            if showMenu { menuPanel }
         }
         .safeAreaInset(edge: .bottom) {
             // With diagnostics on the bar must also open when nothing was
@@ -46,9 +62,28 @@ struct BrowserView: View {
                 foundBar
             }
         }
+        .overlay(alignment: .bottom) { toastView }
         .fullScreenCover(item: $playItem) { PlayerView(item: $0) }
+        .fullScreenCover(isPresented: $showAddress) {
+            AddressScreen(
+                currentURL: model.currentURL?.absoluteString ?? "",
+                currentTitle: model.pageTitle,
+                onNavigate: { text in
+                    showAddress = false
+                    model.load(text)
+                },
+                onDismiss: { showAddress = false }
+            )
+        }
         .sheet(isPresented: $showPanuraControls) { PanuraCastControlView() }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
+        .sheet(isPresented: $showReport) {
+            ReportIssueSheet(
+                pageURL: model.currentURL?.absoluteString,
+                source: "browser",
+                onSent: { flash("Report sent") }
+            )
+        }
         .confirmationDialog(
             "Close this page?",
             isPresented: $confirmLeavingPrivate,
@@ -61,12 +96,13 @@ struct BrowserView: View {
             Text("Private browsing is turning off, so this page will be recorded in history from now on.")
         }
         .onChange(of: model.currentURL) { url in
-            if let url, !editingAddress { addressText = url.absoluteString }
             // No title yet: at this instant `pageTitle` still holds the page we
             // just left, and passing it filed the new site under the old one's
             // name. The entry lands with the host as a placeholder and the
             // onChange below fills it in when the real title arrives.
             if let url { store.recordVisit(url: url, title: "") }
+            // A panel left open over a new page describes the wrong thing.
+            showMenu = false
         }
         // Record again when the title lands — WebKit fires it after didFinish, so
         // the first write usually has an empty title.
@@ -83,148 +119,63 @@ struct BrowserView: View {
     private func consumePending() {
         guard let address = pendingAddress, !address.isEmpty else { return }
         pendingAddress = nil
-        editingAddress = false
-        addressText = address
         model.load(address)
     }
 
-    // MARK: private browsing
+    // MARK: header — app glyph · address pill · cast
 
-    private func enterPrivateMode() {
-        model.setPrivateMode(true)
-        addressText = ""
-        // The rebuilt web view starts on its own start page; nothing carries
-        // over, which is the point.
-    }
-
-    /// `keepPage` reopens the current URL in the persistent store. It cannot be
-    /// carried across: the page we are on lives in a data store that is being
-    /// thrown away, so keeping it means loading it again on the other side.
-    private func leavePrivateMode(keepPage: Bool) {
-        let current = model.currentURL?.absoluteString
-        model.setPrivateMode(false)
-        guard keepPage, let current else { return }
-        pendingAddress = current
-    }
-
-    // MARK: address bar
-
-    private var addressBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: model.privateMode ? "eyeglasses" : "magnifyingglass")
-                .foregroundStyle(model.privateMode ? Self.privateTint : .secondary)
-                .font(.footnote)
-
-            TextField(
-                model.privateMode ? "Search privately" : "Search or enter address",
-                text: $addressText
+    private var header: some View {
+        PanuraHeader(onTapGlyph: onGoHome) {
+            AddressPill(
+                title: model.pageTitle,
+                url: model.currentURL?.absoluteString ?? "",
+                placeholder: "Search or enter website",
+                background: model.privateMode
+                    ? Self.privateTint.opacity(0.22)
+                    : Color(.secondarySystemBackground),
+                onTap: { showAddress = true },
+                leading: {
+                    // Same slot Android gives it: first cell inside the pill.
+                    Button {
+                        guard let url = model.currentURL?.absoluteString else { return }
+                        if store.isShortcut(url) {
+                            store.removeShortcut(url: url)
+                        } else {
+                            store.addShortcut(
+                                url: url,
+                                title: model.pageTitle.isEmpty
+                                    ? (model.currentURL?.host ?? url)
+                                    : model.pageTitle
+                            )
+                        }
+                    } label: {
+                        let saved = store.isShortcut(model.currentURL?.absoluteString ?? "")
+                        Image(systemName: saved ? "star.fill" : "star")
+                            .font(.system(size: 15))
+                            .foregroundStyle(saved ? PanuraTheme.accent : Color.secondary)
+                            .frame(width: 38, height: 38)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!pageUsable)
+                    .accessibilityLabel("Add to shortcuts")
+                },
+                trailing: {
+                    // The page menu, in the pill's last cell — the browser has no
+                    // bottom bar of its own, so its options hang off here and the
+                    // panel drops from this bar. Chevron while open: this is also
+                    // the close.
+                    Button {
+                        withAnimation(.easeOut(duration: 0.18)) { showMenu.toggle() }
+                    } label: {
+                        Image(systemName: showMenu ? "chevron.up" : "line.3.horizontal")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundStyle(showMenu ? PanuraTheme.accent : Color.secondary)
+                            .frame(width: 38, height: 38)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(showMenu ? "Close menu" : "Menu")
+                }
             )
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .keyboardType(.webSearch)
-            .submitLabel(.go)
-            .onSubmit {
-                editingAddress = false
-                model.load(addressText)
-            }
-
-            if model.isLoading {
-                Button { model.stop() } label: {
-                    Image(systemName: "xmark").font(.footnote)
-                }
-            } else if model.currentURL != nil {
-                Button { model.reload() } label: {
-                    Image(systemName: "arrow.clockwise").font(.footnote)
-                }
-            }
-
-            menu
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            model.privateMode ? Self.privateTint.opacity(0.18) : PanuraTheme.accentSoft,
-            in: Capsule()
-        )
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
-
-    private var menu: some View {
-        Menu {
-            // Page navigation first: these lost their slots when the bottom bar
-            // became app-wide, and this is where they live now.
-            Button {
-                model.goBack()
-            } label: { Label("Back", systemImage: "chevron.left") }
-                .disabled(!model.canGoBack)
-
-            Button {
-                model.goForward()
-            } label: { Label("Forward", systemImage: "chevron.right") }
-                .disabled(!model.canGoForward)
-
-            Button { model.reload() } label: {
-                Label("Reload", systemImage: "arrow.clockwise")
-            }
-
-            Divider()
-
-            Button {
-                if model.privateMode {
-                    // Only worth asking about when there is a page to lose.
-                    if model.currentURL != nil {
-                        confirmLeavingPrivate = true
-                    } else {
-                        leavePrivateMode(keepPage: false)
-                    }
-                } else {
-                    enterPrivateMode()
-                }
-            } label: {
-                Label(
-                    model.privateMode ? "Turn off private browsing" : "Private browsing",
-                    systemImage: model.privateMode ? "eyeglasses" : "eyeglasses"
-                )
-            }
-
-            Button { model.toggleDesktopMode() } label: {
-                Label(
-                    model.desktopMode ? "Request mobile site" : "Request desktop site",
-                    systemImage: model.desktopMode ? "iphone" : "desktopcomputer"
-                )
-            }
-
-            if let url = model.currentURL {
-                let key = url.absoluteString
-                Button {
-                    if store.isShortcut(key) {
-                        store.removeShortcut(url: key)
-                    } else {
-                        store.addShortcut(
-                            url: key,
-                            title: model.pageTitle.isEmpty ? (url.host ?? key) : model.pageTitle
-                        )
-                    }
-                } label: {
-                    Label(
-                        store.isShortcut(key) ? "Remove shortcut" : "Add to shortcuts",
-                        systemImage: store.isShortcut(key) ? "star.fill" : "star"
-                    )
-                }
-
-                Button {
-                    UIPasteboard.general.string = url.absoluteString
-                } label: { Label("Copy link", systemImage: "doc.on.doc") }
-
-                ShareLink(item: url) { Label("Share", systemImage: "square.and.arrow.up") }
-
-                Button {
-                    UIApplication.shared.open(url)
-                } label: { Label("Open in Safari", systemImage: "safari") }
-            }
-        } label: {
-            Image(systemName: "ellipsis").font(.footnote)
         }
     }
 
@@ -236,6 +187,184 @@ struct BrowserView: View {
                 .tint(PanuraTheme.accent)
                 .frame(height: 2)
         }
+    }
+
+    // MARK: options panel
+
+    /// Hangs from the header, square on top and rounded where it ends — it is
+    /// attached to the bar rather than floating over it.
+    ///
+    /// The scrim starts BELOW the header: that bar's menu button is the chevron
+    /// that closes this, so it has to stay tappable.
+    private var menuPanel: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: PanuraHeader<AnyView>.height)
+            ZStack(alignment: .top) {
+                Color.black.opacity(0.32)
+                    .ignoresSafeArea(edges: .bottom)
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { showMenu = false } }
+
+                VStack(spacing: 0) {
+                    HStack(spacing: 6) {
+                        // Private browsing, and the page navigation that lost its
+                        // slots when the bottom bar became app-wide.
+                        Button {
+                            showMenu = false
+                            if model.privateMode {
+                                // Only worth asking about when there is a page to lose.
+                                if pageUsable { confirmLeavingPrivate = true }
+                                else { leavePrivateMode(keepPage: false) }
+                            } else {
+                                model.setPrivateMode(true)
+                            }
+                        } label: {
+                            Label(
+                                model.privateMode ? "Private browsing On" : "Private browsing Off",
+                                systemImage: "eyeglasses"
+                            )
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(model.privateMode ? Self.privateTint : Color.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+
+                        navButton("chevron.left", "Back", enabled: model.canGoBack) {
+                            model.goBack()
+                        }
+                        navButton("arrow.clockwise", "Reload", enabled: true) {
+                            model.reload()
+                        }
+                        navButton("chevron.right", "Forward", enabled: model.canGoForward) {
+                            model.goForward()
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+
+                    Divider().padding(.horizontal, 16)
+
+                    // One row, evenly divided — five cells, as on Android. Its
+                    // Downloads cell has no counterpart here (iOS ships no
+                    // download feature), so desktop mode takes that seat: with
+                    // the browser's native menu gone this is its only home.
+                    HStack(alignment: .top, spacing: 0) {
+                        if let url = model.currentURL {
+                            ShareLink(item: url) {
+                                gridCellLabel("square.and.arrow.up", "Share", enabled: true)
+                            }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded { showMenu = false })
+                        } else {
+                            gridCellLabel("square.and.arrow.up", "Share", enabled: false)
+                        }
+                        gridCell("trash", "Clear Cache") {
+                            model.clearCache()
+                            flash("Cache cleared")
+                        }
+                        gridCell(
+                            model.desktopMode ? "iphone" : "desktopcomputer",
+                            model.desktopMode ? "Mobile Site" : "Desktop Site"
+                        ) {
+                            model.toggleDesktopMode()
+                        }
+                        gridCell("ladybug", "Report Page", enabled: pageUsable) {
+                            showReport = true
+                        }
+                        gridCell("gearshape", "Settings") { onOpenSettings() }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 10)
+                }
+                .background(BottomRoundedRectangle(radius: 20).fill(Material.bar))
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+    }
+
+    private func navButton(
+        _ icon: String,
+        _ label: String,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            showMenu = false
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(enabled ? PanuraTheme.accentSoft : Color.clear))
+                .foregroundStyle(enabled ? PanuraTheme.accent : Color.secondary.opacity(0.5))
+        }
+        .buttonStyle(.plain)
+        // Disabled rather than hidden, so the three keep their positions.
+        .disabled(!enabled)
+        .accessibilityLabel(label)
+    }
+
+    private func gridCell(
+        _ icon: String,
+        _ label: String,
+        enabled: Bool = true,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            showMenu = false
+            action()
+        } label: { gridCellLabel(icon, label, enabled: enabled) }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+
+    private func gridCellLabel(_ icon: String, _ label: String, enabled: Bool) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 18))
+                .frame(width: 42, height: 42)
+                .background(Circle().fill(Color(.secondarySystemBackground)))
+            Text(label)
+                .font(.system(size: 11))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.5))
+    }
+
+    /// Android answers these with a snackbar; this is the same message in the
+    /// same place, without dragging in a toast framework to say two words.
+    @ViewBuilder
+    private var toastView: some View {
+        if let toast {
+            Text(toast)
+                .font(.footnote)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(.bottom, 90)
+                .transition(.opacity)
+        }
+    }
+
+    private func flash(_ message: String) {
+        withAnimation { toast = message }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            withAnimation { toast = nil }
+        }
+    }
+
+    // MARK: private browsing
+
+    /// `keepPage` reopens the current URL in the persistent store. It cannot be
+    /// carried across: the page we are on lives in a data store that is being
+    /// thrown away, so keeping it means loading it again on the other side.
+    private func leavePrivateMode(keepPage: Bool) {
+        let current = model.currentURL?.absoluteString
+        model.setPrivateMode(false)
+        guard keepPage, let current else { return }
+        pendingAddress = current
     }
 
     // MARK: detected videos
@@ -512,5 +641,21 @@ struct BrowserView: View {
         case .skipped:
             Text("Page").font(.caption2).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Rounded at the bottom only — the options panel is attached to the header, so
+/// its top edge is the bar's bottom edge.
+struct BottomRoundedRectangle: Shape {
+    let radius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        Path(
+            UIBezierPath(
+                roundedRect: rect,
+                byRoundingCorners: [.bottomLeft, .bottomRight],
+                cornerRadii: CGSize(width: radius, height: radius)
+            ).cgPath
+        )
     }
 }

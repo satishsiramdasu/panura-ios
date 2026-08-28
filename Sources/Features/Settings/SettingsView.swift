@@ -96,11 +96,14 @@ struct SettingsView: View {
                     }
                 }
             }
-            .navigationTitle("Settings")
+            // The app's own header instead of a nav bar: the glyph, the title
+            // and the cast control hold the same pixel on every screen, which is
+            // what stops a destination switch from looking like leaving the app.
+            // Pushed screens keep their normal bar, so back stays where iOS
+            // users expect it.
+            .safeAreaInset(edge: .top) { PanuraHeader("Settings") }
+            .navigationBarHidden(true)
             .task { await versions.load() }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) { CastButton() }
-            }
         }
     }
 

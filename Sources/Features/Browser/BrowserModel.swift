@@ -55,6 +55,22 @@ final class BrowserModel: ObservableObject {
         webView?.load(RefererFragment.request(for: url))
     }
 
+    /// Drops the web view's own caches and reloads. Cookies and local storage
+    /// are deliberately untouched: one profile serves every site here, so
+    /// clearing those would sign the user out everywhere to fix one page.
+    func clearCache() {
+        let types: Set<String> = [
+            WKWebsiteDataTypeDiskCache,
+            WKWebsiteDataTypeMemoryCache,
+            WKWebsiteDataTypeOfflineWebApplicationCache,
+        ]
+        WKWebsiteDataStore.default().removeData(
+            ofTypes: types, modifiedSince: .distantPast
+        ) { [weak self] in
+            Task { @MainActor in self?.webView?.reload() }
+        }
+    }
+
     func goBack() { webView?.goBack() }
     func goForward() { webView?.goForward() }
     func reload() { clearFindings(); webView?.reload() }

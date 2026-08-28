@@ -35,7 +35,8 @@ struct LocalVideosView: View {
                     ProgressView()
                 }
             }
-            .navigationTitle("Local Videos")
+            .safeAreaInset(edge: .top) { PanuraHeader("Videos") }
+            .navigationBarHidden(true)
         }
         .task { await model.load() }
         .fullScreenCover(item: $playItem) { PlayerView(item: $0, playlist: localPlaylist()) }
