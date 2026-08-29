@@ -63,6 +63,9 @@ final class CastManager: NSObject, ObservableObject {
     }
 
     func stopDiscovery() {
+        // Every exit from the cast screen calls this, including the ones where
+        // Chromecast was never picked and no scan was ever started.
+        guard isScanning else { return }
         let manager = GCKCastContext.sharedInstance().discoveryManager
         manager.passiveScan = true
         manager.stopDiscovery()

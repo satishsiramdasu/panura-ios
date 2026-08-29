@@ -113,11 +113,13 @@ struct CastToolbarButton: View {
 /// undifferentiated list of devices hid the single most useful fact about the
 /// choice.
 ///
-/// Chromecast targets are listed here, on this screen, and one tap connects.
-/// They used to be a step away and then a tap away behind the SDK's own dialog
-/// — a sheet, a screen, a button and a dialog to reach a TV that this screen
-/// could have named in the first place. Panura Cast keeps its step, because it
-/// has nothing to list: it waits to be found by the TV.
+/// Picking Chromecast starts the scan and lists what it finds, right there —
+/// one tap to a TV. The SDK's own dialog is gone: it was a sheet, a screen, a
+/// button and then a dialog to reach a device this screen can name itself.
+///
+/// The scan runs only from that tap, never on arrival. Discovery is a live
+/// multicast on the local network, and someone opening this screen to reach
+/// their Panura TV has no reason to pay for a Chromecast sweep.
 struct CastDevicesView: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
@@ -126,7 +128,7 @@ struct CastDevicesView: View {
     /// the Panura wait rather than dropping back to the choice.
     @State private var method: Method?
 
-    private enum Method { case panura }
+    private enum Method { case panura, chromecast }
 
     var body: some View {
         List {
@@ -134,10 +136,9 @@ struct CastDevicesView: View {
                 connectedSection
             } else {
                 switch method {
-                case .none:
-                    pickerSection
-                    chromecastDevicesSection
+                case .none: pickerSection
                 case .panura: panuraSection
+                case .chromecast: chromecastDevicesSection
                 }
             }
         }
@@ -152,6 +153,7 @@ struct CastDevicesView: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Back") {
                         if method == .panura { panura.stop() }
+                        if method == .chromecast { cast.stopDiscovery() }
                         method = nil
                     }
                 }
@@ -161,12 +163,10 @@ struct CastDevicesView: View {
         .onAppear {
             // Reopening while a link is in flight resumes that path.
             if panura.isAdvertising || panura.isTVConnected { method = .panura }
-            cast.startDiscovery()
         }
-        // Scanning stops the moment this screen goes away — an idle scan costs
-        // battery and the SDK will not stop one on its own. Attached to the
-        // screen rather than to the device section, because a modifier on a
-        // `Section` is a modifier on something List is entitled to reshape.
+        // Whatever the way out — Back, dismissing the sheet, connecting — the
+        // scan ends with the screen. An idle scan costs battery and the SDK
+        // will not stop one on its own.
         .onDisappear { cast.stopDiscovery() }
     }
 
@@ -174,6 +174,7 @@ struct CastDevicesView: View {
         if cast.isConnected || panura.isTVConnected { return "Connected" }
         switch method {
         case .panura: return "Panura Cast"
+        case .chromecast: return "Chromecast"
         case .none: return "Cast to TV"
         }
     }
@@ -204,17 +205,17 @@ struct CastDevicesView: View {
                 // The real Cast mark, because here it means Google Cast and
                 // nothing else — beside Panura's own mark, the two icons say
                 // which protocol each row is.
-                icon: { CastMark() },
-                chevron: false,
-                action: nil
-            )
+                icon: { CastMark() }
+            ) {
+                method = .chromecast
+                // The scan starts here, on the tap, and nowhere else.
+                cast.startDiscovery()
+            }
         } header: {
             Text("Choose how you want to connect")
         }
     }
 
-    /// `action: nil` makes a card that only explains itself — the Chromecast
-    /// one, whose devices are listed under it rather than behind it.
     private func methodCard<Icon: View>(
         title: String,
         subtitle: String,
@@ -222,10 +223,9 @@ struct CastDevicesView: View {
         noteGood: Bool,
         recommended: Bool,
         @ViewBuilder icon: () -> Icon,
-        chevron: Bool = true,
-        action: (() -> Void)?
+        action: @escaping () -> Void
     ) -> some View {
-        Button(action: { action?() }) {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     icon()
@@ -240,10 +240,7 @@ struct CastDevicesView: View {
                             .foregroundStyle(PanuraTheme.accent)
                     }
                     Spacer()
-                    if chevron {
-                        Image(systemName: "chevron.right")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
                 }
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
                 Label(note, systemImage: noteGood ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
@@ -253,10 +250,9 @@ struct CastDevicesView: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
-        .disabled(action == nil)
     }
 
-    // MARK: the Chromecast devices, listed here
+    // MARK: step 2b — the Chromecast devices themselves
 
     /// Every Cast target on the network, one tap each.
     ///
