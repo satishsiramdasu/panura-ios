@@ -1,24 +1,77 @@
 import SwiftUI
 import GoogleCast
 
-/// The standard Cast button, usable in any toolbar. Wraps GCKUICastButton.
-struct CastButton: UIViewRepresentable {
-    func makeUIView(context: Context) -> GCKUICastButton {
-        let button = GCKUICastButton(frame: CGRect(x: 0, y: 0, width: 24, height: 24))
-        button.tintColor = UIColor(PanuraTheme.accent)
-        return button
+/// The Cast mark: a screen with waves radiating from its lower-left corner.
+///
+/// Used in exactly one place — the Chromecast row in the picker — because there
+/// it means Google Cast specifically, sitting beside Panura's own mark so the
+/// two icons tell the two protocols apart. The header button stays a TV: it
+/// covers Panura Cast as well, which is not Cast at all, and a TV is what both
+/// paths actually promise.
+///
+/// Drawn rather than borrowed: SF Symbols has no cast glyph, and the SDK's
+/// button hides itself when no devices are around, so it cannot serve as a
+/// static icon. The screen's lower-left corner is left open, as in Material's
+/// original, which is what gives the waves room to read as waves.
+struct CastMark: View {
+    /// Stroke weight at the 24pt reference size; scales with the frame.
+    var weight: CGFloat = 2
+
+    var body: some View {
+        GeometryReader { geo in
+            let u = min(geo.size.width, geo.size.height) / 24
+            let stroke = StrokeStyle(lineWidth: weight * u, lineCap: .round, lineJoin: .round)
+            let corner = CGPoint(x: 2.6 * u, y: 19.6 * u)
+
+            ZStack {
+                // The screen, open along its lower left.
+                Path { path in
+                    path.move(to: CGPoint(x: 2 * u, y: 10 * u))
+                    path.addArc(
+                        tangent1End: CGPoint(x: 2 * u, y: 4 * u),
+                        tangent2End: CGPoint(x: 8 * u, y: 4 * u), radius: 2.4 * u
+                    )
+                    path.addArc(
+                        tangent1End: CGPoint(x: 22 * u, y: 4 * u),
+                        tangent2End: CGPoint(x: 22 * u, y: 10 * u), radius: 2.4 * u
+                    )
+                    path.addArc(
+                        tangent1End: CGPoint(x: 22 * u, y: 20 * u),
+                        tangent2End: CGPoint(x: 16 * u, y: 20 * u), radius: 2.4 * u
+                    )
+                    path.addLine(to: CGPoint(x: 13 * u, y: 20 * u))
+                }
+                .stroke(style: stroke)
+
+                Circle()
+                    .frame(width: 2.6 * u, height: 2.6 * u)
+                    .position(corner)
+
+                ForEach([CGFloat(5.4), CGFloat(9.2)], id: \.self) { radius in
+                    Path { path in
+                        path.addArc(
+                            center: corner, radius: radius * u,
+                            startAngle: .degrees(-90), endAngle: .degrees(0),
+                            clockwise: false
+                        )
+                    }
+                    .stroke(style: stroke)
+                }
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
     }
-    func updateUIView(_ uiView: GCKUICastButton, context: Context) {}
 }
 
 /// The app's cast control, top-right on every screen — the same slot and the
 /// same job as Android's toolbar cast icon.
 ///
-/// Deliberately not `CastButton` (GCKUICastButton): that one knows about
-/// Chromecast and nothing else, so on a phone linked to a Panura TV it showed
-/// "not connected" while a cast was running. This reflects whichever path is up
-/// and opens the screen that can act on it — the controls when something is
-/// actually playing, the picker when nothing is.
+/// Deliberately not the SDK's `GCKUICastButton`: that one knows about Chromecast
+/// and nothing else, so on a phone linked to a Panura TV it showed "not
+/// connected" while a cast was running — and it hides itself entirely when no
+/// Cast device is around. This reflects whichever path is up and opens the
+/// screen that can act on it — the controls when something is actually playing,
+/// the picker when nothing is.
 struct CastToolbarButton: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
@@ -51,13 +104,20 @@ struct CastToolbarButton: View {
     }
 }
 
-/// Cast screen, in two steps: pick how you want to connect, then do it.
+/// The cast screen.
 ///
 /// Ported from Android's rebuilt cast dialog. The two paths are not equivalent
-/// and the screen now says so up front — Panura Cast plays anything this app can
+/// and the screen says so up front — Panura Cast plays anything this app can
 /// play, because the TV is running the same player, while Chromecast is limited
-/// to what the receiver's own pipeline accepts. Offering them as an undifferentiated
-/// list of devices hid the single most useful fact about the choice.
+/// to what the receiver's own pipeline accepts. Offering them as an
+/// undifferentiated list of devices hid the single most useful fact about the
+/// choice.
+///
+/// Chromecast targets are listed here, on this screen, and one tap connects.
+/// They used to be a step away and then a tap away behind the SDK's own dialog
+/// — a sheet, a screen, a button and a dialog to reach a TV that this screen
+/// could have named in the first place. Panura Cast keeps its step, because it
+/// has nothing to list: it waits to be found by the TV.
 struct CastDevicesView: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
@@ -66,7 +126,7 @@ struct CastDevicesView: View {
     /// the Panura wait rather than dropping back to the choice.
     @State private var method: Method?
 
-    private enum Method { case panura, chromecast }
+    private enum Method { case panura }
 
     var body: some View {
         List {
@@ -74,9 +134,10 @@ struct CastDevicesView: View {
                 connectedSection
             } else {
                 switch method {
-                case .none: pickerSection
+                case .none:
+                    pickerSection
+                    chromecastDevicesSection
                 case .panura: panuraSection
-                case .chromecast: chromecastSection
                 }
             }
         }
@@ -100,14 +161,19 @@ struct CastDevicesView: View {
         .onAppear {
             // Reopening while a link is in flight resumes that path.
             if panura.isAdvertising || panura.isTVConnected { method = .panura }
+            cast.startDiscovery()
         }
+        // Scanning stops the moment this screen goes away — an idle scan costs
+        // battery and the SDK will not stop one on its own. Attached to the
+        // screen rather than to the device section, because a modifier on a
+        // `Section` is a modifier on something List is entitled to reshape.
+        .onDisappear { cast.stopDiscovery() }
     }
 
     private var title: String {
         if cast.isConnected || panura.isTVConnected { return "Connected" }
         switch method {
         case .panura: return "Panura Cast"
-        case .chromecast: return "Chromecast"
         case .none: return "Cast to TV"
         }
     }
@@ -135,15 +201,20 @@ struct CastDevicesView: View {
                 note: "Limited stream support.",
                 noteGood: false,
                 recommended: false,
-                icon: { Image(systemName: "tv").resizable().scaledToFit() }
-            ) {
-                method = .chromecast
-            }
+                // The real Cast mark, because here it means Google Cast and
+                // nothing else — beside Panura's own mark, the two icons say
+                // which protocol each row is.
+                icon: { CastMark() },
+                chevron: false,
+                action: nil
+            )
         } header: {
             Text("Choose how you want to connect")
         }
     }
 
+    /// `action: nil` makes a card that only explains itself — the Chromecast
+    /// one, whose devices are listed under it rather than behind it.
     private func methodCard<Icon: View>(
         title: String,
         subtitle: String,
@@ -151,9 +222,10 @@ struct CastDevicesView: View {
         noteGood: Bool,
         recommended: Bool,
         @ViewBuilder icon: () -> Icon,
-        action: @escaping () -> Void
+        chevron: Bool = true,
+        action: (() -> Void)?
     ) -> some View {
-        Button(action: action) {
+        Button(action: { action?() }) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
                     icon()
@@ -168,7 +240,10 @@ struct CastDevicesView: View {
                             .foregroundStyle(PanuraTheme.accent)
                     }
                     Spacer()
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
+                    if chevron {
+                        Image(systemName: "chevron.right")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
                 Label(note, systemImage: noteGood ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
@@ -178,6 +253,58 @@ struct CastDevicesView: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
+        .disabled(action == nil)
+    }
+
+    // MARK: the Chromecast devices, listed here
+
+    /// Every Cast target on the network, one tap each.
+    ///
+    /// The scan says it is running rather than showing an empty list: a TV takes
+    /// a couple of seconds to answer, and "no devices" arriving instantly would
+    /// be a lie for most of that time.
+    private var chromecastDevicesSection: some View {
+        Section {
+            if cast.devices.isEmpty {
+                HStack(spacing: 10) {
+                    if cast.isScanning { ProgressView().controlSize(.small) }
+                    Text(cast.isScanning ? "Looking for TVs…" : "No Cast devices found")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                ForEach(cast.devices) { device in
+                    Button {
+                        cast.connect(device)
+                    } label: {
+                        HStack(spacing: 10) {
+                            CastMark()
+                                .frame(width: 22, height: 22)
+                                .foregroundStyle(PanuraTheme.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(device.name).font(.subheadline)
+                                if let model = device.model, !model.isEmpty {
+                                    Text(model)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer(minLength: 4)
+                            if cast.connecting == device.id {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(cast.connecting != nil)
+                }
+            }
+        } header: {
+            Text("Cast devices")
+        } footer: {
+            Text("On the same Wi-Fi as this phone. If a TV is missing, check that "
+                 + "Panura is allowed to find devices on the local network.")
+        }
     }
 
     // MARK: step 2a — Panura Cast
@@ -227,20 +354,6 @@ struct CastDevicesView: View {
             Text("Open Panura on your Android TV and it will find this phone on the "
                  + "same Wi-Fi. The phone serves the video, so it must stay on the "
                  + "network while playing.")
-        }
-    }
-
-    // MARK: step 2b — Chromecast
-
-    private var chromecastSection: some View {
-        Section {
-            CastButton().frame(height: 40)
-        } header: {
-            Text("Pick a device on your network")
-        } footer: {
-            Text("Tap the Cast icon to pick a TV. Chromecast plays fewer stream "
-                 + "types than Panura Cast — if a video refuses to start, try "
-                 + "Panura Cast instead.")
         }
     }
 

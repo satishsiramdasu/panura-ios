@@ -609,10 +609,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     // MARK: resume
 
+    /// Defined once, in `ResumePosition`, so removing a Home card and forgetting
+    /// a position cannot drift apart.
     private static func resumeKey(_ url: URL) -> String {
-        // Stable across launches — Swift's String.hashValue is per-process seeded,
-        // so it must NOT be used here or cross-session resume never matches.
-        "resume_" + url.absoluteString
+        ResumePosition.key(url.absoluteString)
     }
 
     private func applyResumeIfPending() {

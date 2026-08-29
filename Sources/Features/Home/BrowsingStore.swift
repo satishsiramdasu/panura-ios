@@ -73,6 +73,32 @@ struct HostVisit: Codable, Identifiable, Hashable {
     }
 }
 
+/// Where a video was left, keyed by its URL.
+///
+/// The position lives in `UserDefaults` rather than in `ResumeEntry`, because
+/// the player resumes anything it is handed — a video opened from the browser
+/// or the library resumes whether or not it has a Home card. Home's entry and
+/// this key are written together and have to be forgotten together: dropping
+/// the card while leaving the key behind meant "Remove" did not actually
+/// forget the position, and replaying the same URL still jumped mid-film.
+enum ResumePosition {
+    /// Stable across launches — `String.hashValue` is per-process seeded, so it
+    /// must NOT be used here or cross-session resume never matches.
+    static func key(_ url: String) -> String { "resume_" + url }
+
+    static func seconds(_ url: String) -> Double {
+        UserDefaults.standard.double(forKey: key(url))
+    }
+
+    static func save(_ seconds: Double, for url: String) {
+        UserDefaults.standard.set(seconds, forKey: key(url))
+    }
+
+    static func forget(_ url: String) {
+        UserDefaults.standard.removeObject(forKey: key(url))
+    }
+}
+
 /// A partially-watched item, enough to rebuild the `MediaItem` and resume it.
 struct ResumeEntry: Codable, Identifiable, Hashable {
     var url: String
@@ -363,6 +389,7 @@ final class BrowsingStore: ObservableObject {
         if position >= duration - 15 {
             ResumeThumbnails.remove(resumes[i].thumbnailPath)
             resumes.remove(at: i)
+            ResumePosition.forget(key)
             persistResumes()
             return
         }
@@ -432,6 +459,10 @@ final class BrowsingStore: ObservableObject {
             ResumeThumbnails.remove(entry.thumbnailPath)
         }
         resumes.removeAll { $0.url == url }
+        // The saved position goes with the card. Without this, removing an
+        // entry only hid it: the same URL played again still resumed from where
+        // it was, which is not what Remove says it does.
+        ResumePosition.forget(url)
         persistResumes()
     }
 

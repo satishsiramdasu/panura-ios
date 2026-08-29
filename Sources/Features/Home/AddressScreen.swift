@@ -34,6 +34,10 @@ struct AddressScreen: View {
     var onDismiss: () -> Void
 
     @ObservedObject private var store = BrowsingStore.shared
+    /// Private browsing is a property of the browser session, not of whoever
+    /// opened this screen, so it is read rather than passed in — Home's address
+    /// bar and the browser's open the same screen and must agree about it.
+    @ObservedObject private var session = BrowserSession.shared
     @State private var query = ""
     @State private var suggestions: [String] = []
     @State private var section: AddressSection = .mostVisited
@@ -42,6 +46,27 @@ struct AddressScreen: View {
 
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
     private var isBlank: Bool { trimmed.isEmpty }
+
+    // Private browsing repaints the screen violet, as the browser's own pill
+    // already is. Typing an address is exactly the moment it matters that this
+    // is not being recorded, and a screen that looks identical either way is
+    // the one place the mode can be forgotten.
+    private var incognito: Bool { session.privateMode }
+    private var pageColor: Color {
+        incognito ? PanuraTheme.incognitoSurface : PanuraTheme.background
+    }
+    private var barColor: Color {
+        incognito ? PanuraTheme.incognitoSurfaceHigh : PanuraTheme.surfaceContainer
+    }
+    private var fieldColor: Color {
+        incognito ? PanuraTheme.incognito.opacity(0.18) : PanuraTheme.surfaceVariant
+    }
+    /// The screen's own accent follows the mode too, or an amber chip on a
+    /// violet screen says the tint is decoration rather than a state.
+    private var tint: Color { incognito ? PanuraTheme.incognito : PanuraTheme.accent }
+    private var tintSoft: Color {
+        incognito ? PanuraTheme.incognito.opacity(0.22) : PanuraTheme.accentSoft
+    }
 
     /// All three, always. Hiding an empty section hid Shortcuts on any install
     /// that had not saved one yet — which is exactly the install that needs to
@@ -72,7 +97,7 @@ struct AddressScreen: View {
             Divider()
             list
         }
-        .background(PanuraTheme.background)
+        .background(pageColor)
         .onAppear {
             section = startSection
             focused = true
@@ -101,8 +126,8 @@ struct AddressScreen: View {
                 Image(systemName: "arrow.left")
                     .font(.system(size: 16, weight: .medium))
                     .frame(width: 40, height: 40)
-                    .background(PanuraTheme.accentSoft, in: Circle())
-                    .foregroundStyle(PanuraTheme.accent)
+                    .background(tintSoft, in: Circle())
+                    .foregroundStyle(tint)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Back")
@@ -122,14 +147,23 @@ struct AddressScreen: View {
                     }
                     .buttonStyle(.plain)
                 }
+                // Inside the field, at its end: the same slot a browser puts a
+                // security indicator in, and it stays visible while typing —
+                // which is when the mode is worth knowing.
+                if incognito {
+                    Image(systemName: "eyeglasses")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(PanuraTheme.incognito)
+                        .accessibilityLabel("Private browsing is on")
+                }
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
-            .background(PanuraTheme.surfaceVariant, in: Capsule())
+            .background(fieldColor, in: Capsule())
         }
         .padding(.horizontal, 8)
         .frame(height: PanuraHeader<AnyView>.height)
-        .background(PanuraTheme.surfaceContainer)
+        .background(barColor)
     }
 
     // MARK: results
@@ -218,10 +252,10 @@ struct AddressScreen: View {
                             .frame(height: 32)
                             .background(
                                 Capsule().fill(
-                                    s == section ? PanuraTheme.accentSoft : PanuraTheme.surfaceVariant
+                                    s == section ? tintSoft : PanuraTheme.surfaceVariant
                                 )
                             )
-                            .foregroundStyle(s == section ? PanuraTheme.accent : Color.primary)
+                            .foregroundStyle(s == section ? tint : Color.primary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -235,7 +269,7 @@ struct AddressScreen: View {
         Button { onNavigate(currentURL) } label: {
             HStack(spacing: 10) {
                 Image(systemName: "doc.text")
-                    .foregroundStyle(PanuraTheme.accent)
+                    .foregroundStyle(tint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(currentTitle.isEmpty ? currentURL : currentTitle)
                         .font(.subheadline.weight(.medium)).lineLimit(1)
@@ -294,9 +328,9 @@ struct AddressScreen: View {
                 .padding(.horizontal, 12)
                 .frame(height: 34)
                 .background(
-                    Capsule().fill(primary ? PanuraTheme.accentSoft : PanuraTheme.surfaceVariant)
+                    Capsule().fill(primary ? tintSoft : PanuraTheme.surfaceVariant)
                 )
-                .foregroundStyle(primary ? PanuraTheme.accent : Color.primary)
+                .foregroundStyle(primary ? tint : Color.primary)
         }
         .buttonStyle(.plain)
         // Long-press fills the box rather than navigating, so a suggestion can
@@ -314,7 +348,7 @@ struct AddressScreen: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.system(size: 16))
-                    .foregroundStyle(accent ? PanuraTheme.accent : Color.secondary)
+                    .foregroundStyle(accent ? tint : Color.secondary)
                     .frame(width: 22)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.title.isEmpty ? entry.url : entry.title)

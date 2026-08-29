@@ -64,6 +64,9 @@ enum PanuraTheme {
     static let incognito = Color(hex: 0xC7A9FF)
     static let incognitoContainer = Color(hex: 0x3B1F7A)
     static let incognitoSurface = Color(hex: 0x241F30)
+    /// Bars and fields in private mode — one step up from `incognitoSurface`,
+    /// the same relationship `surfaceContainer` has to `background`.
+    static let incognitoSurfaceHigh = Color(hex: 0x2E2740)
 
     // MARK: shape
 
