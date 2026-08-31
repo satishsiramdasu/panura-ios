@@ -553,11 +553,9 @@ struct BrowserView: View {
             Button {
                 castOrConnect(video)
             } label: {
-                streamActionLabel(
-                    castLabel,
-                    icon: castConnected ? "tv.fill" : "tv",
-                    filled: false
-                )
+                streamActionLabel(castLabel, filled: false) {
+                    CastMark(connected: castConnected).frame(width: 18, height: 18)
+                }
             }
             .buttonStyle(.plain)
         }
@@ -572,8 +570,20 @@ struct BrowserView: View {
         icon: String,
         filled: Bool
     ) -> some View {
-        HStack(spacing: 6) {
+        streamActionLabel(title, filled: filled) {
             Image(systemName: icon).font(.system(size: 16))
+        }
+    }
+
+    /// The same button with a drawn glyph instead of a symbol name — the cast
+    /// mark is not in SF Symbols, so it arrives as a view.
+    private func streamActionLabel<Glyph: View>(
+        _ title: String,
+        filled: Bool,
+        @ViewBuilder glyph: () -> Glyph
+    ) -> some View {
+        HStack(spacing: 6) {
+            glyph()
             Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
         }
         .frame(maxWidth: .infinity)
@@ -592,10 +602,13 @@ struct BrowserView: View {
 
     private var castConnected: Bool { panuraCast.isTVConnected || cast.isConnected }
 
+    /// "Play on TV" when nothing is linked — the action, not the machinery,
+    /// and the same words Android uses. Once a TV is linked the button names
+    /// it instead, because by then the question is which screen this goes to.
     private var castLabel: String {
         if panuraCast.isTVConnected { return "Panura TV" }
-        if cast.isConnected { return "Cast" }
-        return "Cast to TV"
+        if cast.isConnected { return "Chromecast" }
+        return "Play on TV"
     }
 
     /// Panura TV first when both are linked: it plays what this app plays, and
@@ -644,11 +657,10 @@ struct BrowserView: View {
                                 showFoundSheet = false
                                 castOrConnect(video)
                             } label: {
-                                streamActionLabel(
-                                    castLabel,
-                                    icon: castConnected ? "tv.fill" : "tv",
-                                    filled: false
-                                )
+                                streamActionLabel(castLabel, filled: false) {
+                                    CastMark(connected: castConnected)
+                                        .frame(width: 18, height: 18)
+                                }
                             }
                             .buttonStyle(.plain)
                         }

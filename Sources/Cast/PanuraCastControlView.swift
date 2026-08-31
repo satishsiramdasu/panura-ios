@@ -34,7 +34,7 @@ struct PanuraCastControlView: View {
                     }
                 }
             }
-            .navigationTitle("Cast")
+            .navigationTitle("Playing on TV")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -50,7 +50,7 @@ struct PanuraCastControlView: View {
                 .font(.subheadline.weight(.medium))
                 .lineLimit(2)
             HStack(spacing: 6) {
-                Image(systemName: "tv.fill").font(.caption2)
+                CastMark(connected: true).frame(width: 14, height: 14)
                 Text(cast.connectedTVName.isEmpty ? "Panura TV" : cast.connectedTVName)
                 if !cast.mode.isEmpty {
                     Text("·")

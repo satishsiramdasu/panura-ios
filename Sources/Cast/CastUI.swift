@@ -1,53 +1,64 @@
 import SwiftUI
 import GoogleCast
 
-/// The Cast mark: a screen with waves radiating from its lower-left corner.
+/// Material's `connected_tv` (sharp), drawn: a TV on a stand with the cast
+/// waves inside its lower-left corner.
 ///
-/// Used in exactly one place — the Chromecast row in the picker — because there
-/// it means Google Cast specifically, sitting beside Panura's own mark so the
-/// two icons tell the two protocols apart. The header button stays a TV: it
-/// covers Panura Cast as well, which is not Cast at all, and a TV is what both
-/// paths actually promise.
+/// The app's one cast icon, in every place casting appears — header, detection
+/// bar, sheet, picker, device rows — and the same mark Android uses
+/// (`PanuraIcons.ConnectedTv`), so a screenshot from either phone shows the
+/// same button. It is drawn rather than borrowed because SF Symbols has no cast
+/// glyph and the Cast SDK's button hides itself when no device is around, which
+/// is exactly when the user needs to see it.
 ///
-/// Drawn rather than borrowed: SF Symbols has no cast glyph, and the SDK's
-/// button hides itself when no devices are around, so it cannot serve as a
-/// static icon. The screen's lower-left corner is left open, as in Material's
-/// original, which is what gives the waves room to read as waves.
+/// It says both things a TV icon alone cannot: this is a television, and
+/// something is being sent to it. `connected` lights the screen.
 struct CastMark: View {
+    var connected = false
     /// Stroke weight at the 24pt reference size; scales with the frame.
     var weight: CGFloat = 2
 
     var body: some View {
         GeometryReader { geo in
             let u = min(geo.size.width, geo.size.height) / 24
-            let stroke = StrokeStyle(lineWidth: weight * u, lineCap: .round, lineJoin: .round)
-            let corner = CGPoint(x: 2.6 * u, y: 19.6 * u)
+            let line = weight * u
+            // Sharp, as in the sharp variant — square corners throughout.
+            let screen = CGRect(x: 1 * u, y: 3 * u, width: 22 * u, height: 16 * u)
+            let inner = screen.insetBy(dx: line, dy: line)
+            // The waves start from the inside of the lower-left corner.
+            let corner = CGPoint(x: inner.minX + 2 * u, y: inner.maxY - 2 * u)
 
-            ZStack {
-                // The screen, open along its lower left.
-                Path { path in
-                    path.move(to: CGPoint(x: 2 * u, y: 10 * u))
-                    path.addArc(
-                        tangent1End: CGPoint(x: 2 * u, y: 4 * u),
-                        tangent2End: CGPoint(x: 8 * u, y: 4 * u), radius: 2.4 * u
-                    )
-                    path.addArc(
-                        tangent1End: CGPoint(x: 22 * u, y: 4 * u),
-                        tangent2End: CGPoint(x: 22 * u, y: 10 * u), radius: 2.4 * u
-                    )
-                    path.addArc(
-                        tangent1End: CGPoint(x: 22 * u, y: 20 * u),
-                        tangent2End: CGPoint(x: 16 * u, y: 20 * u), radius: 2.4 * u
-                    )
-                    path.addLine(to: CGPoint(x: 13 * u, y: 20 * u))
+            ZStack(alignment: .topLeading) {
+                if connected {
+                    Rectangle()
+                        .frame(width: inner.width, height: inner.height)
+                        .opacity(0.28)
+                        .offset(x: inner.minX, y: inner.minY)
                 }
-                .stroke(style: stroke)
 
-                Circle()
-                    .frame(width: 2.6 * u, height: 2.6 * u)
-                    .position(corner)
+                Rectangle()
+                    .strokeBorder(style: StrokeStyle(lineWidth: line))
+                    .frame(width: screen.width, height: screen.height)
+                    .offset(x: screen.minX, y: screen.minY)
 
-                ForEach([CGFloat(5.4), CGFloat(9.2)], id: \.self) { radius in
+                // The stand, which is what makes this a television rather than
+                // a window.
+                Rectangle()
+                    .frame(width: 8 * u, height: line)
+                    .offset(x: 8 * u, y: screen.maxY)
+
+                // Innermost wave: solid, as in the original.
+                Path { path in
+                    path.move(to: corner)
+                    path.addArc(
+                        center: corner, radius: 3 * u,
+                        startAngle: .degrees(-90), endAngle: .degrees(0),
+                        clockwise: false
+                    )
+                    path.closeSubpath()
+                }
+
+                ForEach([CGFloat(5.2), CGFloat(8.2)], id: \.self) { radius in
                     Path { path in
                         path.addArc(
                             center: corner, radius: radius * u,
@@ -55,7 +66,7 @@ struct CastMark: View {
                             clockwise: false
                         )
                     }
-                    .stroke(style: stroke)
+                    .stroke(style: StrokeStyle(lineWidth: line, lineCap: .butt))
                 }
             }
         }
@@ -86,14 +97,14 @@ struct CastToolbarButton: View {
         Button {
             if playing { showControls = true } else { showPicker = true }
         } label: {
-            Image(systemName: connected ? "tv.fill" : "tv")
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(connected ? PanuraTheme.accent : Color.secondary)
+            CastMark(connected: connected)
+                .frame(width: 23, height: 23)
+                .foregroundStyle(connected ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
                 // Says "trying", without a second glyph: the phone is
                 // discoverable but no TV has answered yet.
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
         }
-        .accessibilityLabel(connected ? "Casting — open cast controls" : "Cast to TV")
+        .accessibilityLabel(connected ? "Playing on TV — open controls" : "Play on TV")
         .sheet(isPresented: $showPicker) {
             NavigationStack { CastDevicesView() }
                 .presentationDragIndicator(.visible)
@@ -175,7 +186,7 @@ struct CastDevicesView: View {
         switch method {
         case .panura: return "Panura Cast"
         case .chromecast: return "Chromecast"
-        case .none: return "Cast to TV"
+        case .none: return "Play on TV"
         }
     }
 
@@ -212,7 +223,7 @@ struct CastDevicesView: View {
                 cast.startDiscovery()
             }
         } header: {
-            Text("Choose how you want to connect")
+            Text("Choose how you want to play")
         }
     }
 
@@ -375,7 +386,12 @@ struct CastDevicesView: View {
                 }
             }
             if cast.isConnected {
-                Label(cast.connectedDeviceName ?? "Chromecast connected", systemImage: "tv.fill")
+                HStack(spacing: 10) {
+                    CastMark(connected: true)
+                        .frame(width: 22, height: 22)
+                        .foregroundStyle(PanuraTheme.accent)
+                    Text(cast.connectedDeviceName ?? "Chromecast connected")
+                }
             }
 
             // Disconnect ends whichever path is actually up. It used to call
