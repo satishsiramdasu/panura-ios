@@ -22,6 +22,13 @@ struct LocalVideoAsset: Identifiable {
     }
 
     var resolutionLabel: String { "\(asset.pixelWidth)×\(asset.pixelHeight)" }
+
+    /// "holiday.mp4" or "holiday", per the Videos setting. The library always
+    /// hands over the full filename, so the extension is dropped here rather
+    /// than added.
+    func displayTitle(showExtension: Bool) -> String {
+        showExtension ? title : (title as NSString).deletingPathExtension
+    }
 }
 
 /// An album from the Photos library — the closest thing iOS has to Android's
@@ -258,6 +265,14 @@ final class LocalVideosModel: ObservableObject {
     /// So the fallback copies the original out of the library with
     /// `PHAssetResourceManager`, which downloads from iCloud when it has to and
     /// works for every asset the picker can show.
+    /// The video played most recently from this tab, so the list can mark it —
+    /// Android's `markLastPlayedMedia`. Stored as the asset's identifier because
+    /// the file URL behind it is a temporary copy that changes.
+    static var lastPlayedID: String? {
+        get { UserDefaults.standard.string(forKey: "videos_last_played") }
+        set { UserDefaults.standard.set(newValue, forKey: "videos_last_played") }
+    }
+
     func resolveURL(for item: LocalVideoAsset) async -> URL? {
         error = nil
         preparing = item.title

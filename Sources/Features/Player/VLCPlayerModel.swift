@@ -207,6 +207,11 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         player.play()
         wantsPlayback = true
 
+        // After play(): libVLC resets the rate when it opens new media, so a
+        // rate set before this call is thrown away.
+        let defaultSpeed = UserDefaults.standard.object(forKey: "default_playback_speed") as? Double ?? 1.0
+        if defaultSpeed != 1.0 { setRate(Float(defaultSpeed)) }
+
         // Sidecar subtitles sniffed from the page — the stream itself usually
         // carries none, so without these there are no captions at all.
         for track in item.subtitles {
@@ -239,13 +244,35 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// Subtitle look — set at media-open time (libVLC's text renderer reads these
     /// on start). Live changes re-open the media via `reopenPreservingPosition`.
     private func applySubtitleStyle(to media: VLCMedia) {
-        let size = UserDefaults.standard.object(forKey: "subtitle_size") as? Int ?? 24
-        let color = UserDefaults.standard.object(forKey: "subtitle_color") as? Int ?? 0xFFFFFF
-        let background = UserDefaults.standard.bool(forKey: "subtitle_background")   // default off
+        let defaults = UserDefaults.standard
+        let size = defaults.object(forKey: "subtitle_size") as? Int ?? 24
+        let color = defaults.object(forKey: "subtitle_color") as? Int ?? 0xFFFFFF
+        let background = defaults.bool(forKey: "subtitle_background")   // default off
+        let bold = defaults.bool(forKey: "subtitle_bold")               // default off
+        let outline = defaults.object(forKey: "subtitle_outline") as? Int ?? 4
+        let font = defaults.string(forKey: "subtitle_font") ?? ""
+        let encoding = defaults.string(forKey: "subtitle_encoding") ?? ""
+        // Default ON: a subtitle file that carries its own styling usually
+        // carries it for a reason — positioning for signs, colours per speaker.
+        let embedded = defaults.object(forKey: "subtitle_embedded_styles") as? Bool ?? true
+
         media.addOption(":freetype-fontsize=\(size)")
         media.addOption(":freetype-color=\(color)")
-        // A soft outline keeps white text legible over bright frames.
-        media.addOption(":freetype-outline-thickness=4")
+        // A soft outline keeps white text legible over bright frames. At 0 the
+        // renderer draws none, which is what "None" in Settings means.
+        media.addOption(":freetype-outline-thickness=\(outline)")
+        media.addOption(bold ? ":freetype-bold" : ":no-freetype-bold")
+        if !font.isEmpty {
+            media.addOption(":freetype-font=\(font)")
+        }
+        if !encoding.isEmpty {
+            // Auto-detection handles UTF-8 and little else; a Windows-1256 Arabic
+            // .srt renders as mojibake until it is told what it is.
+            media.addOption(":subsdec-encoding=\(encoding)")
+        }
+        // `subsdec-formatted` is what honours ASS/SSA styling. Off, every line
+        // is drawn in the style set above — which is the point of turning it off.
+        media.addOption(embedded ? ":subsdec-formatted" : ":no-subsdec-formatted")
         if background {
             // Opaque black box behind the glyphs for readability.
             media.addOption(":freetype-background-opacity=255")

@@ -20,6 +20,12 @@ struct LocalVideosView: View {
     @State private var showShare = false
     @State private var showAlbums = false
 
+    @AppStorage("mark_last_played") private var markLastPlayed = true
+    @AppStorage("show_extension") private var showExtension = true
+    /// Read once per appearance rather than per cell — it only changes when this
+    /// screen is the one starting playback, and that closes the screen.
+    @State private var lastPlayedID: String?
+
     private let gridColumns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
     private let listColumns = [GridItem(.flexible(), spacing: 12)]
 
@@ -44,7 +50,10 @@ struct LocalVideosView: View {
             .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Videos") }
             .navigationBarHidden(true)
         }
-        .task { await model.load() }
+        .task {
+            lastPlayedID = LocalVideosModel.lastPlayedID
+            await model.load()
+        }
         .fullScreenCover(item: $playItem) { PlayerView(item: $0, playlist: localPlaylist()) }
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
@@ -97,13 +106,21 @@ struct LocalVideosView: View {
             : "This album has no videos in it."
     }
 
-    @ViewBuilder
     private func cell(_ item: LocalVideoAsset, at index: Int) -> some View {
-        Group {
+        let lastPlayed = markLastPlayed && lastPlayedID == item.id
+        return Group {
             if model.layout == .grid {
-                VideoCell(item: item, selected: selection.contains(item.id), selecting: selecting)
+                VideoCell(
+                    item: item, title: item.displayTitle(showExtension: showExtension),
+                    selected: selection.contains(item.id), selecting: selecting,
+                    lastPlayed: lastPlayed
+                )
             } else {
-                VideoRow(item: item, selected: selection.contains(item.id), selecting: selecting)
+                VideoRow(
+                    item: item, title: item.displayTitle(showExtension: showExtension),
+                    selected: selection.contains(item.id), selecting: selecting,
+                    lastPlayed: lastPlayed
+                )
             }
         }
         // The whole cell, thumbnail and caption alike, takes the tap — a
@@ -457,6 +474,10 @@ struct LocalVideosView: View {
     private func play(_ asset: LocalVideoAsset, at index: Int) {
         Task {
             if let url = await model.resolveURL(for: asset) {
+                // Written here rather than in resolveURL, which also runs for
+                // Share — and sharing a video is not playing it.
+                LocalVideosModel.lastPlayedID = asset.id
+                lastPlayedID = asset.id
                 playIndex = index
                 playItem = MediaItem(title: asset.title, url: url, isLocal: true)
             }
@@ -466,8 +487,13 @@ struct LocalVideosView: View {
 
 private struct VideoCell: View {
     let item: LocalVideoAsset
+    let title: String
     var selected = false
     var selecting = false
+    /// The one played most recently, marked with a stripe under the thumbnail —
+    /// Android marks it with an accent edge for the same reason: in a library of
+    /// near-identical thumbnails, "where was I" is the hardest question.
+    var lastPlayed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -506,7 +532,14 @@ private struct VideoCell: View {
                         .strokeBorder(PanuraTheme.accent, lineWidth: 2)
                 }
             }
-            Text(item.title).font(.caption).lineLimit(1)
+            HStack(spacing: 5) {
+                if lastPlayed {
+                    Capsule()
+                        .fill(PanuraTheme.accent)
+                        .frame(width: 3, height: 12)
+                }
+                Text(title).font(.caption).lineLimit(1)
+            }
         }
     }
 }
@@ -517,11 +550,19 @@ private struct VideoCell: View {
 /// filename and the details a grid caption cannot hold.
 private struct VideoRow: View {
     let item: LocalVideoAsset
+    let title: String
     var selected = false
     var selecting = false
+    var lastPlayed = false
 
     var body: some View {
         HStack(spacing: 10) {
+            // The full-height accent edge is Android's, verbatim.
+            if lastPlayed {
+                Capsule()
+                    .fill(PanuraTheme.accent)
+                    .frame(width: 3, height: 44)
+            }
             if selecting {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
@@ -545,7 +586,7 @@ private struct VideoRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(item.title)
+                Text(title)
                     .font(.subheadline)
                     .lineLimit(2)
                 Text(item.resolutionLabel)

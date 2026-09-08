@@ -49,8 +49,31 @@ struct PlayerView: View {
     @AppStorage("subtitle_size") private var subtitleSize = 24
     @AppStorage("subtitle_color") private var subtitleColor = 0xFFFFFF
     @AppStorage("subtitle_background") private var subtitleBackground = false
+    @AppStorage("subtitle_bold") private var subtitleBold = false
     @AppStorage("preferred_audio_language") private var preferredAudioLang = ""
     @AppStorage("preferred_subtitle_language") private var preferredSubtitleLang = ""
+    // Which gestures are live, and how far a drag has to travel. Off means the
+    // player ignores that gesture entirely — see GesturePreferencesView.
+    @AppStorage("gesture_seek") private var gestureSeek = true
+    @AppStorage("gesture_brightness") private var gestureBrightness = true
+    @AppStorage("gesture_volume") private var gestureVolume = true
+    @AppStorage("gesture_zoom") private var gestureZoom = true
+    @AppStorage("gesture_double_tap") private var gestureDoubleTap = true
+    @AppStorage("gesture_long_press") private var gestureLongPress = true
+    @AppStorage("gesture_sensitivity") private var gestureSensitivity = 1.0
+
+    /// Pinch zoom. 1 = fit as the aspect mode says; above that the picture is
+    /// scaled up and `videoPan` says which part of it you are looking at.
+    @State private var videoZoom: CGFloat = 1
+    @State private var videoPan: CGSize = .zero
+    /// Scale when the current pinch started, so the gesture is relative.
+    @State private var zoomBase: CGFloat = 1
+    /// Shown while pinching, then faded — the same HUD brightness and volume use.
+    @State private var zoomHUD: CGFloat?
+    /// True between the first change of a pinch and its end. The HUD cannot
+    /// stand in for this: it lingers for a moment after the gesture, and a
+    /// second pinch inside that moment would measure from a stale base.
+    @State private var pinching = false
 
     enum PlayerSheet: Int, Identifiable { case audio, subtitles; var id: Int { rawValue } }
 
@@ -66,7 +89,15 @@ struct PlayerView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VLCVideoView(model: model, item: item).ignoresSafeArea()
+            VLCVideoView(model: model, item: item)
+                // Zoom is applied to the surface rather than to libVLC: the
+                // decoder keeps rendering the same frames at the same cost, and
+                // a scale on the layer is free and instant. Clipped, so a
+                // zoomed picture cannot paint over the controls.
+                .scaleEffect(videoZoom)
+                .offset(videoPan)
+                .clipped()
+                .ignoresSafeArea()
             // Mounts the hidden MPVolumeView so SystemVolume can drive it. Needs a
             // non-zero footprint for its UISlider to materialise; kept invisible.
             VolumeHost().frame(width: 1, height: 1).opacity(0.001).allowsHitTesting(false)
@@ -103,6 +134,7 @@ struct PlayerView: View {
         .onChange(of: subtitleSize) { _ in model.reopenPreservingPosition() }
         .onChange(of: subtitleColor) { _ in model.reopenPreservingPosition() }
         .onChange(of: subtitleBackground) { _ in model.reopenPreservingPosition() }
+        .onChange(of: subtitleBold) { _ in model.reopenPreservingPosition() }
         .onChange(of: preferredAudioLang) { _ in model.applyPreferredLanguages() }
         .onChange(of: preferredSubtitleLang) { _ in model.applyPreferredLanguages() }
         .onChange(of: model.videoIsPortrait) { p in
@@ -117,7 +149,7 @@ struct PlayerView: View {
             onSingleTap: { toggleControls() },
             onDoubleTap: { handleDoubleTap($0) },
             onSeekBegan: {
-                guard !locked else { return }
+                guard !locked, gestureSeek else { return }
                 seekBase = model.position; seekPreview = model.position
                 // Deliberately does NOT reveal the controls — a seek gesture only
                 // shows its own HUD; controls stay in whatever state they were.
@@ -129,7 +161,7 @@ struct PlayerView: View {
                 guard total > 0 else { return }
                 // Time-based, not fraction-based: a full-width swipe moves ~90s
                 // regardless of length (it used to jump the whole video).
-                let target = Double(seekBase) * total + Double(dx) * 90
+                let target = Double(seekBase) * total + Double(dx) * 90 * gestureSensitivity
                 seekPreview = clamp01f(Float(target / total))
             },
             onSeekEnded: {
@@ -140,12 +172,67 @@ struct PlayerView: View {
             onVerticalChanged: { changeVertical($0) },
             onVerticalEnded: { endVertical() },
             onLongPressBegan: { beginBoost() },
-            onLongPressEnded: { endBoost() }
+            onLongPressEnded: { endBoost() },
+            onPinchChanged: { scale in changeZoom(scale) },
+            onPinchEnded: { endZoom() },
+            onTwoFingerPan: { movePicture(by: $0) }
+        )
+    }
+
+    // MARK: pinch zoom
+
+    /// Scales the video surface between fit and 4×.
+    ///
+    /// A cap, because past about 4× a 1080p frame is showing its own pixels and
+    /// the gesture stops being useful. The floor is 1: below "fit" there is
+    /// nothing to see but black, and letting a pinch shrink the picture into the
+    /// middle of the screen is a state people cannot get out of.
+    private func changeZoom(_ scale: CGFloat) {
+        guard !locked, gestureZoom else { return }
+        if !pinching { pinching = true; zoomBase = videoZoom; hudClear?.cancel() }
+        let next = min(max(zoomBase * scale, 1), 4)
+        videoZoom = next
+        zoomHUD = next
+        if next == 1 { videoPan = .zero }   // back to fit: nothing left to look around
+        else { videoPan = clampPan(videoPan, zoom: next) }
+    }
+
+    private func endZoom() {
+        pinching = false
+        hudClear?.cancel()
+        hudClear = Task {
+            try? await Task.sleep(nanoseconds: 700_000_000)
+            withAnimation { zoomHUD = nil }
+        }
+    }
+
+    /// Two-finger drag moves a zoomed picture. Ignored at fit, where there is
+    /// nothing outside the frame to bring into it.
+    private func movePicture(by delta: CGSize) {
+        guard !locked, gestureZoom, videoZoom > 1 else { return }
+        videoPan = clampPan(
+            CGSize(width: videoPan.width + delta.width, height: videoPan.height + delta.height),
+            zoom: videoZoom
+        )
+    }
+
+    /// Keeps the picture covering the screen: you can never drag past its edge
+    /// into black. The slack is half of what the zoom added, per axis.
+    private func clampPan(_ pan: CGSize, zoom: CGFloat) -> CGSize {
+        let screen = UIScreen.main.bounds.size
+        let slackX = max(0, screen.width * (zoom - 1) / 2)
+        let slackY = max(0, screen.height * (zoom - 1) / 2)
+        return CGSize(
+            width: min(max(pan.width, -slackX), slackX),
+            height: min(max(pan.height, -slackY), slackY)
         )
     }
 
     private func handleDoubleTap(_ zone: PlayerZone) {
         guard !locked else { toggleControls(); return }
+        // Off, a double tap is two single taps: show the controls, hide them
+        // again — which is what it would have done before this gesture existed.
+        guard gestureDoubleTap else { toggleControls(); return }
         switch zone {
         case .left:  model.skipBackward(); flashSkip(.left)
         case .right: model.skipForward();  flashSkip(.right)
@@ -156,6 +243,7 @@ struct PlayerView: View {
 
     private func beginVertical(_ zone: PlayerZone) {
         guard !locked else { return }
+        guard zone == .left ? gestureBrightness : gestureVolume else { return }
         // Cancel any pending hide from a previous swipe — otherwise it fires
         // mid-gesture and the HUD vanishes under the finger.
         hudClear?.cancel()
@@ -170,10 +258,11 @@ struct PlayerView: View {
         // Drive off the tracked axis, NOT the HUD's presence — a stale clear
         // could nil the HUD and freeze the gesture.
         guard !locked, let axis = verticalAxis else { return }
+        let travel = d * CGFloat(gestureSensitivity)
         if axis == .left {
-            let b = clamp01(brightnessBase + d); ScreenBrightness.set(b); brightnessHUD = b
+            let b = clamp01(brightnessBase + travel); ScreenBrightness.set(b); brightnessHUD = b
         } else {
-            let v = Float(clamp01(CGFloat(volumeBase) + d)); SystemVolume.shared.set(v); volumeHUD = CGFloat(v)
+            let v = Float(clamp01(CGFloat(volumeBase) + travel)); SystemVolume.shared.set(v); volumeHUD = CGFloat(v)
         }
     }
     private func endVertical() {
@@ -187,7 +276,7 @@ struct PlayerView: View {
     }
 
     private func beginBoost() {
-        guard !locked, model.isPlaying else { return }
+        guard !locked, gestureLongPress, model.isPlaying else { return }
         withAnimation { speedBoosting = true }; model.beginSpeedBoost()
     }
     private func endBoost() {
@@ -207,6 +296,13 @@ struct PlayerView: View {
 
     private var hudLayer: some View {
         ZStack {
+            if let zoom = zoomHUD {
+                Label(String(format: "%.0f%%", zoom * 100), systemImage: "magnifyingglass")
+                    .font(.subheadline.bold())
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Color.black.opacity(0.4), in: Capsule())
+                    .foregroundStyle(.white)
+            }
             if speedBoosting {
                 Label("2×", systemImage: "forward.fill")
                     .font(.subheadline.bold())
@@ -648,7 +744,10 @@ struct PlayerView: View {
                     }.pickerStyle(.segmented)
                 }
                 Section {
+                    Toggle("Bold", isOn: $subtitleBold)
                     Toggle("Background", isOn: $subtitleBackground)
+                } footer: {
+                    Text("Font, outline and text encoding are in Settings → Subtitles.")
                 }
             }
             .navigationTitle("Subtitles").navigationBarTitleDisplayMode(.inline)

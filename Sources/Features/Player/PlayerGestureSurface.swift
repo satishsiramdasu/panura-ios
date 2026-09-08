@@ -20,6 +20,14 @@ struct PlayerGestureSurface: UIViewRepresentable {
     var onVerticalEnded: () -> Void = {}
     var onLongPressBegan: () -> Void = {}
     var onLongPressEnded: () -> Void = {}
+    /// Pinch: the live scale factor, relative to where the pinch started.
+    var onPinchChanged: (CGFloat) -> Void = { _ in }
+    var onPinchEnded: () -> Void = {}
+    /// Two fingers dragging: moves a zoomed picture around. One finger is
+    /// already spoken for by seek and brightness/volume, which is why this needs
+    /// two — and why it only does anything once the picture is bigger than the
+    /// screen.
+    var onTwoFingerPan: (CGSize) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -40,7 +48,16 @@ struct PlayerGestureSurface: UIViewRepresentable {
         let long = UILongPressGestureRecognizer(target: c, action: #selector(Coordinator.long(_:)))
         long.minimumPressDuration = 0.45
 
-        for g in [single, double, pan, long] { g.delegate = c; v.addGestureRecognizer(g) }
+        let pinch = UIPinchGestureRecognizer(target: c, action: #selector(Coordinator.pinch(_:)))
+
+        let twoFinger = UIPanGestureRecognizer(target: c, action: #selector(Coordinator.twoFinger(_:)))
+        twoFinger.minimumNumberOfTouches = 2
+        twoFinger.maximumNumberOfTouches = 2
+
+        for g in [single, double, pan, long, pinch, twoFinger] as [UIGestureRecognizer] {
+            g.delegate = c
+            v.addGestureRecognizer(g)
+        }
         return v
     }
 
@@ -95,6 +112,30 @@ struct PlayerGestureSurface: UIViewRepresentable {
                 default:          break
                 }
                 axis = .undecided
+            default: break
+            }
+        }
+
+        @objc func pinch(_ g: UIPinchGestureRecognizer) {
+            switch g.state {
+            case .changed:
+                parent.onPinchChanged(g.scale)
+            case .ended, .cancelled, .failed:
+                parent.onPinchEnded()
+                g.scale = 1
+            default: break
+            }
+        }
+
+        @objc func twoFinger(_ g: UIPanGestureRecognizer) {
+            guard let v = g.view else { return }
+            let t = g.translation(in: v)
+            switch g.state {
+            case .changed:
+                parent.onTwoFingerPan(CGSize(width: t.x, height: t.y))
+                // Reported as a delta each time, so the view can add it to what
+                // it already has without tracking a start offset of its own.
+                g.setTranslation(.zero, in: v)
             default: break
             }
         }

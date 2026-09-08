@@ -20,9 +20,27 @@ struct SettingsView: View {
 
                     PreferenceRow(
                         title: "Playback",
-                        description: "Resume, background play, skip, subtitles",
+                        description: "Resume, background play, speed",
                         icon: "play.circle"
                     ) { PlaybackPreferencesView() }
+
+                    PreferenceRow(
+                        title: "Subtitles",
+                        description: "Size, font, colour, encoding, language",
+                        icon: "captions.bubble"
+                    ) { SubtitlePreferencesView() }
+
+                    PreferenceRow(
+                        title: "Gestures",
+                        description: "Swipes, taps, skip interval, sensitivity",
+                        icon: "hand.draw"
+                    ) { GesturePreferencesView() }
+
+                    PreferenceRow(
+                        title: "Local Videos",
+                        description: "How the Videos tab lists what it finds",
+                        icon: "film"
+                    ) { LocalVideoPreferencesView() }
 
                     PreferenceRow(
                         title: "Detection",
@@ -87,7 +105,14 @@ struct SettingsView: View {
     /// too.
     private func reset() {
         let keys = [
-            "background_play", "resume_playback", "skip_interval", "subtitle_size",
+            "background_play", "resume_playback", "skip_interval", "default_playback_speed",
+            "subtitle_size", "subtitle_color", "subtitle_background", "subtitle_bold",
+            "subtitle_outline", "subtitle_font", "subtitle_encoding",
+            "subtitle_embedded_styles", "preferred_subtitle_language",
+            "preferred_audio_language",
+            "gesture_seek", "gesture_brightness", "gesture_volume", "gesture_zoom",
+            "gesture_double_tap", "gesture_long_press", "gesture_sensitivity",
+            "mark_last_played", "show_extension", "videos_layout",
             "debug_detection", "auto_play_click", "ad_block", "desktop_mode_default",
         ]
         for key in keys { UserDefaults.standard.removeObject(forKey: key) }
@@ -102,10 +127,8 @@ struct PlaybackPreferencesView: View {
     @AppStorage("background_play") private var backgroundPlay = false
     /// Read by VLCPlayerModel — resume each video from where it was left.
     @AppStorage("resume_playback") private var resumePlayback = true
-    /// Seconds the ±skip buttons and double-tap jump.
-    @AppStorage("skip_interval") private var skipInterval = 10
-    /// Default subtitle size (px); applied by VLCPlayerModel at media open.
-    @AppStorage("subtitle_size") private var subtitleSize = 24
+    /// Rate every video opens at; the player's speed control overrides it.
+    @AppStorage("default_playback_speed") private var defaultSpeed = 1.0
 
     var body: some View {
         List {
@@ -126,29 +149,23 @@ struct PlaybackPreferencesView: View {
                 Text("Playback")
             }
 
-            Section("Controls") {
-                Picker(selection: $skipInterval) {
-                    Text("10 seconds").tag(10)
-                    Text("15 seconds").tag(15)
-                    Text("30 seconds").tag(30)
+            Section {
+                Picker(selection: $defaultSpeed) {
+                    Text("0.75×").tag(0.75)
+                    Text("Normal").tag(1.0)
+                    Text("1.25×").tag(1.25)
+                    Text("1.5×").tag(1.5)
                 } label: {
                     PreferenceLabel(
-                        title: "Skip interval",
-                        description: "The ± buttons and the double-tap jump",
-                        icon: "goforward"
+                        title: "Default speed",
+                        description: "Every video starts at this rate",
+                        icon: "speedometer"
                     )
                 }
-                Picker(selection: $subtitleSize) {
-                    Text("Small").tag(16)
-                    Text("Medium").tag(24)
-                    Text("Large").tag(34)
-                } label: {
-                    PreferenceLabel(
-                        title: "Subtitle size",
-                        description: "Applied when a video opens",
-                        icon: "captions.bubble"
-                    )
-                }
+            } header: {
+                Text("Speed")
+            } footer: {
+                Text("The player's own speed control still applies per video; this is only where it starts.")
             }
         }
         .scrollContentBackground(.hidden)
