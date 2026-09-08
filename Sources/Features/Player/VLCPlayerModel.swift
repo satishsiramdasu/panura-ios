@@ -38,6 +38,11 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// a fresh player always starts at 100, so it resets when the player closes.
     @Published var audioBoost: Int = 100
 
+    /// Seconds left on the sleep timer, nil when none is set. Android has the
+    /// same control, and it is the one player feature that is only ever wanted
+    /// at the moment you are least likely to still be awake to use it.
+    @Published var sleepRemaining: Int?
+
     /// HLS quality variants — populated only when the master playlist lists more
     /// than one. Empty otherwise, which is what hides the Quality button.
     @Published var qualities: [Quality] = []
@@ -315,6 +320,8 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     func stop() {
         bufferWatchdog?.cancel()
+        sleepTask?.cancel()
+        sleepTask = nil
         saveResume()
         player.stop()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -426,6 +433,41 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     }
 
     // MARK: audio boost
+
+    // MARK: sleep timer
+
+    /// Counts down and pauses. Deliberately pause and not stop: waking to a
+    /// closed player and a lost position is the failure this feature exists to
+    /// avoid, and a paused player still holds its place.
+    func startSleepTimer(minutes: Int) {
+        sleepTask?.cancel()
+        sleepRemaining = minutes * 60
+        sleepTask = Task { [weak self] in
+            while true {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if Task.isCancelled { return }
+                guard let self, let left = self.sleepRemaining else { return }
+                if left <= 1 {
+                    self.sleepRemaining = nil
+                    if self.player.isPlaying { self.togglePlay() }
+                    return
+                }
+                self.sleepRemaining = left - 1
+            }
+        }
+    }
+
+    func cancelSleepTimer() {
+        sleepTask?.cancel()
+        sleepTask = nil
+        sleepRemaining = nil
+    }
+
+    /// "42m" · "58s" — a badge, so it stays short.
+    var sleepLabel: String? {
+        guard let left = sleepRemaining else { return nil }
+        return left >= 60 ? "\(left / 60)m" : "\(left)s"
+    }
 
     func setAudioBoost(_ percent: Int) {
         audioBoost = max(100, min(200, percent))
@@ -677,6 +719,8 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     }
 
     /// One frame per played item, for the Continue Watching card.
+    private var sleepTask: Task<Void, Never>?
+
     private var thumbnailCaptured = false
 
     /// Asks libVLC for the frame rather than snapshotting `drawableView`: VLC

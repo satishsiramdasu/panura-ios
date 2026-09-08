@@ -14,13 +14,15 @@ struct HomeView: View {
 
     @State private var showAddress = false
     @State private var showShortcutsSheet = false
-    @State private var showMostVisitedSheet = false
     @State private var editingShortcut: SiteEntry?
     @State private var playItem: MediaItem?
     @State private var confirmClearHistory = false
     @State private var showReport = false
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
+    /// The card a Remove was asked for — held until it is confirmed.
+    @State private var pendingRemove: ResumeEntry?
+    @State private var confirmClearWatching = false
     /// Said once, when a card turns out to be dead.
     @State private var resumeToast: String?
 
@@ -35,7 +37,6 @@ struct HomeView: View {
                     brandBlock
                     shortcutsSection
                     if !store.continueWatching.isEmpty { continueWatchingSection }
-                    mostVisitedSection
                     optionsSection
                 }
                 .padding(.vertical, 20)
@@ -69,9 +70,34 @@ struct HomeView: View {
         }
         .fullScreenCover(item: $playItem) { PlayerView(item: $0) }
         .sheet(isPresented: $showShortcutsSheet) { shortcutsSheet }
-        .sheet(isPresented: $showMostVisitedSheet) { mostVisitedSheet }
         .sheet(item: $editingShortcut) { ShortcutEditor(entry: $0) }
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
+        .confirmationDialog(
+            "Remove from Continue Watching?",
+            isPresented: Binding(
+                get: { pendingRemove != nil },
+                set: { if !$0 { pendingRemove = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                if let entry = pendingRemove { store.removeWatching(url: entry.url) }
+                pendingRemove = nil
+            }
+            Button("Cancel", role: .cancel) { pendingRemove = nil }
+        } message: {
+            Text(pendingRemove.map { "\"\($0.title)\" will stop showing here." } ?? "")
+        }
+        .confirmationDialog(
+            "Clear Continue Watching?",
+            isPresented: $confirmClearWatching,
+            titleVisibility: .visible
+        ) {
+            Button("Clear all", role: .destructive) { store.clearWatching() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Removes all \(store.continueWatching.count) items. The videos stay — only the resume points go.")
+        }
         .confirmationDialog(
             "Clear browsing history?",
             isPresented: $confirmClearHistory,
@@ -250,7 +276,11 @@ struct HomeView: View {
 
     private var continueWatchingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Continue Watching")
+            sectionHeader(
+                "Continue Watching",
+                actionLabel: "Clear all",
+                actionIcon: "trash"
+            ) { confirmClearWatching = true }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(store.continueWatching) { entry in
@@ -271,7 +301,7 @@ struct HomeView: View {
                             .onTapGesture { openResume(entry) }
                             .contextMenu {
                                 Button(role: .destructive) {
-                                    store.removeWatching(url: entry.url)
+                                    pendingRemove = entry
                                 } label: { Label("Remove", systemImage: "trash") }
                             }
                     }
@@ -297,39 +327,6 @@ struct HomeView: View {
                 resumeToast = "That link has expired — open the page again."
                 try? await Task.sleep(nanoseconds: 3_200_000_000)
                 resumeToast = nil
-            }
-        }
-    }
-
-    // MARK: most visited
-
-    private var mostVisitedSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Most Visited", showAll: !store.history.isEmpty) {
-                showMostVisitedSheet = true
-            }
-            if store.history.isEmpty {
-                emptyHint("Sites you visit often will appear here.")
-            } else {
-                // Two fixed rows scrolling sideways — Android's LazyHorizontalGrid.
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHGrid(rows: [GridItem(.fixed(44)), GridItem(.fixed(44))], spacing: 8) {
-                        ForEach(store.mostVisited.prefix(10)) { item in
-                            MostVisitedTile(entry: item)
-                                .onTapGesture { onOpenBrowser(item.url) }
-                                .contextMenu {
-                                    Button(role: .destructive) {
-                                        // Tiles come from the host tally, not
-                                        // from history — removing the row would
-                                        // leave the tile sitting there.
-                                        store.removeHostVisit(host: item.host)
-                                    } label: { Label("Remove", systemImage: "trash") }
-                                }
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                }
-                .frame(height: 96)
             }
         }
     }
@@ -360,43 +357,18 @@ struct HomeView: View {
         }
     }
 
-    private var mostVisitedSheet: some View {
-        NavigationStack {
-            List {
-                ForEach(store.mostVisited) { item in
-                    Button {
-                        showMostVisitedSheet = false
-                        onOpenBrowser(item.url)
-                    } label: { SiteRow(entry: item) }
-                        .buttonStyle(.plain)
-                }
-                .onDelete { offsets in
-                    for index in offsets {
-                        store.removeHostVisit(host: store.mostVisited[index].host)
-                    }
-                }
-            }
-            .navigationTitle("Most Visited")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Clear all") { store.clearHistory() }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { showMostVisitedSheet = false }
-                }
-            }
-        }
-    }
-
     // MARK: bits
 
+    /// Title, an optional "Show all", and an optional trailing action —
+    /// Android's `SectionHeader`, which carries the same two slots.
     private func sectionHeader(
         _ title: String,
         showAll: Bool = false,
+        actionLabel: String? = nil,
+        actionIcon: String? = nil,
         action: @escaping () -> Void = {}
     ) -> some View {
-        HStack {
+        HStack(spacing: 10) {
             Text(title).font(.subheadline.weight(.semibold))
             Spacer()
             if showAll {
@@ -407,6 +379,19 @@ struct HomeView: View {
                     }
                     .foregroundStyle(PanuraTheme.accent)
                 }
+                .buttonStyle(.plain)
+            }
+            if let actionLabel {
+                Button(action: action) {
+                    HStack(spacing: 3) {
+                        if let actionIcon {
+                            Image(systemName: actionIcon).font(.system(size: 11))
+                        }
+                        Text(actionLabel).font(.caption)
+                    }
+                    .foregroundStyle(PanuraTheme.accent)
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)
@@ -438,25 +423,6 @@ private struct ShortcutTile: View {
                 .multilineTextAlignment(.center)
         }
         .frame(width: 72)
-        .contentShape(Rectangle())
-    }
-}
-
-private struct MostVisitedTile: View {
-    let entry: SiteEntry
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Favicon(entry: entry, size: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(entry.title).font(.caption).lineLimit(1)
-                Text(entry.host).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .frame(width: 170, height: 44)
-        .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
     }
 }

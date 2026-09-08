@@ -20,7 +20,8 @@ struct LocalVideosView: View {
     @State private var showShare = false
     @State private var showAlbums = false
 
-    private let columns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
+    private let gridColumns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
+    private let listColumns = [GridItem(.flexible(), spacing: 12)]
 
     var body: some View {
         NavigationStack {
@@ -61,43 +62,17 @@ struct LocalVideosView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 12) {
-                    ForEach(Array(model.visible.enumerated()), id: \.element.id) { index, item in
-                        VideoCell(item: item, selected: selection.contains(item.id), selecting: selecting)
-                            // The whole cell, thumbnail and caption alike, takes
-                            // the tap — a Button's label only accepts one where
-                            // it actually painted something.
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if selecting { toggle(item) } else { play(item, at: index) }
-                            }
-                        // Press and hold opens this. Android starts selection
-                        // on the same gesture, but on iOS it belongs to the
-                        // context menu, so selection is the menu's first entry
-                        // instead — reachable from a video rather than only
-                        // from one glyph in the toolbar.
-                        .contextMenu {
-                            Button {
-                                selecting = true
-                                toggle(item)
-                            } label: {
-                                Label("Select", systemImage: "checkmark.circle")
-                            }
-                            Button { infoItem = item } label: {
-                                Label("Info", systemImage: "info.circle")
-                            }
-                            Button { share([item]) } label: {
-                                Label("Share", systemImage: "square.and.arrow.up")
-                            }
-                            Button(role: .destructive) {
-                                Task { await delete([item]) }
-                            } label: { Label("Delete", systemImage: "trash") }
+                ScrollView {
+                    // One `LazyVGrid` for both: a list is a grid of one column,
+                    // and sharing the container keeps scroll position and
+                    // selection across a switch instead of rebuilding the screen.
+                    LazyVGrid(columns: model.layout == .grid ? gridColumns : listColumns, spacing: 12) {
+                        ForEach(Array(model.visible.enumerated()), id: \.element.id) { index, item in
+                            cell(item, at: index)
                         }
                     }
+                    .padding(12)
                 }
-                .padding(12)
-            }
             }
             // Shown for the whole of selection mode, empty selection included:
             // it is what says the mode is on, and what gets out of it.
@@ -120,6 +95,44 @@ struct LocalVideosView: View {
         return model.album == nil
             ? "Videos in your library will show up here."
             : "This album has no videos in it."
+    }
+
+    @ViewBuilder
+    private func cell(_ item: LocalVideoAsset, at index: Int) -> some View {
+        Group {
+            if model.layout == .grid {
+                VideoCell(item: item, selected: selection.contains(item.id), selecting: selecting)
+            } else {
+                VideoRow(item: item, selected: selection.contains(item.id), selecting: selecting)
+            }
+        }
+        // The whole cell, thumbnail and caption alike, takes the tap — a
+        // Button's label only accepts one where it actually painted something.
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if selecting { toggle(item) } else { play(item, at: index) }
+        }
+        // Press and hold opens this. Android starts selection on the same
+        // gesture, but on iOS it belongs to the context menu, so selection is
+        // the menu's first entry instead — reachable from a video rather than
+        // only from one glyph in the toolbar.
+        .contextMenu {
+            Button {
+                selecting = true
+                toggle(item)
+            } label: {
+                Label("Select", systemImage: "checkmark.circle")
+            }
+            Button { infoItem = item } label: {
+                Label("Info", systemImage: "info.circle")
+            }
+            Button { share([item]) } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            Button(role: .destructive) {
+                Task { await delete([item]) }
+            } label: { Label("Delete", systemImage: "trash") }
+        }
     }
 
     /// Search, sort and the album picker, in one row above the grid — Android
@@ -145,6 +158,16 @@ struct LocalVideosView: View {
                 .padding(.horizontal, 12)
                 .frame(height: 38)
                 .background(PanuraTheme.surfaceVariant, in: Capsule())
+
+                Button {
+                    model.layout = model.layout.next
+                } label: {
+                    toolbarGlyph(model.layout.next.icon)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(
+                    model.layout == .grid ? "Switch to list" : "Switch to grid"
+                )
 
                 Menu {
                     Picker("Sort", selection: $model.sort) {
@@ -484,6 +507,63 @@ private struct VideoCell: View {
                 }
             }
             Text(item.title).font(.caption).lineLimit(1)
+        }
+    }
+}
+
+/// The list shape: a wide thumbnail on the left, then the name and what is
+/// known about the file. Android's `VideoListItem` — 80pt tall, 120pt of
+/// thumbnail — because a list earns its place by having room for a long
+/// filename and the details a grid caption cannot hold.
+private struct VideoRow: View {
+    let item: LocalVideoAsset
+    var selected = false
+    var selecting = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if selecting {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(selected ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
+            }
+
+            ZStack(alignment: .bottomTrailing) {
+                Rectangle().fill(PanuraTheme.surfaceVariant)
+                if let thumb = item.thumbnail {
+                    Image(uiImage: thumb).resizable().scaledToFill()
+                }
+                Text(item.durationLabel)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                    .padding(4)
+            }
+            .frame(width: 120, height: 68)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.title)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                Text(item.resolutionLabel)
+                    .font(.caption2)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(selected ? PanuraTheme.accentSoft : PanuraTheme.surfaceContainer)
+        )
+        .overlay {
+            if selected {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(PanuraTheme.accent, lineWidth: 1)
+            }
         }
     }
 }

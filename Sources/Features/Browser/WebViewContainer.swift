@@ -281,6 +281,106 @@ struct WebViewContainer: UIViewRepresentable {
         ) {
             model.isLoading = false
             webView.scrollView.refreshControl?.endRefreshing()
+            showErrorPage(in: webView, error: error)
+        }
+
+        /// Panura's own failure page, as on Android.
+        ///
+        /// WebKit's default is a bare white sheet reading "cannot open the
+        /// page", with no way back and no retry — on a dark app, on a phone,
+        /// that reads as a crash rather than a site that is down.
+        ///
+        /// Loaded with the failed URL as the base, which is what makes the
+        /// page's Retry button work: `location.reload()` then re-requests the
+        /// real address rather than the error page.
+        private func showErrorPage(in webView: WKWebView, error: Error) {
+            let ns = error as NSError
+            guard ns.domain == NSURLErrorDomain else { return }
+            // Cancelled is not a failure: it is what every interrupted load
+            // reports — a second tap, a redirect, our own universal-link
+            // re-issue — and painting an error over those would break ordinary
+            // browsing.
+            let ignored: Set<Int> = [
+                NSURLErrorCancelled,
+                NSURLErrorNetworkConnectionLost,   // retried by WebKit itself
+            ]
+            guard !ignored.contains(ns.code) else { return }
+
+            let failed = (ns.userInfo[NSURLErrorFailingURLStringErrorKey] as? String)
+                ?? webView.url?.absoluteString ?? ""
+            let (code, title, detail) = Self.describe(ns)
+            let html = Self.errorPageHTML(code: code, title: title, detail: detail, url: failed)
+            webView.loadHTMLString(html, baseURL: URL(string: failed))
+        }
+
+        /// The three lines the page shows. Deliberately plain — "no internet"
+        /// and "this host does not exist" are different problems with different
+        /// fixes, and one "couldn't load" covers up which one happened.
+        private static func describe(_ error: NSError) -> (String, String, String) {
+            switch error.code {
+            case NSURLErrorNotConnectedToInternet:
+                return ("Offline", "No internet connection",
+                        "Check Wi-Fi or mobile data and try again.")
+            case NSURLErrorTimedOut:
+                return ("Timeout", "The site took too long",
+                        "It may be busy or blocked. Try again in a moment.")
+            case NSURLErrorCannotFindHost:
+                return ("404", "Site not found",
+                        "This address does not exist. Check the spelling.")
+            case NSURLErrorCannotConnectToHost, NSURLErrorDNSLookupFailed:
+                return ("Down", "Can't reach this site",
+                        "The server isn't responding. It may be down.")
+            case NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateUntrusted,
+                 NSURLErrorServerCertificateHasBadDate, NSURLErrorServerCertificateNotYetValid,
+                 NSURLErrorServerCertificateHasUnknownRoot:
+                return ("Unsafe", "Connection isn't private",
+                        "This site's security certificate could not be trusted.")
+            default:
+                return ("Error", "Couldn't open this page",
+                        error.localizedDescription)
+            }
+        }
+
+        /// Same page Android serves, down to the palette — the app looks the
+        /// same on both phones when a site fails.
+        private static func errorPageHTML(
+            code: String, title: String, detail: String, url: String
+        ) -> String {
+            func escape(_ text: String) -> String {
+                text.replacingOccurrences(of: "&", with: "&amp;")
+                    .replacingOccurrences(of: "<", with: "&lt;")
+                    .replacingOccurrences(of: ">", with: "&gt;")
+                    .replacingOccurrences(of: "\"", with: "&quot;")
+            }
+            return """
+            <!DOCTYPE html><html lang="en"><head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+            <title>\(escape(title))</title>
+            <style>
+            *{margin:0;padding:0;box-sizing:border-box}
+            body{background:#0F0F0E;color:#fff;font-family:-apple-system,system-ui,sans-serif;
+              display:flex;flex-direction:column;align-items:center;justify-content:center;
+              min-height:100vh;padding:32px 24px;text-align:center;-webkit-tap-highlight-color:transparent}
+            .code{font-size:64px;font-weight:800;color:#FFB300;line-height:1.1;letter-spacing:-2px}
+            .ttl{font-size:18px;font-weight:600;margin-top:12px}
+            .dsc{font-size:13px;color:rgba(255,255,255,0.6);margin-top:8px;line-height:1.5;max-width:280px}
+            .url{font-size:11px;color:rgba(255,255,255,0.3);margin-top:16px;word-break:break-all;max-width:320px;line-height:1.4}
+            .row{display:flex;gap:12px;margin-top:28px}
+            button{padding:11px 24px;border-radius:50px;border:none;font-size:13px;font-weight:600;outline:none}
+            .r{background:#FFB300;color:#3D2000}
+            .b{background:#1E1E1D;color:#fff}
+            </style></head><body>
+            <div class="code">\(escape(code))</div>
+            <div class="ttl">\(escape(title))</div>
+            <div class="dsc">\(escape(detail))</div>
+            <div class="url">\(escape(url))</div>
+            <div class="row">
+              <button class="b" onclick="window.history.back()">Back</button>
+              <button class="r" onclick="window.location.reload()">Retry</button>
+            </div>
+            </body></html>
+            """
         }
 
         // Catch direct video navigations the JS scan would miss.

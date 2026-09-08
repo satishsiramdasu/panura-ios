@@ -389,6 +389,7 @@ struct PlayerView: View {
                 // Bottom-right group
                 HStack(spacing: 14) {
                     quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
+                    sleepQuick
                     speedQuick
                     aspectAction
                 }
@@ -486,6 +487,31 @@ struct PlayerView: View {
             }
         }
         .foregroundStyle(.white)
+    }
+
+    /// Sleep timer, beside the speed control. Its label counts down while one
+    /// is running, because a timer you cannot see the end of is one you will
+    /// not trust to be running at all.
+    private var sleepQuick: some View {
+        Menu {
+            if model.sleepRemaining != nil {
+                Button(role: .destructive) {
+                    model.cancelSleepTimer(); scheduleHide()
+                } label: { Label("Cancel timer", systemImage: "xmark") }
+            }
+            ForEach([15, 30, 45, 60, 90], id: \.self) { minutes in
+                Button {
+                    model.startSleepTimer(minutes: minutes); scheduleHide()
+                } label: { Text("\(minutes) minutes") }
+            }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: model.sleepRemaining == nil ? "moon" : "moon.fill")
+                    .font(.system(size: 17))
+                Text(model.sleepLabel ?? "Sleep").font(.system(size: 11))
+            }
+        }
+        .foregroundStyle(model.sleepRemaining == nil ? .white : PanuraTheme.accent)
     }
 
     /// "%g" trims trailing zeros: 1.5 → "1.5×", 2 → "2×", 0.75 → "0.75×".

@@ -454,6 +454,17 @@ final class BrowsingStore: ObservableObject {
         return await StreamProbe.isAlive(url: url, headers: entry.headers)
     }
 
+    /// Empties Continue Watching. The videos and their files are untouched —
+    /// only the resume points go, which is what the confirmation says.
+    func clearWatching() {
+        for entry in resumes {
+            ResumeThumbnails.remove(entry.thumbnailPath)
+            ResumePosition.forget(entry.url)
+        }
+        resumes.removeAll()
+        persistResumes()
+    }
+
     func removeWatching(url: String) {
         for entry in resumes where entry.url == url {
             ResumeThumbnails.remove(entry.thumbnailPath)

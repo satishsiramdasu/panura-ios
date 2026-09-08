@@ -57,6 +57,23 @@ final class LocalVideosModel: ObservableObject {
         }
     }
 
+    /// Grid or list, as Android's `MediaLayoutMode`. A list gives a long name
+    /// room to be read, a grid gives a familiar thumbnail room to be
+    /// recognised, and which one is wanted depends entirely on the library.
+    enum Layout: String {
+        case grid, list
+
+        var icon: String { self == .grid ? "square.grid.2x2" : "list.bullet" }
+        var next: Layout { self == .grid ? .list : .grid }
+    }
+
+    /// Remembered: this is a preference about a library that does not change
+    /// between launches, so asking for it again every launch is asking twice.
+    @Published var layout: Layout = .grid {
+        didSet { UserDefaults.standard.set(layout.rawValue, forKey: Self.layoutKey) }
+    }
+    private static let layoutKey = "videos_layout"
+
     @Published var state: State = .loading
     @Published private(set) var albums: [VideoAlbum] = []
     /// nil = the whole library, which is where the tab opens.
@@ -94,6 +111,13 @@ final class LocalVideosModel: ObservableObject {
         case .nameZA:   return filtered.sorted { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedDescending }
         case .longest:  return filtered.sorted { $0.duration > $1.duration }
         case .shortest: return filtered.sorted { $0.duration < $1.duration }
+        }
+    }
+
+    init() {
+        if let raw = UserDefaults.standard.string(forKey: Self.layoutKey),
+           let saved = Layout(rawValue: raw) {
+            layout = saved
         }
     }
 
