@@ -67,10 +67,13 @@ struct AppBarRow: View {
     /// What the bar keeps under itself instead of the full home-indicator inset.
     ///
     /// The shell hands the bar that whole inset (`ignoresSafeArea` on the stack)
-    /// and it gives back only this: the untrimmed 34pt left an empty band under
-    /// the bar as tall as two thirds of the bar itself. 8pt still clears the
-    /// indicator — the pills stop well above it — without the band.
-    static let bottomInset: CGFloat = 8
+    /// and it gives back only this. The untrimmed 34pt left an empty band under
+    /// the bar two thirds as tall as the bar itself; 8pt went too far the other
+    /// way, and the system's home-indicator — which is drawn over everything,
+    /// by the system, whatever the app puts there — landed on the pills. 16pt
+    /// is the smallest strip that keeps the indicator clear of them: the pill's
+    /// lower edge then sits ~21pt up, and the indicator tops out around 13pt.
+    static let bottomInset: CGFloat = 16
     /// Everything the bar takes out of the screen. What the menu panel sits on.
     static var totalHeight: CGFloat { height + bottomInset }
 

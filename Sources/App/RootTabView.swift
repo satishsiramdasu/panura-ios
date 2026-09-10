@@ -47,11 +47,6 @@ struct RootTabView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            // The stack takes the home-indicator inset back off the system and
-            // lets the bar decide how much of it to keep (8pt, not 34). Without
-            // this the bar floats above an empty band the height of the
-            // indicator area, which is the gap you notice.
-            .ignoresSafeArea(.container, edges: .bottom)
             .animation(.easeOut(duration: 0.2), value: barVisible)
 
             if showMenu {
@@ -63,16 +58,19 @@ struct RootTabView: View {
                     .transition(.opacity)
                     .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { showMenu = false } }
 
+                // Rests on the bar: the whole stack shares one bottom edge (see
+                // below), so the panel only has to clear the bar's own height.
                 AppMenuPanel(items: menuItems, current: selection)
                     .padding(.bottom, AppBarRow.totalHeight)
-                    // The panel sits on the bar, and the bar now runs into the
-                    // home-indicator strip. Without this the panel still stops
-                    // at the system's safe area and floats a strip's height
-                    // above the bar it is supposed to rest on.
-                    .ignoresSafeArea(.container, edges: .bottom)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        // One bottom edge for everything in the stack — the screen's, not the
+        // safe area's. Applied here rather than to the bar and the panel
+        // separately: two views each ignoring the safe area on their own end up
+        // measured against different bottoms, which is exactly how the panel
+        // came to float an indicator's height above the bar.
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     /// All five, always composed. The outgoing one keeps the higher `zIndex`
