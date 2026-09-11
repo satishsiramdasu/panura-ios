@@ -363,7 +363,13 @@ struct AddressScreen: View {
                 .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            // A fixed height, not vertical padding. History is the long list —
+            // thirty rows in a LazyVStack — and a lazy stack measures each row
+            // as it comes into view: rows whose text has not been laid out yet
+            // are sized from an estimate, which is the uneven spacing that shows
+            // while scrolling. Pinning the height makes every row identical
+            // before it is measured, so there is nothing left to estimate.
+            .frame(height: 52)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

@@ -105,6 +105,14 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     private var tracksLoaded = false
     private var item: MediaItem?
     private var playURLOverride: URL?     // a specific HLS variant; nil = master / Auto
+    /// Set for one rebuild, to send a stream through the relay that the rules
+    /// would otherwise have played directly.
+    private var forceRelay = false
+    /// How the current attempt was actually opened.
+    private var playedThroughRelay = false
+    /// One relay retry per item; a second would loop on a stream that is simply
+    /// dead.
+    private var relayRetryUsed = false
     private var observersAdded = false
 
     // char* options libVLC copies internally; we own the buffers and free on change.
@@ -162,6 +170,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // position save, and an item that never appears can't be resumed from.
         BrowsingStore.shared.beginWatching(item)
         thumbnailCaptured = false
+        // A fresh item gets a fresh relay-retry budget; the flags are per item,
+        // not per player.
+        relayRetryUsed = false; forceRelay = false
 
         buildAndPlay()
         setupRemoteCommands()
@@ -192,13 +203,17 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         let looksLikeHLS = path.hasSuffix(".m3u8")
         let needsTypeRelay = item.contentType == "hls" && !looksLikeHLS
 
-        let playURL = (needsHeaderRelay || needsTypeRelay)
+        // A retry after a direct failure goes through the relay whatever the
+        // rules above say — see `retryThroughRelay`.
+        let relay = needsHeaderRelay || needsTypeRelay || forceRelay
+        let playURL = relay
             ? StreamProxy.shared.proxied(
                 url: sourceURL,
                 headers: item.headers,
-                playlistHint: needsTypeRelay
+                playlistHint: needsTypeRelay || forceRelay
               )
             : sourceURL
+        playedThroughRelay = relay
 
         let media = VLCMedia(url: playURL)
         applyHeaders(item.headers, to: media)     // belt-and-braces for the direct path
@@ -280,6 +295,21 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         }
     }
 
+    /// Re-opens through the relay after a direct attempt failed. Returns false
+    /// when there is nothing left to try — already relayed, already retried, or
+    /// no item at all — which is the caller's cue to report the failure.
+    @discardableResult
+    private func retryThroughRelay() -> Bool {
+        guard item != nil, !relayRetryUsed, !playedThroughRelay else { return false }
+        relayRetryUsed = true
+        forceRelay = true
+        buffering = true
+        // Keep the playhead: a stream that fails ten minutes in should not
+        // restart from the beginning just because the transport changed.
+        reopenPreservingPosition()
+        return true
+    }
+
     /// Re-open the current item at the current playhead — used when a subtitle
     /// size/color change needs to take effect immediately.
     func reopenPreservingPosition() {
@@ -302,6 +332,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         currentAudioId = -1; currentSubtitleId = -1
         tracksLoaded = false
         pendingResumeSeconds = nil; resumeApplied = false
+        relayRetryUsed = false; forceRelay = false
         if resumeEnabled {
             let saved = UserDefaults.standard.double(forKey: Self.resumeKey(newItem.url))
             if saved > 15 { pendingResumeSeconds = saved }
@@ -824,6 +855,16 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
                 applyAspect()
                 detectVideoOrientation()
             case .error:
+                // One more attempt before calling it dead, through the relay.
+                // It is a genuinely different request, not the same one twice:
+                // the relay re-serves the playlist as
+                // application/vnd.apple.mpegurl, hands every segment back under
+                // an extensionless URL with its real Content-Type, and strips
+                // decoy image headers on the way through. libVLC picks its
+                // demuxer from MIME and extension, so a CDN that names its TS
+                // segments `.svg` — or serves a playlist as text/plain — fails
+                // direct and plays relayed.
+                if retryThroughRelay() { return }
                 buffering = false
                 failure = "This stream could not be opened."
                 dropResumeIfSourceIsGone()

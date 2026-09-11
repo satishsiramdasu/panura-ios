@@ -106,8 +106,8 @@ struct PlayerView: View {
 
             if let failure = model.failure {
                 failureView(failure)
-            } else if model.buffering && !speedBoosting {
-                ProgressView().tint(.white).scaleEffect(1.4)
+            } else if isLoading {
+                LoadingRing()
             }
 
             if locked {
@@ -430,13 +430,25 @@ struct PlayerView: View {
         .foregroundStyle(.white)
     }
 
+    /// Buffering, and not because a hold-to-speed gesture outran the buffer —
+    /// that one is the user's own doing and shows its own badge.
+    private var isLoading: Bool { model.buffering && !speedBoosting && model.failure == nil }
+
     private var centerTransport: some View {
         HStack(spacing: 40) {
             if playlist != nil {
                 circleTransport("backward.end.fill", size: 52, icon: 20, enabled: canPrevious) { goToPrevious() }
             }
-            circleTransport(model.isPlaying ? "pause.fill" : "play.fill", size: 70, icon: 32) {
-                model.togglePlay(); scheduleHide()
+            // The spinner occupies this spot while the video is opening, so the
+            // play button gives it up rather than sitting on top of it. Its
+            // width is held, or the skip buttons would jump inwards and back
+            // every time the stream rebuffers.
+            if isLoading {
+                Color.clear.frame(width: 70, height: 70)
+            } else {
+                circleTransport(model.isPlaying ? "pause.fill" : "play.fill", size: 70, icon: 32) {
+                    model.togglePlay(); scheduleHide()
+                }
             }
             if playlist != nil {
                 circleTransport("forward.end.fill", size: 52, icon: 20, enabled: canNext) { goToNext() }
@@ -472,24 +484,24 @@ struct PlayerView: View {
 
             HStack(spacing: 12) {
                 // Bottom-left group
-                HStack(spacing: 14) {
+                HStack(spacing: 4) {
                     quickAction("waveform", "Audio") { sheet = .audio }
                     quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
                     if !model.qualities.isEmpty { qualityQuick }
                 }
-                .padding(.horizontal, 16).padding(.vertical, 6)
+                .padding(.horizontal, 8).padding(.vertical, 6)
                 .background(Color.black.opacity(0.3), in: Capsule())
 
                 Spacer()
 
                 // Bottom-right group
-                HStack(spacing: 14) {
+                HStack(spacing: 4) {
                     quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
                     sleepQuick
                     speedQuick
                     aspectAction
                 }
-                .padding(.horizontal, 16).padding(.vertical, 6)
+                .padding(.horizontal, 8).padding(.vertical, 6)
                 .background(Color.black.opacity(0.3), in: Capsule())
             }
             .foregroundStyle(.white)
@@ -521,11 +533,7 @@ struct PlayerView: View {
         Button {
             model.cycleAspect(); scheduleHide()
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: model.aspect.icon).font(.system(size: 17))
-                Text(model.aspect.label).font(.system(size: 11))
-            }
-            .frame(width: 58)
+            quickActionLabel(model.aspect.icon, model.aspect.label)
         }
         .foregroundStyle(.white)
     }
@@ -548,10 +556,7 @@ struct PlayerView: View {
                 }
             }
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "rectangle.stack").font(.system(size: 17))
-                Text(currentQualityLabel).font(.system(size: 11))
-            }
+            quickActionLabel("rectangle.stack", currentQualityLabel)
         }
         .foregroundStyle(.white)
     }
@@ -576,11 +581,10 @@ struct PlayerView: View {
                 }
             }
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: "speedometer").font(.system(size: 17))
-                Text(verbatim: model.rate == 1.0 ? "Speed" : Self.speedText(Double(model.rate)))
-                    .font(.system(size: 11))
-            }
+            quickActionLabel(
+                "speedometer",
+                model.rate == 1.0 ? "Speed" : Self.speedText(Double(model.rate))
+            )
         }
         .foregroundStyle(.white)
     }
@@ -601,11 +605,10 @@ struct PlayerView: View {
                 } label: { Text("\(minutes) minutes") }
             }
         } label: {
-            VStack(spacing: 4) {
-                Image(systemName: model.sleepRemaining == nil ? "moon" : "moon.fill")
-                    .font(.system(size: 17))
-                Text(model.sleepLabel ?? "Sleep").font(.system(size: 11))
-            }
+            quickActionLabel(
+                model.sleepRemaining == nil ? "moon" : "moon.fill",
+                model.sleepLabel ?? "Sleep"
+            )
         }
         .foregroundStyle(model.sleepRemaining == nil ? .white : PanuraTheme.accent)
     }
@@ -646,13 +649,34 @@ struct PlayerView: View {
             Image(systemName: system).font(.title3).frame(width: 40, height: 40)
         }
     }
+    /// Every control in the two capsules is this wide, whatever its caption
+    /// says at the time.
+    ///
+    /// Four of them change their own label as they are used — Speed becomes
+    /// "1.5×", Fit becomes "Fill", Quality becomes "1080p", Sleep becomes "42m"
+    /// — and a row of self-sizing buttons re-spaces itself every time one of
+    /// them does. Worse, the widest caption pushed its neighbours apart, which
+    /// is the gap between Speed and Fit. A fixed width costs a little air around
+    /// the shortest label and buys a row that never moves.
+    static let quickActionWidth: CGFloat = 58
+
     private func quickAction(_ system: String, _ title: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                Image(systemName: system).font(.system(size: 17))
-                Text(title).font(.system(size: 11))
-            }
+            quickActionLabel(system, title)
         }
+    }
+
+    /// The stack inside every quick action: glyph over caption, fixed width, one
+    /// line of caption that shrinks rather than wrapping or truncating.
+    private func quickActionLabel(_ system: String, _ title: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: system).font(.system(size: 17))
+            Text(title)
+                .font(.system(size: 11))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(width: Self.quickActionWidth)
     }
 
     private func failureView(_ text: String) -> some View {
@@ -937,5 +961,47 @@ private struct SkipFlashContent: View {
         }
         .foregroundStyle(.white)
         .onAppear { animating = true }
+    }
+}
+
+
+/// Android's circular progress indicator, drawn.
+///
+/// `ProgressView()` is iOS's spinner — a ring of tapering spokes — and it reads
+/// as a system alert rather than as this app. Material's is one accent arc
+/// sweeping a track: a quarter-circle that rotates at a constant speed while its
+/// length breathes, which is what makes it look like it is making progress
+/// rather than merely spinning.
+private struct LoadingRing: View {
+    var size: CGFloat = 44
+    var lineWidth: CGFloat = 3.5
+
+    @State private var rotation: Double = 0
+    @State private var trim: CGFloat = 0.08
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(Color.white.opacity(0.16), lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: trim)
+                .stroke(
+                    PanuraTheme.accent,
+                    style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                )
+                .rotationEffect(.degrees(rotation))
+        }
+        .frame(width: size, height: size)
+        .onAppear {
+            // Two animations rather than one: a constant spin, and a sweep that
+            // grows and shrinks against it. Together they give the arc its
+            // varying speed — one animation can only ever produce a metronome.
+            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) {
+                rotation = 360
+            }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                trim = 0.72
+            }
+        }
     }
 }
