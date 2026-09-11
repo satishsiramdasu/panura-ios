@@ -94,10 +94,9 @@ targets:
           - _googlecast._tcp
         UIBackgroundModes:
           - audio
-        # ⚠️ PLACEHOLDER — register Panura as an iOS app in AdMob and paste its
-        # app ID here. Android's cannot be reused: an AdMob app ID is per
-        # platform. The SDK refuses to start with a malformed one.
-        GADApplicationIdentifier: ca-app-pub-6998555111280991~0000000000 # TODO iOS AdMob app id
+        # Panura's iOS app in AdMob. Per platform — Android's ~4063324505 is a
+        # different app and cannot be used here.
+        GADApplicationIdentifier: ca-app-pub-6998555111280991~2675221601
         # HTTPS and the system's own crypto only — no encryption of our own — so
         # the app is exempt. Without this key every single upload stops and asks.
         ITSAppUsesNonExemptEncryption: false

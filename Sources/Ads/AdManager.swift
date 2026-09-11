@@ -19,18 +19,18 @@ final class AdManager: NSObject {
     enum Slot: CaseIterable {
         case player, browser, cast
 
-        /// ⚠️ PLACEHOLDERS. Create three interstitial units under the iOS app in
-        /// AdMob and paste their ids here. Shipping Google's test unit in a
-        /// release build is an AdMob policy violation, which is why the debug
-        /// branch is the only place it appears.
+        /// Live units, from the iOS app in AdMob. Debug builds never touch them
+        /// — shipping Google's test unit in a release is an AdMob policy
+        /// violation, and hitting a live unit while testing is the other half
+        /// of the same rule.
         var unitID: String {
             #if DEBUG
             return "ca-app-pub-3940256099942544/4411468910" // Google test interstitial
             #else
             switch self {
-            case .player:  return "ca-app-pub-6998555111280991/0000000001" // TODO
-            case .browser: return "ca-app-pub-6998555111280991/0000000002" // TODO
-            case .cast:    return "ca-app-pub-6998555111280991/0000000003" // TODO
+            case .player:  return "ca-app-pub-6998555111280991/4427286974"
+            case .browser: return "ca-app-pub-6998555111280991/6832395366"
+            case .cast:    return "ca-app-pub-6998555111280991/6201839976"
             }
             #endif
         }
