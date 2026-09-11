@@ -428,6 +428,19 @@ struct PlayerView: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
+            // Where the quick-action row learns how much room it has.
+            //
+            // It cannot measure itself: an HStack whose children overflow
+            // reports the overflowed width, so narrowing the buttons would
+            // widen the very reading that called for it. This backdrop fills the
+            // screen and nothing can inflate it, which makes it a stable ruler.
+            .background(
+                GeometryReader { g in
+                    Color.clear
+                        .onAppear { quickRowWidth = g.size.width }
+                        .onChange(of: g.size.width) { quickRowWidth = $0 }
+                }
+            )
 
             // Top bar pinned to the top; bottom bar hugs the very bottom edge
             // (no extra bottom inset) so it sits low, matching Android.
@@ -687,16 +700,65 @@ struct PlayerView: View {
             Image(systemName: system).font(.title3).frame(width: 40, height: 40)
         }
     }
-    /// Every control in the two capsules is this wide, whatever its caption
-    /// says at the time.
+    /// Every control in the two capsules is the same width, whatever its
+    /// caption says at the time — but that width depends on how many of them
+    /// there are and how much room the screen has.
     ///
-    /// Four of them change their own label as they are used — Speed becomes
-    /// "1.5×", Fit becomes "Fill", Quality becomes "1080p", Sleep becomes "42m"
-    /// — and a row of self-sizing buttons re-spaces itself every time one of
-    /// them does. Worse, the widest caption pushed its neighbours apart, which
-    /// is the gap between Speed and Fit. A fixed width costs a little air around
-    /// the shortest label and buys a row that never moves.
-    static let quickActionWidth: CGFloat = 58
+    /// Four change their own label as they are used — Speed becomes "1.5×", Fit
+    /// becomes "Fill", Quality becomes "1080p", Sleep becomes "42m" — and a row
+    /// of self-sizing buttons re-spaces itself every time one of them does,
+    /// with the widest caption shoving its neighbours apart. So they share one
+    /// width. Pinning that width to a constant, though, put seven of them past
+    /// the edge of a portrait phone: 7 × 58 plus the capsules' own padding is
+    /// wider than an iPhone is. It is computed from the measured row instead.
+    private enum QuickMetrics {
+        /// Roomy enough for "Subtitles" at full size. Never exceeded — extra
+        /// room goes to the gap between the two capsules, not into the buttons.
+        static let ideal: CGFloat = 58
+        /// Below this a caption is squeezed past legibility, so the captions go
+        /// instead and the glyphs carry the row.
+        static let captionFloor: CGFloat = 46
+        /// Nothing useful is left of a 17pt glyph's tap target below this.
+        static let hardFloor: CGFloat = 34
+        /// Between the two capsules, at their closest.
+        static let groupGap: CGFloat = 12
+        /// Inside a capsule: 8pt each side, 4pt between buttons.
+        static let capsulePad: CGFloat = 16
+        static let buttonGap: CGFloat = 4
+        /// `controlsOverlay`'s own horizontal padding, per side.
+        static let overlayPad: CGFloat = 18
+    }
+
+    /// Screen width behind the controls; 0 until the first layout pass. The
+    /// 18pt padding on each side is taken off in `quickMetrics`.
+    @State private var quickRowWidth: CGFloat = 0
+
+    /// How many quick actions are on screen. Quality is the only optional one —
+    /// the rest are always there.
+    private var quickActionCount: Int { model.qualities.isEmpty ? 6 : 7 }
+
+    /// The shared button width, and whether there is room to caption them.
+    ///
+    /// Landscape has room for all seven at full size. Portrait does not, so the
+    /// buttons narrow first and, when even that is not enough, drop their
+    /// captions rather than overflow the screen.
+    private var quickMetrics: (width: CGFloat, captions: Bool) {
+        let n = CGFloat(quickActionCount)
+        guard quickRowWidth > 0 else { return (QuickMetrics.ideal, true) }
+        // The ruler spans the whole screen; the controls sit inside the
+        // overlay's horizontal padding. In landscape it also spans the notch
+        // insets, which overstates the room — harmless, because landscape has
+        // enough room for all seven at full size either way.
+        let available = quickRowWidth - QuickMetrics.overlayPad * 2
+        let chrome = QuickMetrics.capsulePad * 2
+            + QuickMetrics.groupGap
+            + (n - 2) * QuickMetrics.buttonGap   // gaps within both capsules
+        let each = (available - chrome) / n
+        if each >= QuickMetrics.captionFloor {
+            return (min(QuickMetrics.ideal, each), true)
+        }
+        return (max(QuickMetrics.hardFloor, each), false)
+    }
 
     private func quickAction(_ system: String, _ title: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -704,17 +766,23 @@ struct PlayerView: View {
         }
     }
 
-    /// The stack inside every quick action: glyph over caption, fixed width, one
-    /// line of caption that shrinks rather than wrapping or truncating.
+    /// The stack inside every quick action: glyph over caption, shared width,
+    /// one line of caption that shrinks rather than wrapping or truncating.
     private func quickActionLabel(_ system: String, _ title: String) -> some View {
-        VStack(spacing: 4) {
+        let m = quickMetrics
+        return VStack(spacing: 4) {
             Image(systemName: system).font(.system(size: 17))
-            Text(title)
-                .font(.system(size: 11))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
+            if m.captions {
+                Text(title)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
         }
-        .frame(width: Self.quickActionWidth)
+        .frame(width: m.width)
+        // Without this the glyph-only row has a smaller tap target than the
+        // captioned one, for no reason the user can see.
+        .frame(height: 38)
     }
 
     private func failureView(_ text: String) -> some View {
