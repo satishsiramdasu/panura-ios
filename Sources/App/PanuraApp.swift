@@ -1,5 +1,4 @@
 import SwiftUI
-import GoogleMobileAds
 
 @main
 struct PanuraApp: App {
@@ -26,11 +25,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        if FeatureFlags.adsEnabled {
-            MobileAds.shared.start { _ in
-                Task { @MainActor in AdManager.shared.preloadAll() }
-            }
-        }
+        // Ads start themselves, after the ATT prompt: the SDK must not be
+        // started before that answer exists, or the first requests go out
+        // personalised regardless of it. AdManager does nothing at all while
+        // FeatureFlags.adsEnabled is false.
+        Task { @MainActor in await AdManager.shared.startIfEnabled() }
         CastManager.shared.configure()
         // Detection rules can change server-side any day; refetch once per launch
         // (then the 6h TTL applies) so a fix lands without waiting the app out.

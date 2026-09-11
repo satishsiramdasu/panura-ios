@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  App privacy manifest. Required by App Store Connect since spring 2024: an
+  upload without one is rejected, and one that omits a "required reason" API the
+  binary actually calls is rejected too.
+
+  Two halves:
+
+  * NSPrivacyAccessedAPITypes — APIs Apple considers fingerprinting-capable. Only
+    what THIS app calls; every SPM dependency ships its own manifest for its own
+    calls (GoogleMobileAds, GoogleCast and VLCKit each do).
+  * The tracking and collection keys — what leaves the device, and whether any of
+    it is used to follow a user across other companies' apps.
+
+  KEEP THIS IN STEP WITH THE CODE. Two changes in particular invalidate it:
+  turning ads on (see NSPrivacyTracking below), and adding any analytics.
+-->
+<plist version="1.0">
+<dict>
+    <!--
+      False while FeatureFlags.adsEnabled is false: nothing in the app follows a
+      user anywhere.
+
+      ⚠️ Switching ads on means one of two things. Personalised ads through
+      AdMob ARE tracking: set this to true, add Google's ad domains to
+      NSPrivacyTrackingDomains, and the ATT prompt becomes mandatory. Serving
+      non-personalised ads only (AdManager forces `npa=1` when ATT is refused or
+      undetermined) keeps this false.
+    -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!--
+      Empty on purpose, and it is a real claim rather than an omission. Browsing
+      history, shortcuts, resume points and detected streams are written to this
+      device and never sent anywhere. The one thing that does leave is a report
+      the user types themselves — the page URL and their reason — which goes to
+      Panura's own worker and is not linked to an identity.
+
+      If that ever becomes anything but user-initiated, it has to be declared
+      here AND in App Store Connect's privacy answers.
+    -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <!--
+          UserDefaults, everywhere: settings, shortcuts, history, resume
+          positions. CA92.1 is the reason for reading and writing a container
+          the app alone can see, which is exactly this — no app group, no shared
+          suite.
+        -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

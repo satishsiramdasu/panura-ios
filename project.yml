@@ -49,6 +49,10 @@ targets:
       # never in the build: no app icon, no launch image, and Image("AppLogo")
       # resolved to nothing.
       - Resources/Assets.xcassets
+      # Same lesson as the catalog: a bundled file has to be a source entry to
+      # reach the build. Without this the manifest sits in the repo and App
+      # Store Connect rejects the upload for not having one.
+      - Resources/PrivacyInfo.xcprivacy
     info:
       path: Resources/Info.plist
       properties:
@@ -90,7 +94,18 @@ targets:
           - _googlecast._tcp
         UIBackgroundModes:
           - audio
+        # ⚠️ PLACEHOLDER — register Panura as an iOS app in AdMob and paste its
+        # app ID here. Android's cannot be reused: an AdMob app ID is per
+        # platform. The SDK refuses to start with a malformed one.
         GADApplicationIdentifier: ca-app-pub-6998555111280991~0000000000 # TODO iOS AdMob app id
+        # HTTPS and the system's own crypto only — no encryption of our own — so
+        # the app is exempt. Without this key every single upload stops and asks.
+        ITSAppUsesNonExemptEncryption: false
+        # Shown by the ATT prompt, which is only ever raised when ads are on.
+        # Apple rejects an app that calls ATTrackingManager without this string.
+        NSUserTrackingUsageDescription: >-
+          Panura asks so ads can be kept relevant. Say no and you still get the
+          same app, with generic ads instead.
     dependencies:
       - package: GoogleCast
         product: GoogleCast

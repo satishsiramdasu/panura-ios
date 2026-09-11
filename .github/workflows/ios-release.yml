@@ -1,0 +1,189 @@
+name: iOS Release (TestFlight)
+
+# Signed build → App Store Connect. Run by hand only: every run costs macOS
+# minutes at 10x and puts a build in front of testers, neither of which should
+# happen because someone pushed a comment.
+#
+# ── What it needs before it can work ──────────────────────────────────────────
+# Four repository secrets, and a paid Apple Developer account behind them:
+#
+#   APPSTORE_KEY_ID       The App Store Connect API key's id ("ABC123DEFG")
+#   APPSTORE_ISSUER_ID    The issuer UUID shown above the key list
+#   APPSTORE_PRIVATE_KEY  The whole .p8 file, pasted — BEGIN line to END line
+#   IOS_TEAM_ID           The 10-character team id
+#
+# Create the key at App Store Connect → Users and Access → Integrations → App
+# Store Connect API, with the **App Manager** role. Apple shows the .p8 once.
+#
+# No certificate or provisioning profile secrets: `-allowProvisioningUpdates`
+# with that same API key lets Xcode create and download what it needs. Managing
+# a p12 and a .mobileprovision by hand is the part of iOS CI that breaks every
+# twelve months when something expires.
+#
+# The app record must also exist in App Store Connect (bundle id
+# com.panura.player) before the first upload — the API creates builds, not apps.
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: 'Version people see (e.g. 1.0). Blank keeps project.yml.'
+        required: false
+        default: ''
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: false   # never kill an upload half-done
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # ⚠️ A release build MUST carry the rotated salt, not the one committed to
+      # this public repo. Fail loudly rather than shipping the burned value:
+      # every hash in the deployed manifest is reversible with it.
+      - name: Inject manifest salt
+        env:
+          MANIFEST_SALT: ${{ secrets.MANIFEST_SALT }}
+        run: |
+          if [ -z "$MANIFEST_SALT" ]; then
+            echo "::error::MANIFEST_SALT is not set. A release built with the committed salt ships a manifest anyone can deanonymise."
+            exit 1
+          fi
+          printf 'enum ManifestSalt {\n    static let value = "%s"\n}\n' "$MANIFEST_SALT" \
+            > Sources/Core/ManifestSalt.swift
+
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+
+      # The build number has to rise on every upload — App Store Connect rejects
+      # a repeat. The run number is monotonic and needs no state of its own.
+      - name: Set version numbers
+        env:
+          MARKETING: ${{ inputs.marketing_version }}
+          BUILD: ${{ github.run_number }}
+        run: |
+          if [ -n "$MARKETING" ]; then
+            sed -i '' "s/MARKETING_VERSION: .*/MARKETING_VERSION: \"$MARKETING\"/" project.yml
+          fi
+          sed -i '' "s/CURRENT_PROJECT_VERSION: .*/CURRENT_PROJECT_VERSION: \"$BUILD\"/" project.yml
+          grep -E 'MARKETING_VERSION|CURRENT_PROJECT_VERSION' project.yml
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        run: |
+          n=0
+          until [ $n -ge 4 ]; do
+            xcodebuild -resolvePackageDependencies -project PanuraPlayer.xcodeproj && exit 0
+            n=$((n+1)); echo "resolve attempt $n failed, retrying in 20s..."; sleep 20
+          done
+          exit 1
+
+      # Apple's tools look for the key in this exact directory, by this exact
+      # name. Anywhere else and they report "key not found" with no hint why.
+      - name: Stage the App Store Connect key
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$PRIVATE_KEY" > ~/private_keys/AuthKey_${KEY_ID}.p8
+          chmod 600 ~/private_keys/AuthKey_${KEY_ID}.p8
+
+      - name: Archive (signed)
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          xcodebuild \
+            -project PanuraPlayer.xcodeproj \
+            -scheme PanuraPlayer \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath build/PanuraPlayer.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            archive
+
+      - name: Export .ipa
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          cat > build/ExportOptions.plist <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>uploadSymbols</key><true/>
+            <key>destination</key><string>export</string>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/PanuraPlayer.xcarchive \
+            -exportPath build/export \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
+            -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+
+      # Validate first. A rejection here costs a minute; the same rejection
+      # after upload costs a build number and a wait.
+      - name: Validate
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          xcrun altool --validate-app \
+            -f build/export/*.ipa -t ios \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          xcrun altool --upload-app \
+            -f build/export/*.ipa -t ios \
+            --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+
+      # Kept because the archive holds the dSYMs: without them a crash report
+      # from a tester is a list of hex addresses.
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: PanuraPlayer-release
+          path: |
+            build/export/*.ipa
+            build/PanuraPlayer.xcarchive/dSYMs
+          if-no-files-found: warn

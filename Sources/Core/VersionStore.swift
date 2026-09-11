@@ -64,10 +64,12 @@ final class VersionStore: ObservableObject {
     /// iOS, so unlike Android — which now picks between Play and the Amazon
     /// Appstore by who installed the app — there is nothing to choose.
     ///
-    /// TODO: real App Store id once the app has one. Until then this link goes
-    /// nowhere, which is why nothing in the UI shows it unless version.json
-    /// actually names a newer build.
-    static let storeURL = URL(string: "https://apps.apple.com/app/id0000000000")!
+    /// ⚠️ PLACEHOLDER — the App Store id, assigned when the app record is
+    /// created in App Store Connect. One constant, so the release checklist has
+    /// one line to change. Until then the link goes nowhere, which is harmless
+    /// only because nothing shows it unless version.json names a newer build.
+    static let appStoreID = "id0000000000"   // TODO
+    static let storeURL = URL(string: "https://apps.apple.com/app/\(appStoreID)")!
 
     /// Fetches once per launch and then serves what it has. `force` re-fetches —
     /// what "Check for Updates" does, since the point of pressing it is to ask
