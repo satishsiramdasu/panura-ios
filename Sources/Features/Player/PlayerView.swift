@@ -28,7 +28,30 @@ struct PlayerView: View {
     @State private var showControls = true
     @State private var locked = false
     @State private var lockRevealed = false
-    @State private var hideTask: Task<Void, Never>?
+    /// When the controls are due to go away, and when the lock button is.
+    ///
+    /// A deadline rather than a pending hide task, because a task has to be
+    /// cancelled by whoever interrupts it and then re-armed by whoever finishes
+    /// — and a single path that cancels without re-arming leaves the controls up
+    /// forever. Scrubbing was exactly that path: the slider cancels the hide
+    /// when the drag begins and re-arms it when SwiftUI reports the drag ended,
+    /// and that report does not always arrive, because the binding's value is
+    /// also being rewritten several times a second by playback. Every
+    /// interaction now just pushes the deadline out; one ticker enforces it, and
+    /// nothing can switch it off.
+    @State private var hideAt: Date?
+    @State private var lockHideAt: Date?
+    @State private var ticker: Task<Void, Never>?
+    /// When the scrub position last moved, by slider or by swipe.
+    ///
+    /// The controls must not time out from under a finger that is dragging
+    /// them, and "is dragging" is exactly the fact SwiftUI is unreliable about.
+    /// Movement is not: a scrub that has not moved for a few seconds is over,
+    /// however it ended.
+    @State private var lastScrubMove: Date?
+
+    private static let autoHide: TimeInterval = 4
+    private static let autoHideLock: TimeInterval = 3
 
     // Gesture HUD state
     @State private var seekPreview: Float?          // fraction while horizontal-dragging
@@ -126,8 +149,14 @@ struct PlayerView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .onAppear { index = playlist?.startIndex ?? 0; OrientationManager.allowAll(); scheduleHide() }
+        .onAppear {
+            index = playlist?.startIndex ?? 0
+            OrientationManager.allowAll()
+            scheduleHide()
+            startTicker()
+        }
         .onDisappear {
+            ticker?.cancel()
             OrientationManager.reset()
             model.stop()
         }
@@ -163,10 +192,12 @@ struct PlayerView: View {
                 // regardless of length (it used to jump the whole video).
                 let target = Double(seekBase) * total + Double(dx) * 90 * gestureSensitivity
                 seekPreview = clamp01f(Float(target / total))
+                lastScrubMove = Date()
             },
             onSeekEnded: {
                 guard !locked, let f = seekPreview else { return }
-                model.seek(to: f); seekPreview = nil; isGestureSeeking = false; scheduleHide()
+                model.seek(to: f); seekPreview = nil; isGestureSeeking = false
+                lastScrubMove = nil; scheduleHide()
             },
             onVerticalBegan: { beginVertical($0) },
             onVerticalChanged: { changeVertical($0) },
@@ -463,12 +494,19 @@ struct PlayerView: View {
                 Slider(
                     value: Binding(
                         get: { Double(seekPreview ?? model.position) },
-                        set: { seekPreview = Float($0) }
+                        // Each increment stamps the clock rather than
+                        // cancelling anything. That, not the editing-ended
+                        // callback, is what guarantees the controls eventually
+                        // go: the last stamp lands as the finger lifts.
+                        set: { seekPreview = Float($0); lastScrubMove = Date() }
                     ),
                     in: 0...1,
                     onEditingChanged: { editing in
                         if editing { showControlsNow() }
-                        else { if let f = seekPreview { model.seek(to: f) }; seekPreview = nil; scheduleHide() }
+                        else {
+                            if let f = seekPreview { model.seek(to: f) }
+                            seekPreview = nil; lastScrubMove = nil; scheduleHide()
+                        }
                     }
                 )
                 .tint(PanuraTheme.accent)
@@ -865,25 +903,42 @@ struct PlayerView: View {
         if showControls { scheduleHide() }
     }
     private func showControlsNow() {
-        hideTask?.cancel()
         if !showControls { withAnimation { showControls = true } }
+        scheduleHide()
     }
-    private func scheduleHide() {
-        hideTask?.cancel()
-        hideTask = Task {
-            do { try await Task.sleep(nanoseconds: 4_000_000_000) } catch { return }
-            // Hide after 4s regardless of play/pause (was gated on isPlaying, so
-            // controls could stick forever while buffering). Never hide mid-scrub.
-            guard !Task.isCancelled, showControls, seekPreview == nil else { return }
-            withAnimation { showControls = false }
-        }
-    }
-    private func scheduleHideLock() {
-        hideTask?.cancel()
-        hideTask = Task {
-            do { try await Task.sleep(nanoseconds: 3_000_000_000) } catch { return }
-            guard !Task.isCancelled, locked else { return }
-            withAnimation { lockRevealed = false }
+
+    /// Push the controls' disappearance out. Called by everything the user can
+    /// touch, and by the ticker itself while a scrub or a sheet holds them open.
+    private func scheduleHide() { hideAt = Date().addingTimeInterval(Self.autoHide) }
+
+    private func scheduleHideLock() { lockHideAt = Date().addingTimeInterval(Self.autoHideLock) }
+
+    /// One timer for the lifetime of the player, checking both deadlines.
+    ///
+    /// A quarter-second beat: fine enough that the controls go at the moment
+    /// they are due, coarse enough to cost nothing next to decoding video.
+    private func startTicker() {
+        ticker?.cancel()
+        ticker = Task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
+                let now = Date()
+                // A sheet is the user reading a track list, not idling; and the
+                // controls must still be there when it closes.
+                if sheet != nil { scheduleHide(); continue }
+                if let m = lastScrubMove, now.timeIntervalSince(m) < 3 { scheduleHide(); continue }
+                if locked {
+                    if lockRevealed, let d = lockHideAt, now >= d {
+                        withAnimation { lockRevealed = false }
+                        lockHideAt = nil
+                    }
+                    continue
+                }
+                if showControls, let d = hideAt, now >= d {
+                    withAnimation { showControls = false }
+                    hideAt = nil
+                }
+            }
         }
     }
 

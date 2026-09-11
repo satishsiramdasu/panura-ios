@@ -208,6 +208,27 @@ struct WebViewContainer: UIViewRepresentable {
         /// found. A genuine SPA route change moves the path, which still resets.
         private var lastDocumentKey: String?
 
+        /// The last route the page reported, so a router that announces the
+        /// same URL twice does not clear a list twice.
+        private var lastRouteKey: String?
+
+        /// An in-page route change, reported by the injected script.
+        ///
+        /// Compared on the whole URL, query and fragment included - unlike
+        /// `documentChanged`, which has to guess from the URL alone and so
+        /// ignores both. Here there is nothing to guess: the page said it
+        /// navigated.
+        @MainActor
+        private func routeChanged(to url: URL) {
+            guard url.absoluteString != lastRouteKey else { return }
+            lastRouteKey = url.absoluteString
+            model.currentURL = url
+            model.clearFindings()
+            embeds.reset()
+            lastScrollY = 0
+            BrowserSession.shared.showBar()
+        }
+
         @MainActor
         private func documentChanged(_ url: URL?) {
             guard let url else { return }
@@ -255,6 +276,7 @@ struct WebViewContainer: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
             model.isLoading = true
+            lastRouteKey = nil
             // Main-frame navigation: findings belong to the page we're leaving.
             model.clearFindings()
             // Safe to reset unconditionally: extraction web views are created
@@ -505,6 +527,14 @@ struct WebViewContainer: UIViewRepresentable {
                     // Same content world the sniffer runs in (the default page
                     // world), and only into this one frame.
                     wv?.evaluateJavaScript(js, in: frame, in: .page, completionHandler: nil)
+                }
+                return
+            case "route":
+                // A single-page app moved between routes. Only pushState,
+                // popstate and hashchange reach here - see ExtractionScript for
+                // why replaceState deliberately does not.
+                if let s = dict["url"] as? String, let u = URL(string: s) {
+                    routeChanged(to: u)
                 }
                 return
             case "embed":

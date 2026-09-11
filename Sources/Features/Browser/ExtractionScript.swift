@@ -644,6 +644,47 @@ enum ExtractionScript {
         }
       } catch (e) {}
 
+      // -- SPA route changes ------------------------------------------------
+      // A React/Vue/Next router never navigates. It calls history.pushState,
+      // and WebKit fires no navigation callback at all, so the app watches the
+      // main frame's URL instead - but that only catches a changed PATH. Plenty
+      // of routers move only the query (?id=2) or the hash (#/watch/2), and from
+      // the outside that is indistinguishable from a player rewriting its own
+      // address to remember a position, which must NOT clear the list.
+      //
+      // pushState is what tells them apart. A route change pushes a history
+      // entry so Back returns to the previous route; a player writing ?t=42 uses
+      // replaceState precisely so it does not flood the back stack. So report
+      // pushState, popstate and hashchange - every way an SPA moves between
+      // routes - and stay silent on replaceState.
+      try {
+        if (window.top === window && !window.__panura_route) {
+          window.__panura_route = true;
+          var announceRoute = function () {
+            // The router assigns location during the call, so read it after.
+            setTimeout(function () {
+              try {
+                // Whatever was found belongs to the route being left. Clearing
+                // the dedupe maps too, or a stream that appears on both routes
+                // would be swallowed as a repeat and never re-reported.
+                for (var k in reported) { delete reported[k]; }
+                for (var j in subsReported) { delete subsReported[j]; }
+                post({ kind: 'route', url: location.href });
+                scan();
+              } catch (e) {}
+            }, 0);
+          };
+          var pushState = history.pushState;
+          history.pushState = function () {
+            var r = pushState.apply(this, arguments);
+            announceRoute();
+            return r;
+          };
+          window.addEventListener('popstate', announceRoute, false);
+          window.addEventListener('hashchange', announceRoute, false);
+        }
+      } catch (e) {}
+
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', scan, false);
       }
