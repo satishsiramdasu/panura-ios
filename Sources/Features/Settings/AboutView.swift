@@ -60,6 +60,13 @@ struct AboutView: View {
                         icon: "hand.raised"
                     )
                 }
+                Link(destination: URL(string: "https://panura.app/terms")!) {
+                    PreferenceLabel(
+                        title: "Terms of Use",
+                        description: "What the app may be used for",
+                        icon: "doc.text"
+                    )
+                }
                 Link(destination: URL(string: "https://t.me/panura_player")!) {
                     PreferenceLabel(
                         title: "Join our Telegram",
@@ -172,6 +179,13 @@ struct SupportView: View {
                 }
                 .buttonStyle(.plain)
 
+                Link(destination: URL(string: "https://panura.app/support")!) {
+                    PreferenceLabel(
+                        title: "Help & FAQ",
+                        description: "Answers to the things that go wrong most often",
+                        icon: "questionmark.circle"
+                    )
+                }
                 Link(destination: URL(string: "mailto:strapps@proton.me")!) {
                     PreferenceLabel(
                         title: "Send email",

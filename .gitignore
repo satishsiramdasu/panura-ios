@@ -11,3 +11,7 @@ xcuserdata/
 
 # macOS
 .DS_Store
+
+# Pasted CI build logs. One of these was committed once; never again.
+temp.txt
+*.buildlog
