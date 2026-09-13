@@ -9,7 +9,8 @@ struct WhatsNewView: View {
 
     var body: some View {
         List {
-            if versions.updateAvailable, let latest = versions.ios?.versionName {
+            if versions.updateAvailable, VersionStore.storeLinkReady,
+               let latest = versions.ios?.versionName {
                 Section {
                     Link(destination: VersionStore.storeURL) {
                         Label("Update to \(latest)", systemImage: "arrow.down.circle.fill")

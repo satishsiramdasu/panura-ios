@@ -66,10 +66,16 @@ final class VersionStore: ObservableObject {
     ///
     /// ⚠️ PLACEHOLDER — the App Store id, assigned when the app record is
     /// created in App Store Connect. One constant, so the release checklist has
-    /// one line to change. Until then the link goes nowhere, which is harmless
-    /// only because nothing shows it unless version.json names a newer build.
+    /// one line to change.
     static let appStoreID = "id0000000000"   // TODO
     static let storeURL = URL(string: "https://apps.apple.com/app/\(appStoreID)")!
+
+    /// False while the id above is still the placeholder.
+    ///
+    /// A dead App Store link is worse than no link: it appears exactly when the
+    /// user has been told an update exists, which is the moment they are least
+    /// inclined to forgive it. The row hides itself instead.
+    static var storeLinkReady: Bool { appStoreID != "id0000000000" }
 
     /// Fetches once per launch and then serves what it has. `force` re-fetches —
     /// what "Check for Updates" does, since the point of pressing it is to ask

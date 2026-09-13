@@ -39,7 +39,8 @@ struct AboutView: View {
                     icon: "sparkles"
                 ) { WhatsNewView() }
 
-                if versions.updateAvailable, let latest = versions.ios?.versionName {
+                if versions.updateAvailable, VersionStore.storeLinkReady,
+                   let latest = versions.ios?.versionName {
                     Link(destination: VersionStore.storeURL) {
                         PreferenceLabel(
                             title: "Update to \(latest)",
