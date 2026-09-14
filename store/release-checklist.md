@@ -43,7 +43,8 @@ App Store Connect access, which arrived on 2026-09-15.
    (1320 × 2868 / 1290 × 2796) or 6.5" (1284 × 2778 / 1242 × 2688), and 13"
    iPad (2064 × 2752 / 2048 × 2732). A smaller device's screenshots are
    rejected at upload rather than scaled up.
-6. **Run the release workflow** (Actions → iOS Release → Run workflow). It
+6. ~~Run the release workflow~~ Done 2026-09-14: build **1.0 (3)** uploaded
+   (build number = workflow run number). It
    validates before it uploads, so a rejection costs a minute rather than a
    build number.
 7. **Fill the listing** from `app-store-listing.md`, attach the build, submit.
