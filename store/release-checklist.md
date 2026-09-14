@@ -31,7 +31,8 @@ App Store Connect access, which arrived on 2026-09-15.
 3. ~~API key and secrets~~ Done 2026-09-15. Original key revoked after it was
    exposed; replacement set as `APPSTORE_KEY_ID` / `APPSTORE_PRIVATE_KEY`.
    For reference — Users and Access → Integrations → App Store
-   Connect API, role **App Manager**. Apple shows the `.p8` once. Set four
+   Connect API, role **Admin** (App Manager cannot cloud-sign; export fails
+   with "Cloud signing permission error"). Apple shows the `.p8` once. Set four
    repository secrets in `panura-ios`:
    - `APPSTORE_KEY_ID`, `APPSTORE_ISSUER_ID`, `APPSTORE_PRIVATE_KEY` (the whole
      `.p8`, BEGIN line to END line), `IOS_TEAM_ID`.

@@ -13,7 +13,13 @@ name: iOS Release (TestFlight)
 #   IOS_TEAM_ID           The 10-character team id
 #
 # Create the key at App Store Connect → Users and Access → Integrations → App
-# Store Connect API, with the **App Manager** role. Apple shows the .p8 once.
+# Store Connect API, with the **Admin** role. Apple shows the .p8 once.
+#
+# Admin, not App Manager. App Manager uploads builds fine, but export has to
+# create the Apple Distribution certificate through cloud signing, and Apple
+# only lets Admin and Account Holder do that. With App Manager the export fails
+# with "Cloud signing permission error" / "No signing certificate 'iOS
+# Distribution' found". Keys cannot be edited — a wrong role means a new key.
 #
 # No certificate or provisioning profile secrets: `-allowProvisioningUpdates`
 # with that same API key lets Xcode create and download what it needs. No
