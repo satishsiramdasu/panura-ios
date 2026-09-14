@@ -15,7 +15,7 @@ Character limits are Apple's and are noted where they bind.
 | Bundle ID | `panura.web.videoplayer` |
 | SKU | `panura-ios-1` |
 | Primary language | English (U.S.) |
-| Name (≤30) | `Panura Video Player & Web Cast` (30 — at the limit) |
+| Name (≤30) | `Panura Web Video Player & Cast` (30 — at the limit; no room for a colon) |
 | Subtitle (≤30) | `Browser, subtitles & TV` (23) |
 | Primary category | Photo & Video |
 | Secondary category | Utilities |

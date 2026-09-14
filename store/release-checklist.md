@@ -28,21 +28,26 @@ App Store Connect access, which arrived on 2026-09-15.
 
 1. ~~Enrolment completes.~~ Done 2026-09-15. App ID `panura.web.videoplayer` registered, no capabilities.
 2. ~~Create the app record~~ Done: Apple ID `6812081774`, set in `VersionStore.appStoreID`.
-3. **App Store Connect API key**: Users and Access → Integrations → App Store
+3. ~~API key and secrets~~ Done 2026-09-15. Original key revoked after it was
+   exposed; replacement set as `APPSTORE_KEY_ID` / `APPSTORE_PRIVATE_KEY`.
+   For reference — Users and Access → Integrations → App Store
    Connect API, role **App Manager**. Apple shows the `.p8` once. Set four
    repository secrets in `panura-ios`:
    - `APPSTORE_KEY_ID`, `APPSTORE_ISSUER_ID`, `APPSTORE_PRIVATE_KEY` (the whole
      `.p8`, BEGIN line to END line), `IOS_TEAM_ID`.
-4. **`MANIFEST_SALT` secret**, or the release workflow fails on purpose. See
-   below — this is also the moment to rotate.
-5. **Screenshots**: 6.9" iPhone and 13" iPad. See the end of
-   `app-store-listing.md`.
+4. ~~`MANIFEST_SALT` secret~~ Done, with the **current** salt. Rotation deferred
+   to a later update — see below.
+5. **Screenshots**: taken on the real iPhone and iPad once the build is in
+   TestFlight. App Store Connect wants exact pixel sizes — 6.9" iPhone
+   (1320 × 2868 / 1290 × 2796) or 6.5" (1284 × 2778 / 1242 × 2688), and 13"
+   iPad (2064 × 2752 / 2048 × 2732). A smaller device's screenshots are
+   rejected at upload rather than scaled up.
 6. **Run the release workflow** (Actions → iOS Release → Run workflow). It
    validates before it uploads, so a rejection costs a minute rather than a
    build number.
 7. **Fill the listing** from `app-store-listing.md`, attach the build, submit.
 
-## Rotate the salt at the same time
+## Rotate the salt (deferred — first release ships on the current one)
 
 The manifest salt is committed in this public repo and is in its history
 permanently, so today the hashing buys nothing: anyone can hash candidate
@@ -62,9 +67,9 @@ exactly or every site rule stops matching.
   simplest first submission: the privacy label is "Data Not Collected" and no
   ATT prompt exists to be questioned. Turning ads on later needs a new label and
   `NSPrivacyTracking: true`, which is an ordinary update.
-- **iPad.** `TARGETED_DEVICE_FAMILY` is `1,2`, which obliges 13" iPad
-  screenshots and an iPad that actually works. Narrowing to `1` is a product
-  decision, not a technical one.
+- ~~**iPad.**~~ Decided: kept. `TARGETED_DEVICE_FAMILY` stays `1,2`, so the
+  iPad layout needs a real test pass on the iPad before submitting, and 13" iPad
+  screenshots are required.
 
 ## Test on a device before submitting
 
