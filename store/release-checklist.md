@@ -1,7 +1,7 @@
 # Shipping the iOS app
 
-Ordered. Everything above the line is done; everything below needs the Apple
-Developer account, which is still in enrolment.
+Ordered. Everything under "Done" is done; everything under "Blocked" needs the
+App Store Connect access, which arrived on 2026-09-15.
 
 ## Done
 
@@ -26,8 +26,8 @@ Developer account, which is still in enrolment.
 
 ## Blocked on the account
 
-1. **Enrolment completes.** Everything below follows from it.
-2. **Create the app record** in App Store Connect for `com.panura.player`.
+1. ~~Enrolment completes.~~ Done 2026-09-15. App ID `panura.web.videoplayer` registered, no capabilities.
+2. **Create the app record** in App Store Connect for `panura.web.videoplayer`.
    - Copy the App Store ID it assigns into `VersionStore.appStoreID`. One line;
      until it is set the in-app "Update" link goes nowhere.
 3. **App Store Connect API key**: Users and Access → Integrations → App Store

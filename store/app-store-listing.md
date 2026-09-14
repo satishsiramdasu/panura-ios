@@ -12,7 +12,7 @@ Character limits are Apple's and are noted where they bind.
 
 | Field | Value |
 |---|---|
-| Bundle ID | `com.panura.player` |
+| Bundle ID | `panura.web.videoplayer` |
 | SKU | `panura-ios-1` |
 | Primary language | English (U.S.) |
 | Name (≤30) | `Panura Video Player & Web Cast` (30 — at the limit) |

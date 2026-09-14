@@ -21,7 +21,7 @@ name: iOS Release (TestFlight)
 # twelve months when something expires.
 #
 # The app record must also exist in App Store Connect (bundle id
-# com.panura.player) before the first upload — the API creates builds, not apps.
+# panura.web.videoplayer) before the first upload — the API creates builds, not apps.
 
 on:
   workflow_dispatch:
