@@ -51,8 +51,11 @@ App Store Connect access, which arrived on 2026-09-15.
    iPad (2064 × 2752 / 2048 × 2732). A smaller device's screenshots are
    rejected at upload rather than scaled up.
 6. ~~Run the release workflow~~ Done 2026-09-14: build **1.0 (3)** uploaded
-   (build number = workflow run number). That build has **no Firebase** — do not
-   submit it; rerun once the Firebase secret is in. It
+   (build number = workflow run number) — **never reached App Store Connect**:
+   altool printed "UPLOAD FAILED" (framework signatures, iPad orientations) and
+   still exited 0. Build **1.0 (4)** is the first real upload: 2026-09-14, with
+   Firebase, Delivery UUID `902eeaac-e0a8-4b0f-b4bf-be1b6bc3b64f`. The workflow
+   now fails on altool errors and prints the Delivery UUID when one lands. It
    validates before it uploads, so a rejection costs a minute rather than a
    build number.
 7. **Fill the listing** from `app-store-listing.md`, attach the build, submit.
