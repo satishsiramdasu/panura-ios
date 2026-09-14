@@ -58,12 +58,8 @@ targets:
       # reach the build. Without this the manifest sits in the repo and App
       # Store Connect rejects the upload for not having one.
       - Resources/PrivacyInfo.xcprivacy
-      # Firebase config. Not in the repo, which is public: CI writes it from the
-      # GOOGLE_SERVICE_INFO_PLIST secret before generating the project. Optional,
-      # so a build without the secret still generates — and the app then skips
-      # Firebase rather than crashing inside FirebaseApp.configure().
-      - path: Resources/GoogleService-Info.plist
-        optional: true
+      # GoogleService-Info.plist is deliberately NOT a source — see
+      # postBuildScripts below.
     info:
       path: Resources/Info.plist
       properties:
@@ -116,6 +112,28 @@ targets:
         NSUserTrackingUsageDescription: >-
           Panura asks so ads can be kept relevant. Say no and you still get the
           same app, with generic ads instead.
+    # Firebase config, copied into the bundle only if it exists.
+    #
+    # Not a source entry, even an `optional: true` one: that flag only stops
+    # XcodeGen failing when the file is absent — the reference still lands in
+    # the project, and the build then fails trying to copy a file that is not
+    # there ("Build input file cannot be found"). The file is absent whenever the
+    # GOOGLE_SERVICE_INFO_PLIST secret is, since the repo is public and CI writes
+    # it from that secret. A script can check first; a resource entry cannot.
+    #
+    # Without the file the app skips Firebase at launch rather than crashing.
+    postBuildScripts:
+      - name: Bundle GoogleService-Info.plist if present
+        basedOnDependencyAnalysis: false
+        script: |
+          SRC="${SRCROOT}/Resources/GoogleService-Info.plist"
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+          if [ -f "$SRC" ]; then
+            cp "$SRC" "$DEST/GoogleService-Info.plist"
+            echo "Bundled GoogleService-Info.plist"
+          else
+            echo "warning: no GoogleService-Info.plist; this build runs without Firebase"
+          fi
     dependencies:
       - package: GoogleCast
         product: GoogleCast
@@ -139,5 +157,9 @@ targets:
         # static libraries. Without -ObjC the linker may drop those object files
         # as unreferenced, and Analytics then never starts — silently.
         OTHER_LDFLAGS: $(inherited) -ObjC
+        # The plist script above reads a file it does not declare as an input,
+        # because the file may legitimately not exist. The script sandbox would
+        # refuse that read.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         # Crashlytics turns a crash into file and line only with dSYMs.
         DEBUG_INFORMATION_FORMAT: dwarf-with-dsym

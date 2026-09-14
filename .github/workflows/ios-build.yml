@@ -63,8 +63,8 @@ jobs:
       # Firebase config, from a secret because this repo is public. Optional for
       # this workflow: without it the sideload IPA simply has no Firebase (the app
       # checks for the plist before configuring), which is fine for testing.
-      # Must run before `xcodegen generate`, which only includes the file if it
-      # exists.
+      # Must run before the archive; a build script in project.yml copies it into
+      # the app only when it exists.
       - name: Write GoogleService-Info.plist
         env:
           GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}

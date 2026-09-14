@@ -82,7 +82,8 @@ jobs:
 
       # Firebase config. Required for a release: without it the app ships with
       # no Crashlytics, and nobody finds out until a crash goes unseen. Must run
-      # before `xcodegen generate`, which only includes the file if it exists.
+      # before the archive; a build script in project.yml copies it into the
+      # app only when it exists.
       - name: Write GoogleService-Info.plist
         env:
           GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
