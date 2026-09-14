@@ -15,8 +15,8 @@ Character limits are Apple's and are noted where they bind.
 | Bundle ID | `com.panura.player` |
 | SKU | `panura-ios-1` |
 | Primary language | English (U.S.) |
-| Name (≤30) | `Panura: Web Video Player` (24) |
-| Subtitle (≤30) | `Browse, play and cast video` (27) |
+| Name (≤30) | `Panura Video Player & Web Cast` (30 — at the limit) |
+| Subtitle (≤30) | `Browser, subtitles & TV` (23) |
 | Primary category | Photo & Video |
 | Secondary category | Utilities |
 
@@ -38,12 +38,14 @@ served from the `panura` repo (`public/_redirects`).
 ## Keywords (≤100 characters, comma-separated, no spaces)
 
 ```
-m3u8,hls,stream,streaming,media,subtitles,srt,mkv,mp4,avi,browser,adblock,popup,tv,casting
+m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,casting
 ```
 
-90 characters. Words already in the name or subtitle are indexed anyway and are
-deliberately not repeated here. No third-party trademarks — a brand name in the
-keyword field is a rejection on its own.
+87 characters. Apple indexes name, subtitle and keywords together and counts a
+word once, so nothing from the name (panura, video, player, web, cast) or the
+subtitle (browser, subtitles, tv) is repeated here. No third-party trademarks — a brand name in the
+keyword field is a rejection on its own. No `iptv` or `movies` either: both are
+words reviewers read as a piracy app, whatever the app actually does.
 
 ## Promotional text (≤170, editable without a new build)
 
