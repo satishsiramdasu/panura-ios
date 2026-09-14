@@ -16,7 +16,9 @@ name: iOS Release (TestFlight)
 # Store Connect API, with the **App Manager** role. Apple shows the .p8 once.
 #
 # No certificate or provisioning profile secrets: `-allowProvisioningUpdates`
-# with that same API key lets Xcode create and download what it needs. Managing
+# with that same API key lets Xcode create and download what it needs. No
+# registered devices either — the archive is unsigned and only the export signs,
+# with a distribution profile, which Apple issues without any device. Managing
 # a p12 and a .mobileprovision by hand is the part of iOS CI that breaks every
 # twelve months when something expires.
 #
@@ -113,10 +115,19 @@ jobs:
           printf '%s' "$PRIVATE_KEY" > ~/private_keys/AuthKey_${KEY_ID}.p8
           chmod 600 ~/private_keys/AuthKey_${KEY_ID}.p8
 
-      - name: Archive (signed)
+      # Archived UNSIGNED; the export below does the only signing that matters.
+      #
+      # Signed here, automatic signing reaches for a *development* identity —
+      # that is what Xcode archives with — and Apple will not issue a
+      # development profile to a team with no registered devices: "Your team has
+      # no devices from which to generate a provisioning profile." An App Store
+      # build never needed that profile in the first place, because export
+      # re-signs every binary with the distribution certificate anyway. Leaving
+      # the archive unsigned removes the device requirement rather than feeding
+      # it one, and keeps a CI release independent of whatever phones happen to
+      # be registered.
+      - name: Archive (unsigned)
         env:
-          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
-          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
         run: |
           xcodebuild \
@@ -125,15 +136,16 @@ jobs:
             -sdk iphoneos \
             -configuration Release \
             -archivePath build/PanuraPlayer.xcarchive \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath ~/private_keys/AuthKey_${KEY_ID}.p8 \
-            -authenticationKeyID "$KEY_ID" \
-            -authenticationKeyIssuerID "$ISSUER_ID" \
             DEVELOPMENT_TEAM="$TEAM_ID" \
-            CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
             archive
 
-      - name: Export .ipa
+      # Signs for distribution. -allowProvisioningUpdates with the API key lets
+      # Xcode create the Apple Distribution certificate and the App Store
+      # profile in the cloud on first run; neither needs a device.
+      - name: Export .ipa (signed for App Store)
         env:
           KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
           ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
@@ -144,6 +156,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>automatic</string>
             <key>teamID</key><string>${TEAM_ID}</string>
             <key>uploadSymbols</key><true/>
             <key>destination</key><string>export</string>
