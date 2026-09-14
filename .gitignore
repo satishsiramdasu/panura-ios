@@ -15,3 +15,6 @@ xcuserdata/
 # Pasted CI build logs. One of these was committed once; never again.
 temp.txt
 *.buildlog
+
+# Firebase config. This repo is public; CI writes the file from a secret.
+Resources/GoogleService-Info.plist

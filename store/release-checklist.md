@@ -23,6 +23,10 @@ App Store Connect access, which arrived on 2026-09-15.
       upload. Manual trigger only.
 - [x] Listing copy, keywords, privacy-label answer, age-rating position and
       review notes: `store/app-store-listing.md`.
+- [x] Firebase Crashlytics + Analytics, as Android ships them. Config comes from
+      the `GOOGLE_SERVICE_INFO_PLIST` secret; the release workflow uploads dSYMs
+      to Crashlytics. The privacy label and `PrivacyInfo.xcprivacy` declare the
+      five data types it collects.
 
 ## Blocked on the account
 
@@ -38,13 +42,17 @@ App Store Connect access, which arrived on 2026-09-15.
      `.p8`, BEGIN line to END line), `IOS_TEAM_ID`.
 4. ~~`MANIFEST_SALT` secret~~ Done, with the **current** salt. Rotation deferred
    to a later update — see below.
+   - **`GOOGLE_SERVICE_INFO_PLIST` secret** — the iOS app's Firebase config,
+     pasted whole. The release workflow refuses to run without it, and checks
+     the plist is for `panura.web.videoplayer` rather than some other app.
 5. **Screenshots**: taken on the real iPhone and iPad once the build is in
    TestFlight. App Store Connect wants exact pixel sizes — 6.9" iPhone
    (1320 × 2868 / 1290 × 2796) or 6.5" (1284 × 2778 / 1242 × 2688), and 13"
    iPad (2064 × 2752 / 2048 × 2732). A smaller device's screenshots are
    rejected at upload rather than scaled up.
 6. ~~Run the release workflow~~ Done 2026-09-14: build **1.0 (3)** uploaded
-   (build number = workflow run number). It
+   (build number = workflow run number). That build has **no Firebase** — do not
+   submit it; rerun once the Firebase secret is in. It
    validates before it uploads, so a rejection costs a minute rather than a
    build number.
 7. **Fill the listing** from `app-store-listing.md`, attach the build, submit.
@@ -66,8 +74,8 @@ exactly or every site rule stops matching.
 ## Decide before submitting
 
 - **Ads.** `FeatureFlags.adsEnabled` is `false`. Shipping with it false is the
-  simplest first submission: the privacy label is "Data Not Collected" and no
-  ATT prompt exists to be questioned. Turning ads on later needs a new label and
+  simplest first submission: no advertising data in the privacy label and no
+  ATT prompt to be questioned. Turning ads on later needs a new label and
   `NSPrivacyTracking: true`, which is an ordinary update.
 - ~~**iPad.**~~ Decided: kept. `TARGETED_DEVICE_FAMILY` stays `1,2`, so the
   iPad layout needs a real test pass on the iPad before submitting, and 13" iPad

@@ -50,7 +50,7 @@ words reviewers read as a piracy app, whatever the app actually does.
 ## Promotional text (≤170, editable without a new build)
 
 ```
-Find a video on any site and play it properly: real subtitles, gestures, background audio, and your TV a tap away. No account, no downloads, no tracking.
+Find a video on any site and play it properly: real subtitles, gestures, background audio, and your TV a tap away. No account, no downloads.
 ```
 
 ## Description (≤4000)
@@ -89,8 +89,8 @@ YOUR OWN VIDEOS
 WHAT PANURA DOES NOT DO
 • No account, ever. Nothing to sign up for
 • No downloading of anything you browse to
-• No tracking. Your history, shortcuts and resume positions stay on the device
-  and are deleted with the app
+• No ad tracking. Your history, shortcuts and resume positions stay on the
+  device and are deleted with the app
 • YouTube and its domains are deliberately excluded
 
 Panura is a player and a browser. It hosts no content of its own, indexes
@@ -119,27 +119,48 @@ same release is the kind of thing reviewers notice.
 
 ## App Privacy (the nutrition label)
 
-**Answer: Data Not Collected.**
+Firebase Crashlytics and Analytics are in the app, so the answer is **not**
+"Data Not Collected". App Store Connect → App Privacy → Get Started → **Yes, we
+collect data from this app**, then tick exactly these five:
 
-That is literally true for this build and worth stating precisely, because the
-binary does link an ads SDK:
+| Category → type | Purpose | Linked to the user | Used for tracking |
+|---|---|---|---|
+| Diagnostics → Crash Data | App Functionality | No | No |
+| Diagnostics → Other Diagnostic Data | App Functionality, Analytics | No | No |
+| Usage Data → Product Interaction | Analytics | No | No |
+| Identifiers → Device ID | Analytics | No | No |
+| Location → Coarse Location | Analytics | No | No |
 
-- `FeatureFlags.adsEnabled` is `false`, and it gates everything:
-  `MobileAds.shared.start(...)` is never called, no ad is ever requested, and
-  the ATT prompt is never raised.
-- Browsing history, shortcuts, resume positions and detected streams are written
-  to `UserDefaults` on the device. They are never uploaded, so they are not
-  "collected" in Apple's sense.
-- The only two things that leave the device are a report the user chooses to
-  send (page address plus what they typed) and an ordinary download of
-  `manifest.json` / `version.json` from panura.app, which sends nothing about
-  the user.
+What each one is:
 
-⚠️ **Turning ads on changes this answer.** `adsEnabled = true` means declaring,
-at minimum, Identifiers → Device ID and Usage Data → Advertising Data, both
-linked to the user and used for tracking, and `NSPrivacyTracking` in
-`Resources/PrivacyInfo.xcprivacy` flips to `true`. Do not ship ads without
-updating both.
+- **Crash Data, Other Diagnostic Data** — Crashlytics: stack traces, device
+  model, OS version, memory and disk state at the moment of a crash.
+- **Product Interaction** — Analytics' automatic events: first open, sessions,
+  screens viewed. No custom events are logged.
+- **Device ID** — Firebase's app instance id. Not the advertising identifier:
+  `FirebaseAnalytics` without the identity-support module never reads IDFA, and
+  the ATT prompt is never shown.
+- **Coarse Location** — the country or region Analytics derives from the IP
+  address. Nothing reads GPS.
+- **Not linked** — the app has no accounts, so nothing ties any of this to a
+  person. This is the one judgment call on the page: Device ID identifies an
+  install, not a person, and with no account or user id set, Google's own
+  guidance treats Analytics data as unlinked.
+- **Not tracking** — nothing is combined with other companies' data or used for
+  advertising.
+
+Still **not** collected, and worth being exact about: browsing history,
+shortcuts, resume positions and detected streams stay in `UserDefaults` on the
+device. Analytics' automatic screen events name the app's screens, never the
+pages visited. A report the user chooses to send carries the page address and
+their text, to Panura's own worker, not to Firebase.
+
+`Resources/PrivacyInfo.xcprivacy` declares the same five types. Change one,
+change the other.
+
+⚠️ **Turning ads on changes this again.** Personalised AdMob ads add Usage Data →
+Advertising Data, mark Device ID as used for tracking, flip `NSPrivacyTracking`
+to `true`, and make the ATT prompt mandatory. Do not ship ads without all four.
 
 ## Age rating
 
@@ -205,7 +226,11 @@ our own.
 This build does not show ads. The Google Mobile Ads SDK is linked but gated off
 at compile time (FeatureFlags.adsEnabled = false), so it is never initialised,
 no ad is requested, and the App Tracking Transparency prompt is never shown.
-The privacy label is filed as "Data Not Collected" accordingly.
+
+Firebase Crashlytics and Analytics are used for crash reports and aggregate
+usage statistics. Neither is linked to an identity (there are no accounts) or
+used for tracking, as declared in the privacy label. Browsing history and the
+pages a user visits are never sent anywhere.
 
 To try the app: open it, type any site with video into the address bar, and press
 play on that site's player. A bar appears at the bottom of the browser naming the

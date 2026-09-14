@@ -13,7 +13,8 @@
     it is used to follow a user across other companies' apps.
 
   KEEP THIS IN STEP WITH THE CODE. Two changes in particular invalidate it:
-  turning ads on (see NSPrivacyTracking below), and adding any analytics.
+  turning ads on (see NSPrivacyTracking below), and any change to what Firebase
+  is allowed to collect.
 -->
 <plist version="1.0">
 <dict>
@@ -34,17 +35,95 @@
     <array/>
 
     <!--
-      Empty on purpose, and it is a real claim rather than an omission. Browsing
-      history, shortcuts, resume points and detected streams are written to this
-      device and never sent anywhere. The one thing that does leave is a report
-      the user types themselves — the page URL and their reason — which goes to
-      Panura's own worker and is not linked to an identity.
+      What Firebase sends, since Crashlytics and Analytics were added on
+      2026-09-15 to match Android:
 
-      If that ever becomes anything but user-initiated, it has to be declared
-      here AND in App Store Connect's privacy answers.
+        CrashData, OtherDiagnosticData   Crashlytics: stack traces, device model,
+                                         OS version, memory and disk at the crash
+        ProductInteraction               Analytics' automatic events: first open,
+                                         sessions, screens viewed
+        DeviceID                         Firebase's app instance id. NOT the
+                                         advertising identifier: FirebaseAnalytics
+                                         without the identity-support module never
+                                         reads IDFA, and ATT is never requested
+        CoarseLocation                   country or region, derived from the IP
+
+      None of it is linked to an identity (the app has no accounts) and none is
+      used for tracking, so NSPrivacyTracking above stays false. Firebase ships a
+      manifest declaring the same; it is declared here as well because it is now
+      the app's own collection, not only an SDK's.
+
+      Still never collected: browsing history, shortcuts, resume points and
+      detected streams, which stay on this device. Analytics' automatic screen
+      events name the app's screens, never the pages visited. A report the user
+      types themselves goes to Panura's own worker and is not linked to anyone.
+
+      Keep this in step with the App Privacy answers in App Store Connect.
     -->
     <key>NSPrivacyCollectedDataTypes</key>
-    <array/>
+    <array>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeCrashData</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherDiagnosticData</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeProductInteraction</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeDeviceID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeCoarseLocation</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+        </dict>
+    </array>
 
     <key>NSPrivacyAccessedAPITypes</key>
     <array>

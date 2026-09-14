@@ -37,6 +37,11 @@ packages:
   VLCKitSPM:
     url: https://github.com/tylerjonesio/vlckit-spm
     exactVersion: "3.6.0"
+  # Crashlytics + Analytics, as Android ships them (firebase-bom with both and no
+  # custom calls): automatic crash reports and Analytics' default events only.
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: "12.0.0"
 
 targets:
   PanuraPlayer:
@@ -53,6 +58,12 @@ targets:
       # reach the build. Without this the manifest sits in the repo and App
       # Store Connect rejects the upload for not having one.
       - Resources/PrivacyInfo.xcprivacy
+      # Firebase config. Not in the repo, which is public: CI writes it from the
+      # GOOGLE_SERVICE_INFO_PLIST secret before generating the project. Optional,
+      # so a build without the secret still generates — and the app then skips
+      # Firebase rather than crashing inside FirebaseApp.configure().
+      - path: Resources/GoogleService-Info.plist
+        optional: true
     info:
       path: Resources/Info.plist
       properties:
@@ -114,9 +125,19 @@ targets:
         product: ContentBlockerConverter
       - package: VLCKitSPM
         product: VLCKitSPM
+      - package: Firebase
+        product: FirebaseCrashlytics
+      - package: Firebase
+        product: FirebaseAnalytics
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: panura.web.videoplayer
         # Xcode's own templates set this; a generated project has no default,
         # so without it the catalog compiles and the app still ships iconless.
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Firebase registers its components from Objective-C +load methods in
+        # static libraries. Without -ObjC the linker may drop those object files
+        # as unreferenced, and Analytics then never starts — silently.
+        OTHER_LDFLAGS: $(inherited) -ObjC
+        # Crashlytics turns a crash into file and line only with dSYMs.
+        DEBUG_INFORMATION_FORMAT: dwarf-with-dsym

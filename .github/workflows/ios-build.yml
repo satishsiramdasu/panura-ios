@@ -60,6 +60,23 @@ jobs:
             echo "using the committed salt in Sources/Core/ManifestSalt.swift"
           fi
 
+      # Firebase config, from a secret because this repo is public. Optional for
+      # this workflow: without it the sideload IPA simply has no Firebase (the app
+      # checks for the plist before configuring), which is fine for testing.
+      # Must run before `xcodegen generate`, which only includes the file if it
+      # exists.
+      - name: Write GoogleService-Info.plist
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$GOOGLE_SERVICE_INFO_PLIST" ]; then
+            printf '%s' "$GOOGLE_SERVICE_INFO_PLIST" > Resources/GoogleService-Info.plist
+            plutil -lint Resources/GoogleService-Info.plist
+            echo "Firebase config written"
+          else
+            echo "No GOOGLE_SERVICE_INFO_PLIST secret; building without Firebase"
+          fi
+
       - name: Select latest Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
