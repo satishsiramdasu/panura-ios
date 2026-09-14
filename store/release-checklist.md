@@ -27,9 +27,7 @@ App Store Connect access, which arrived on 2026-09-15.
 ## Blocked on the account
 
 1. ~~Enrolment completes.~~ Done 2026-09-15. App ID `panura.web.videoplayer` registered, no capabilities.
-2. **Create the app record** in App Store Connect for `panura.web.videoplayer`.
-   - Copy the App Store ID it assigns into `VersionStore.appStoreID`. One line;
-     until it is set the in-app "Update" link goes nowhere.
+2. ~~Create the app record~~ Done: Apple ID `6812081774`, set in `VersionStore.appStoreID`.
 3. **App Store Connect API key**: Users and Access → Integrations → App Store
    Connect API, role **App Manager**. Apple shows the `.p8` once. Set four
    repository secrets in `panura-ios`:

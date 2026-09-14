@@ -64,10 +64,10 @@ final class VersionStore: ObservableObject {
     /// iOS, so unlike Android — which now picks between Play and the Amazon
     /// Appstore by who installed the app — there is nothing to choose.
     ///
-    /// ⚠️ PLACEHOLDER — the App Store id, assigned when the app record is
-    /// created in App Store Connect. One constant, so the release checklist has
-    /// one line to change.
-    static let appStoreID = "id0000000000"   // TODO
+    /// The App Store id, assigned when the app record was created in App Store
+    /// Connect on 2026-09-15. One constant, so anything that links to the store
+    /// has one place to read it from.
+    static let appStoreID = "id6812081774"
     static let storeURL = URL(string: "https://apps.apple.com/app/\(appStoreID)")!
 
     /// False while the id above is still the placeholder.
