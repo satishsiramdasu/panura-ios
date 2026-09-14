@@ -80,6 +80,16 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        # iPad: all four, or App Store Connect rejects the upload outright. iPad
+        # multitasking (Split View, Stage Manager) requires every orientation,
+        # and UIRequiresFullScreen — the old opt-out — is deprecated in iPadOS
+        # 26. OrientationManager's default mask is already `.all`, so this only
+        # declares what the app does at runtime.
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true # extraction/browser hits arbitrary http hosts
         NSPhotoLibraryUsageDescription: Panura needs access to your videos to play and cast them.
