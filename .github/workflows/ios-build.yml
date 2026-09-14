@@ -48,6 +48,10 @@ jobs:
         env:
           MANIFEST_SALT: ${{ secrets.MANIFEST_SALT }}
         run: |
+          # Trim whitespace first. salt.txt ends in a newline, and a secret pasted
+          # from it carries that newline into a Swift string literal — which
+          # either fails to compile or hashes differently, so no rule matches.
+          MANIFEST_SALT="$(printf '%s' "$MANIFEST_SALT" | tr -d '[:space:]')"
           if [ -n "$MANIFEST_SALT" ]; then
             printf 'enum ManifestSalt {\n    static let value = "%s"\n}\n' "$MANIFEST_SALT" \
               > Sources/Core/ManifestSalt.swift

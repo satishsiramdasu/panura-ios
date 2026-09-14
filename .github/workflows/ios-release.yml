@@ -58,6 +58,10 @@ jobs:
         env:
           MANIFEST_SALT: ${{ secrets.MANIFEST_SALT }}
         run: |
+          # Trim whitespace first. salt.txt ends in a newline, and a secret pasted
+          # from it carries that newline into a Swift string literal — which
+          # either fails to compile or hashes differently, so no rule matches.
+          MANIFEST_SALT="$(printf '%s' "$MANIFEST_SALT" | tr -d '[:space:]')"
           if [ -z "$MANIFEST_SALT" ]; then
             echo "::error::MANIFEST_SALT is not set. A release built with the committed salt ships a manifest anyone can deanonymise."
             exit 1
