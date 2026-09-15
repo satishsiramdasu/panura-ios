@@ -860,7 +860,7 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
 // MARK: - PlayerEngine
 
 extension VLCPlayerModel: PlayerEngine {
-    nonisolated static func makeEngine() -> VLCPlayerModel { VLCPlayerModel() }
+    static func makeEngine() -> VLCPlayerModel { VLCPlayerModel() }
 
     var supportsAudioDelay: Bool { true }
     var supportsAudioBoost: Bool { true }

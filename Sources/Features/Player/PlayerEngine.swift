@@ -88,10 +88,13 @@ enum PlayerClock {
 /// The overlay hides that row rather than offering a slider that does nothing.
 @MainActor
 protocol PlayerEngine: ObservableObject {
-    /// Nonisolated factory rather than an `init()` requirement: `@StateObject`
-    /// evaluates its initial value outside the main actor's guarantee, and
-    /// NSObject's inherited initialiser is what both engines already use.
-    nonisolated static func makeEngine() -> Self
+    /// A factory rather than an `init()` requirement, which a final NSObject
+    /// subclass could only meet through NSObject's inherited initialiser.
+    /// Main-actor isolated like the models it builds: `@StateObject`'s initial
+    /// value in PlayerView is evaluated on the main actor, and marking this
+    /// nonisolated is exactly what the compiler rejects — it would construct a
+    /// main-actor model from outside the actor.
+    static func makeEngine() -> Self
 
     // Playback state
     var isPlaying: Bool { get }

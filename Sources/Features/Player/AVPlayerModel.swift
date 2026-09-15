@@ -27,7 +27,7 @@ final class PlayerLayerView: UIView {
 /// settings.
 @MainActor
 final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
-    nonisolated static func makeEngine() -> AVPlayerModel { AVPlayerModel() }
+    static func makeEngine() -> AVPlayerModel { AVPlayerModel() }
 
     @Published var isPlaying = false
     @Published var position: Float = 0
