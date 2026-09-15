@@ -355,6 +355,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             // stopped it in between — most often the page's own video under
             // the player. Ready is the moment to insist.
             if !userPaused, player.rate == 0 { player.play() }
+            // Readiness is when AVPlayer applies its own selection criteria,
+            // which can quietly replace the subtitle the sheet shows as on.
+            syncSubtitleSelection()
             applyResumeIfPending()
             updateNowPlaying(force: true)
         case .failed:
@@ -495,6 +498,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             if self.currentSubtitleId < Self.sidecarBase {
                 self.currentSubtitleId = Self.selectedIndex(in: legible, of: playerItem)
             }
+            self.syncSubtitleSelection()
             self.applyPreferredLanguages()
         }
     }
@@ -539,6 +543,22 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         currentSubtitleId = id
     }
 
+    /// Makes the selection the sheet shows the one AVPlayer actually renders.
+    ///
+    /// A stream's default subtitle is reported as selected from the start, but
+    /// while it is only AVPlayer's automatic pick it is often not drawn — the
+    /// sheet says on, the screen shows nothing, and turning it off and on (an
+    /// explicit select) fixes it. So it is selected explicitly here, the same
+    /// call that toggle makes. With a sidecar on, the stream's own stays off.
+    private func syncSubtitleSelection() {
+        guard let group = legibleGroup, let playerItem = player.currentItem else { return }
+        if currentSubtitleId >= Self.sidecarBase {
+            playerItem.select(nil, in: group)
+        } else if group.options.indices.contains(currentSubtitleId) {
+            playerItem.select(group.options[currentSubtitleId], in: group)
+        }
+    }
+
     /// Best-effort match on the track name, as VLC does.
     func applyPreferredLanguages() {
         let defaults = UserDefaults.standard
@@ -577,11 +597,23 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             var request = URLRequest(url: track.url)
             request.timeoutInterval = 15
             for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
-            guard let (data, _) = try? await URLSession.shared.data(for: request) else { return }
-            let cues = await Task.detached { SubtitleParser.cues(from: data, encoding: encoding) }.value
-            guard let self, !Task.isCancelled, self.currentSubtitleId == id else { return }
-            self.sidecarTimeline = SubtitleTimeline(cues: cues)
-            self.updateOverlay()
+            // Three tries. The first fetch races the stream's own opening
+            // requests and a gated host sometimes drops it; with no retry the
+            // track stayed selected and silent until it was picked again.
+            for attempt in 0..<3 {
+                if attempt > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
+                }
+                guard !Task.isCancelled else { return }
+                guard let (data, response) = try? await URLSession.shared.data(for: request) else { continue }
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { continue }
+                let cues = await Task.detached { SubtitleParser.cues(from: data, encoding: encoding) }.value
+                if cues.isEmpty { continue }
+                guard let self, !Task.isCancelled, self.currentSubtitleId == id else { return }
+                self.sidecarTimeline = SubtitleTimeline(cues: cues)
+                self.updateOverlay()
+                return
+            }
         }
     }
 
