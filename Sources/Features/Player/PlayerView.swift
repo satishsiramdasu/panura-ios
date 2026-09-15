@@ -88,7 +88,7 @@ struct PlayerView<Model: PlayerEngine>: View {
     @AppStorage("gesture_sensitivity") private var gestureSensitivity = 1.0
 
     /// Pinch zoom. 1 = fit as the aspect mode says; above that the picture is
-    /// scaled up and `videoPan` says which part of it you are looking at.
+    /// scaled up, below it shrunk, and `videoPan` says where it sits.
     @State private var videoZoom: CGFloat = 1
     @State private var videoPan: CGSize = .zero
     /// Scale when the current pinch started, so the gesture is relative.
@@ -212,20 +212,27 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     // MARK: pinch zoom
 
-    /// Scales the video surface between fit and 4×.
+    /// Scales the video surface between 25% and 4×, the same range as Android.
     ///
     /// A cap, because past about 4× a 1080p frame is showing its own pixels and
-    /// the gesture stops being useful. The floor is 1: below "fit" there is
-    /// nothing to see but black, and letting a pinch shrink the picture into the
-    /// middle of the screen is a state people cannot get out of.
+    /// the gesture stops being useful. Below fit the picture shrinks into the
+    /// screen; a pinch back out, or the aspect button, restores it. Near 100%
+    /// it snaps, since landing on exactly fit by hand is otherwise luck.
     private func changeZoom(_ scale: CGFloat) {
         guard !locked, gestureZoom else { return }
         if !pinching { pinching = true; zoomBase = videoZoom; hudClear?.cancel() }
-        let next = min(max(zoomBase * scale, 1), 4)
+        var next = min(max(zoomBase * scale, 0.25), 4)
+        if abs(next - 1) < 0.04 { next = 1 }
         videoZoom = next
         zoomHUD = next
         if next == 1 { videoPan = .zero }   // back to fit: nothing left to look around
         else { videoPan = clampPan(videoPan, zoom: next) }
+    }
+
+    /// A new aspect mode starts from fit, as on Android.
+    private func resetZoom() {
+        videoZoom = 1
+        videoPan = .zero
     }
 
     private func endZoom() {
@@ -237,22 +244,23 @@ struct PlayerView<Model: PlayerEngine>: View {
         }
     }
 
-    /// Two-finger drag moves a zoomed picture. Ignored at fit, where there is
-    /// nothing outside the frame to bring into it.
+    /// Two-finger drag moves a zoomed or shrunk picture. Ignored at fit, where
+    /// there is nowhere for it to go.
     private func movePicture(by delta: CGSize) {
-        guard !locked, gestureZoom, videoZoom > 1 else { return }
+        guard !locked, gestureZoom, videoZoom != 1 else { return }
         videoPan = clampPan(
             CGSize(width: videoPan.width + delta.width, height: videoPan.height + delta.height),
             zoom: videoZoom
         )
     }
 
-    /// Keeps the picture covering the screen: you can never drag past its edge
-    /// into black. The slack is half of what the zoom added, per axis.
+    /// Zoomed in, the picture keeps covering the screen: you can never drag
+    /// past its edge into black. Shrunk, it stays wholly on screen. Either way
+    /// the slack is half the size difference, per axis.
     private func clampPan(_ pan: CGSize, zoom: CGFloat) -> CGSize {
         let screen = UIScreen.main.bounds.size
-        let slackX = max(0, screen.width * (zoom - 1) / 2)
-        let slackY = max(0, screen.height * (zoom - 1) / 2)
+        let slackX = abs(screen.width * (zoom - 1) / 2)
+        let slackY = abs(screen.height * (zoom - 1) / 2)
         return CGSize(
             width: min(max(pan.width, -slackX), slackX),
             height: min(max(pan.height, -slackY), slackY)
@@ -592,7 +600,7 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// the bottom-right group (the icon + text both swap per mode).
     private var aspectAction: some View {
         Button {
-            model.cycleAspect(); scheduleHide()
+            model.cycleAspect(); resetZoom(); scheduleHide()
         } label: {
             quickActionLabel(model.aspect.icon, model.aspect.label)
         }

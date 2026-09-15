@@ -71,6 +71,7 @@ struct BrowserView: View {
         }
         .overlay(alignment: .bottom) { toastView }
         .fullScreenCover(item: $playItem) { PlayerScreen(item: $0) }
+        .onChange(of: playItem != nil) { playing in model.suspendPageMedia(playing) }
         .fullScreenCover(isPresented: $showAddress) {
             AddressScreen(
                 currentURL: model.currentURL?.absoluteString ?? "",

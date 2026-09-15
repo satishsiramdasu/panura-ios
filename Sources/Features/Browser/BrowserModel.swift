@@ -38,6 +38,17 @@ final class BrowserModel: ObservableObject {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 " +
         "(KHTML, like Gecko) Version/17.0 Safari/605.1.15"
 
+    /// Silences the page while the player is up, and lets it play again after.
+    /// Autoplay is on, and the play-click script may just have started the
+    /// page's own video; left running under the player, its audio takes the
+    /// session and AVPlayer opens paused.
+    @MainActor
+    func suspendPageMedia(_ suspended: Bool) {
+        guard let webView else { return }
+        if suspended { webView.pauseAllMediaPlayback(completionHandler: nil) }
+        webView.setAllMediaPlaybackSuspended(suspended, completionHandler: nil)
+    }
+
     func attach(_ webView: WKWebView) {
         self.webView = webView
         // The stored default decides which UA a fresh web view starts on; the

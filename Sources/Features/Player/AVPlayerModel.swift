@@ -99,6 +99,10 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     private var sidecarTimeline: SubtitleTimeline?
     private var sidecarTask: Task<Void, Never>?
     private var subtitleObserver: Any?
+    /// Paused on purpose — the button, a remote, the sleep timer. Anything else
+    /// that stops playback (an audio interruption, a web page grabbing the
+    /// session) is undone once it ends; a pause the user asked for never is.
+    private var userPaused = false
 
     private var timeObserver: Any?
     private var playerObservations: [NSKeyValueObservation] = []
@@ -161,6 +165,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         pendingResumeSeconds = nil; resumeApplied = false
         relayRetryUsed = false; forceRelay = false
         thumbnailCaptured = false
+        userPaused = false
         clearSidecar()
         // Offered at once: the page's subtitle files are known before the
         // stream's own options have loaded.
@@ -346,6 +351,10 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         case .readyToPlay:
             failure = nil
             applyAspect()
+            // play() went out before the item was ready, and something may have
+            // stopped it in between — most often the page's own video under
+            // the player. Ready is the moment to insist.
+            if !userPaused, player.rate == 0 { player.play() }
             applyResumeIfPending()
             updateNowPlaying(force: true)
         case .failed:
@@ -412,11 +421,22 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         if totalSeconds > 0, elapsedSeconds >= totalSeconds - 0.5 {
             player.seek(to: .zero)
         }
+        userPaused = false
         player.play()
     }
 
     private func pause() {
+        userPaused = true
         player.pause()
+    }
+
+    /// iOS pauses AVPlayer for a call, Siri, or another player taking the audio
+    /// session. When that ends with permission to resume, carry on — unless
+    /// the user had paused anyway.
+    private func audioInterruption(began: Bool, shouldResume: Bool) {
+        guard !began, shouldResume, !userPaused, player.currentItem != nil else { return }
+        try? AVAudioSession.sharedInstance().setActive(true)
+        player.play()
     }
 
     func skipForward() { skip(skipInterval) }
@@ -818,6 +838,20 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.enteringForeground() }
+        })
+        lifecycleObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            let info = note.userInfo
+            let type = (info?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+            let options = AVAudioSession.InterruptionOptions(
+                rawValue: info?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            )
+            guard let type else { return }
+            let began = type == .began
+            let shouldResume = options.contains(.shouldResume)
+            Task { @MainActor in self?.audioInterruption(began: began, shouldResume: shouldResume) }
         })
     }
 
