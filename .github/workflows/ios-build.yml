@@ -110,6 +110,8 @@ jobs:
       # Sideloadly / AltStore re-sign this on install with a free Apple ID.
       - name: Archive (device, unsigned)
         run: |
+          mkdir -p build
+          set -o pipefail
           xcodebuild \
             -project PanuraPlayer.xcodeproj \
             -scheme PanuraPlayer \
@@ -117,7 +119,21 @@ jobs:
             -configuration Release \
             -archivePath build/PanuraPlayer.xcarchive \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            archive
+            archive 2>&1 | tee build/xcodebuild.log
+
+      # Compile errors as annotations — readable through the public API without
+      # signing in, which is how a failure gets diagnosed from a Windows machine
+      # with CI as the only compiler. GitHub keeps ten error annotations per
+      # step, so three steps surface up to thirty.
+      - name: Report compile errors (1-10)
+        if: failure()
+        run: bash .github/scripts/annotate-errors.sh 0
+      - name: Report compile errors (11-20)
+        if: failure()
+        run: bash .github/scripts/annotate-errors.sh 10
+      - name: Report compile errors (21-30)
+        if: failure()
+        run: bash .github/scripts/annotate-errors.sh 20
 
       - name: Package unsigned .ipa
         run: |
