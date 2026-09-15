@@ -4,9 +4,10 @@ import SwiftUI
 /// two entries that mean nothing here (system caption style is an Android
 /// accessibility service, and its font list is the system's font directory).
 ///
-/// Every value is read by `VLCPlayerModel.applySubtitleStyle` at media open, so
-/// a change while a video is playing takes effect on the next open. The player's
-/// own subtitle sheet re-opens the media in place for the few it offers.
+/// VLC reads every value when media opens (`VLCPlayerModel.applySubtitleStyle`),
+/// and the player's own sheet re-opens the media for the few it offers. The
+/// Apple player applies them live: as text style rules for subtitles inside the
+/// stream, and through `SubtitleOverlay` for files sniffed from the page.
 struct SubtitlePreferencesView: View {
     @AppStorage("subtitle_size") private var size = 24
     @AppStorage("subtitle_color") private var color = 0xFFFFFF

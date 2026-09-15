@@ -869,6 +869,8 @@ extension VLCPlayerModel: PlayerEngine {
     var supportsPictureInPicture: Bool { false }
     var supportsAirPlay: Bool { false }
     var isPictureInPictureActive: Bool { false }
+    /// libVLC renders every subtitle into the picture itself.
+    var overlaySubtitle: String? { nil }
 
     func makeVideoView() -> UIView {
         let view = UIView()

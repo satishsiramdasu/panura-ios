@@ -125,6 +125,9 @@ protocol PlayerEngine: ObservableObject {
     var currentQualityId: String { get }
     var sleepRemaining: Int? { get }
     var sleepLabel: String? { get }
+    /// Subtitle text for the view to draw itself, or nil. Only an engine that
+    /// cannot render a file's subtitles into the picture ever sets it.
+    var overlaySubtitle: String? { get }
 
     // What this engine can do
     var supportsAudioDelay: Bool { get }

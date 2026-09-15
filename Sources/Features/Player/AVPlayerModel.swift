@@ -21,10 +21,10 @@ final class PlayerLayerView: UIView {
 /// and boost, which AVPlayer offers no hook for on a stream. Until then those
 /// controls are hidden rather than inert — see the `supports…` flags.
 ///
-/// Sidecar subtitles (sniffed from the page) are also still to come: VLC
-/// renders them itself, and here they need the overlay renderer of phase 2.
-/// Subtitles carried inside an HLS stream already work, styled from the same
-/// settings.
+/// Subtitles arrive two ways. Those inside an HLS stream AVPlayer renders itself,
+/// styled from Settings through text style rules. Files sniffed from the page —
+/// SRT, WebVTT, ASS, TTML — are fetched and timed here and drawn by
+/// `SubtitleOverlay`, where outline, font and the delay control all apply.
 @MainActor
 final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     static func makeEngine() -> AVPlayerModel { AVPlayerModel() }
@@ -55,12 +55,16 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     @Published var videoIsPortrait: Bool?
     @Published private(set) var isPictureInPictureActive = false
 
-    // Phase 1: these arrive with the FFmpeg path (audio) and the subtitle
-    // overlay (subtitle delay).
+    /// The sidecar subtitle to draw now, or nil.
+    @Published private(set) var overlaySubtitle: String?
+
+    // Audio delay and boost arrive with the FFmpeg path.
     let supportsAudioDelay = false
     let supportsAudioBoost = false
-    let supportsSubtitleDelay = false
     let supportsAirPlay = true
+    /// Only while a sidecar track is on, because only those are timed here.
+    /// Subtitles inside the stream are timed by AVPlayer, which has no offset.
+    var supportsSubtitleDelay: Bool { currentSubtitleId >= Self.sidecarBase }
     var supportsPictureInPicture: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
 
     private let player = AVPlayer()
@@ -88,6 +92,13 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
 
     private var audibleGroup: AVMediaSelectionGroup?
     private var legibleGroup: AVMediaSelectionGroup?
+
+    /// Sidecar track ids start here, clear of the stream's own subtitle
+    /// options, which are numbered from 0.
+    static let sidecarBase = 1000
+    private var sidecarTimeline: SubtitleTimeline?
+    private var sidecarTask: Task<Void, Never>?
+    private var subtitleObserver: Any?
 
     private var timeObserver: Any?
     private var playerObservations: [NSKeyValueObservation] = []
@@ -150,6 +161,10 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         pendingResumeSeconds = nil; resumeApplied = false
         relayRetryUsed = false; forceRelay = false
         thumbnailCaptured = false
+        clearSidecar()
+        // Offered at once: the page's subtitle files are known before the
+        // stream's own options have loaded.
+        subtitleTracks = Self.sidecarTracks(newItem)
 
         if resumeEnabled {
             let saved = UserDefaults.standard.double(forKey: Self.resumeKey(newItem.url))
@@ -244,6 +259,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         player.pause()
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
+        if let subtitleObserver { player.removeTimeObserver(subtitleObserver) }
+        subtitleObserver = nil
+        sidecarTask?.cancel()
         playerObservations.removeAll()
         itemObservations.removeAll()
         for token in itemNotifications { NotificationCenter.default.removeObserver(token) }
@@ -272,6 +290,14 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in self?.tick() }
+        }
+        // Finer than the clock: a subtitle a quarter-second late reads as out of
+        // sync, and a lookup is a binary search.
+        subtitleObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.updateOverlay() }
         }
     }
 
@@ -443,9 +469,12 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             self.audibleGroup = audible
             self.legibleGroup = legible
             self.audioTracks = audible.map(Self.tracks) ?? []
-            self.subtitleTracks = legible.map(Self.tracks) ?? []
+            self.subtitleTracks = (legible.map(Self.tracks) ?? []) + Self.sidecarTracks(self.item)
             self.currentAudioId = Self.selectedIndex(in: audible, of: playerItem)
-            self.currentSubtitleId = Self.selectedIndex(in: legible, of: playerItem)
+            // A sidecar picked while the options loaded stays picked.
+            if self.currentSubtitleId < Self.sidecarBase {
+                self.currentSubtitleId = Self.selectedIndex(in: legible, of: playerItem)
+            }
             self.applyPreferredLanguages()
         }
     }
@@ -469,6 +498,16 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     }
 
     func selectSubtitle(_ id: Int) {
+        if id >= Self.sidecarBase {
+            let index = id - Self.sidecarBase
+            guard let item, item.subtitles.indices.contains(index) else { return }
+            // One subtitle at a time: the stream's own goes off.
+            if let group = legibleGroup { player.currentItem?.select(nil, in: group) }
+            currentSubtitleId = id
+            loadSidecar(item.subtitles[index], headers: item.headers, id: id)
+            return
+        }
+        clearSidecar()
         guard let group = legibleGroup else { currentSubtitleId = -1; return }
         if id < 0 {
             player.currentItem?.select(nil, in: group)
@@ -495,7 +534,53 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
 
     // MARK: subtitles
 
-    func adjustSubtitleDelay(_ deltaMs: Int) { subtitleDelayMs += deltaMs }
+    func adjustSubtitleDelay(_ deltaMs: Int) {
+        subtitleDelayMs += deltaMs
+        updateOverlay()
+    }
+
+    private static func sidecarTracks(_ item: MediaItem?) -> [PlayerTrack] {
+        (item?.subtitles ?? []).enumerated().map {
+            PlayerTrack(id: sidecarBase + $0.offset, name: $0.element.displayName)
+        }
+    }
+
+    /// Fetches a page's subtitle file with the page's own headers — the host
+    /// that gates the stream usually gates its subtitles too — and parses it off
+    /// the main actor. A later pick cancels an earlier one still downloading.
+    private func loadSidecar(_ track: SubtitleTrack, headers: [String: String], id: Int) {
+        sidecarTask?.cancel()
+        sidecarTimeline = nil
+        overlaySubtitle = nil
+        let encoding = UserDefaults.standard.string(forKey: "subtitle_encoding") ?? ""
+        sidecarTask = Task { [weak self] in
+            var request = URLRequest(url: track.url)
+            request.timeoutInterval = 15
+            for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+            guard let (data, _) = try? await URLSession.shared.data(for: request) else { return }
+            let cues = await Task.detached { SubtitleParser.cues(from: data, encoding: encoding) }.value
+            guard let self, !Task.isCancelled, self.currentSubtitleId == id else { return }
+            self.sidecarTimeline = SubtitleTimeline(cues: cues)
+            self.updateOverlay()
+        }
+    }
+
+    private func clearSidecar() {
+        sidecarTask?.cancel()
+        sidecarTask = nil
+        sidecarTimeline = nil
+        overlaySubtitle = nil
+    }
+
+    /// Positive delay shows subtitles later, as VLC's does.
+    private func updateOverlay() {
+        guard let timeline = sidecarTimeline else {
+            if overlaySubtitle != nil { overlaySubtitle = nil }
+            return
+        }
+        let text = timeline.text(at: elapsedSeconds - Double(subtitleDelayMs) / 1000)
+        if text != overlaySubtitle { overlaySubtitle = text }
+    }
 
     func subtitleStyleChanged() {
         if let current = player.currentItem { applySubtitleStyle(to: current) }

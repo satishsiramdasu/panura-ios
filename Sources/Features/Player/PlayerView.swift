@@ -116,6 +116,11 @@ struct PlayerView<Model: PlayerEngine>: View {
                 .offset(videoPan)
                 .clipped()
                 .ignoresSafeArea()
+            // Subtitles the engine hands over as text rather than drawing into the
+            // picture. Above the video, beneath every control, never in the way
+            // of a touch; lifted clear of the bottom bar while it shows.
+            SubtitleOverlay(text: model.overlaySubtitle, lift: showControls && !locked ? 130 : 0)
+
             // Mounts the hidden MPVolumeView so SystemVolume can drive it. Needs a
             // non-zero footprint for its UISlider to materialise; kept invisible.
             VolumeHost().frame(width: 1, height: 1).opacity(0.001).allowsHitTesting(false)
