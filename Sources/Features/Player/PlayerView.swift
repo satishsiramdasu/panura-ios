@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
-import VLCKitSPM
+import AVKit
 
-/// Full-screen VLC player with a Panura-branded control overlay:
+/// Full-screen player with a Panura-branded control overlay, over either engine
+/// — `AVPlayerModel` or `VLCPlayerModel`, chosen by `PlayerScreen`:
 /// gesture seeking / brightness / volume, ±skip, aspect zoom, controls-lock,
 /// orientation-lock, PiP, audio + subtitle tracks, and A-V sync — plus
 /// resume-from-position handled by the model.
@@ -15,11 +16,14 @@ struct PlayerPlaylist {
     let load: (Int) async -> MediaItem?
 }
 
-struct PlayerView: View {
+struct PlayerView<Model: PlayerEngine>: View {
     let item: MediaItem
     var playlist: PlayerPlaylist? = nil
+    /// Offered on the error screen when set — the Apple player's way out to VLC
+    /// while both are being compared.
+    var onFallback: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var model = VLCPlayerModel()
+    @StateObject private var model = Model.makeEngine()
 
     // Playlist position
     @State private var index = 0
@@ -50,8 +54,6 @@ struct PlayerView: View {
     /// however it ended.
     @State private var lastScrubMove: Date?
 
-    private static let autoHide: TimeInterval = 4
-    private static let autoHideLock: TimeInterval = 3
 
     // Gesture HUD state
     @State private var seekPreview: Float?          // fraction while horizontal-dragging
@@ -100,19 +102,12 @@ struct PlayerView: View {
 
     enum PlayerSheet: Int, Identifiable { case audio, subtitles; var id: Int { rawValue } }
 
-    /// Common languages offered for the preferred-audio/subtitle pickers. Matched
-    /// (case-insensitively) against VLC's track names, so it's best-effort.
-    private static let commonLanguages = [
-        "English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Marathi",
-        "Bengali", "Spanish", "French", "German", "Italian", "Arabic", "Japanese",
-        "Korean", "Chinese", "Russian", "Portuguese", "Turkish",
-    ]
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VLCVideoView(model: model, item: item)
+            EngineVideoView(model: model, item: item)
                 // Zoom is applied to the surface rather than to libVLC: the
                 // decoder keeps rendering the same frames at the same cost, and
                 // a scale on the layer is free and instant. Clipped, so a
@@ -160,10 +155,10 @@ struct PlayerView: View {
             OrientationManager.reset()
             model.stop()
         }
-        .onChange(of: subtitleSize) { _ in model.reopenPreservingPosition() }
-        .onChange(of: subtitleColor) { _ in model.reopenPreservingPosition() }
-        .onChange(of: subtitleBackground) { _ in model.reopenPreservingPosition() }
-        .onChange(of: subtitleBold) { _ in model.reopenPreservingPosition() }
+        .onChange(of: subtitleSize) { _ in model.subtitleStyleChanged() }
+        .onChange(of: subtitleColor) { _ in model.subtitleStyleChanged() }
+        .onChange(of: subtitleBackground) { _ in model.subtitleStyleChanged() }
+        .onChange(of: subtitleBold) { _ in model.subtitleStyleChanged() }
         .onChange(of: preferredAudioLang) { _ in model.applyPreferredLanguages() }
         .onChange(of: preferredSubtitleLang) { _ in model.applyPreferredLanguages() }
         .onChange(of: model.videoIsPortrait) { p in
@@ -367,8 +362,8 @@ struct PlayerView: View {
         let target = Double(f) * total
         let delta = target - model.elapsedSeconds
         return VStack(spacing: 4) {
-            Text(VLCPlayerModel.clock(target)).font(.title2.monospacedDigit().bold())
-            Text("\(delta >= 0 ? "+" : "-")\(VLCPlayerModel.clock(abs(delta)))")
+            Text(PlayerClock.format(target)).font(.title2.monospacedDigit().bold())
+            Text("\(delta >= 0 ? "+" : "-")\(PlayerClock.format(abs(delta)))")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.white.opacity(0.7))
         }
@@ -455,7 +450,9 @@ struct PlayerView: View {
             // Transport on the TRUE screen center, independent of bar heights.
             // Hidden only during a swipe-seek (not a slider drag) so the seek HUD
             // reads clearly and the buttons reliably return when the finger lifts.
-            centerTransport.opacity(isGestureSeeking ? 0 : 1)
+            if model.failure == nil {
+                centerTransport.opacity(isGestureSeeking ? 0 : 1)
+            }
         }
     }
 
@@ -467,6 +464,14 @@ struct PlayerView: View {
                 .lineLimit(1).font(.headline)
             Spacer()
             HStack(spacing: 4) {
+                if model.supportsAirPlay {
+                    AirPlayButton().frame(width: 40, height: 40)
+                }
+                if model.supportsPictureInPicture {
+                    iconButton(model.isPictureInPictureActive ? "pip.exit" : "pip.enter") {
+                        model.togglePictureInPicture(); scheduleHide()
+                    }
+                }
                 iconButton("lock.fill") { lock() }
             }
             .background(Color.black.opacity(0.3), in: Capsule())
@@ -574,7 +579,7 @@ struct PlayerView: View {
     }
 
     private var displayElapsed: String {
-        if let f = seekPreview { return VLCPlayerModel.clock(Double(f) * model.totalSeconds) }
+        if let f = seekPreview { return PlayerClock.format(Double(f) * model.totalSeconds) }
         return model.elapsed
     }
 
@@ -615,7 +620,7 @@ struct PlayerView: View {
     /// "Quality" while on Auto, otherwise the chosen rendition ("1080p").
     private var currentQualityLabel: String {
         guard let current = model.qualities.first(where: { $0.id == model.currentQualityId }),
-              current.id != VLCPlayerModel.Quality.auto.id
+              current.id != PlayerQuality.auto.id
         else { return "Quality" }
         return current.label
     }
@@ -700,34 +705,6 @@ struct PlayerView: View {
             Image(systemName: system).font(.title3).frame(width: 40, height: 40)
         }
     }
-    /// Every control in the two capsules is the same width, whatever its
-    /// caption says at the time — but that width depends on how many of them
-    /// there are and how much room the screen has.
-    ///
-    /// Four change their own label as they are used — Speed becomes "1.5×", Fit
-    /// becomes "Fill", Quality becomes "1080p", Sleep becomes "42m" — and a row
-    /// of self-sizing buttons re-spaces itself every time one of them does,
-    /// with the widest caption shoving its neighbours apart. So they share one
-    /// width. Pinning that width to a constant, though, put seven of them past
-    /// the edge of a portrait phone: 7 × 58 plus the capsules' own padding is
-    /// wider than an iPhone is. It is computed from the measured row instead.
-    private enum QuickMetrics {
-        /// Roomy enough for "Subtitles" at full size. Never exceeded — extra
-        /// room goes to the gap between the two capsules, not into the buttons.
-        static let ideal: CGFloat = 58
-        /// Below this a caption is squeezed past legibility, so the captions go
-        /// instead and the glyphs carry the row.
-        static let captionFloor: CGFloat = 46
-        /// Nothing useful is left of a 17pt glyph's tap target below this.
-        static let hardFloor: CGFloat = 34
-        /// Between the two capsules, at their closest.
-        static let groupGap: CGFloat = 12
-        /// Inside a capsule: 8pt each side, 4pt between buttons.
-        static let capsulePad: CGFloat = 16
-        static let buttonGap: CGFloat = 4
-        /// `controlsOverlay`'s own horizontal padding, per side.
-        static let overlayPad: CGFloat = 18
-    }
 
     /// Screen width behind the controls; 0 until the first layout pass. The
     /// 18pt padding on each side is taken off in `quickMetrics`.
@@ -797,6 +774,16 @@ struct PlayerView: View {
                     .foregroundStyle(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
             }
+            if let onFallback {
+                Button(action: onFallback) {
+                    Label("Try with VLC", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(PanuraTheme.accent, in: Capsule())
+                        .foregroundStyle(.black)
+                }
+                .padding(.top, 6)
+            }
         }
         .padding(24)
     }
@@ -822,8 +809,10 @@ struct PlayerView: View {
                         trackRow(t.name, selected: model.currentAudioId == t.id) { model.selectAudio(t.id) }
                     }
                 }
-                Section("Audio delay") {
-                    delayStepper(model.audioDelayMs) { model.adjustAudioDelay($0) }
+                if model.supportsAudioDelay {
+                    Section("Audio delay") {
+                        delayStepper(model.audioDelayMs) { model.adjustAudioDelay($0) }
+                    }
                 }
                 Section {
                     languagePicker(selection: $preferredAudioLang)
@@ -832,12 +821,14 @@ struct PlayerView: View {
                 } footer: {
                     Text("Auto-selects a matching audio track on every video. Remembered.")
                 }
-                Section {
-                    boostRow
-                } header: {
-                    Text("Volume boost")
-                } footer: {
-                    Text("Above 100%. Resets when you close the player.")
+                if model.supportsAudioBoost {
+                    Section {
+                        boostRow
+                    } header: {
+                        Text("Volume boost")
+                    } footer: {
+                        Text("Above 100%. Resets when you close the player.")
+                    }
                 }
             }
             .navigationTitle("Audio").navigationBarTitleDisplayMode(.inline)
@@ -853,8 +844,10 @@ struct PlayerView: View {
                         trackRow(t.name, selected: model.currentSubtitleId == t.id) { model.selectSubtitle(t.id) }
                     }
                 }
-                Section("Subtitle delay") {
-                    delayStepper(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
+                if model.supportsSubtitleDelay {
+                    Section("Subtitle delay") {
+                        delayStepper(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
+                    }
                 }
                 Section {
                     languagePicker(selection: $preferredSubtitleLang)
@@ -887,7 +880,7 @@ struct PlayerView: View {
     private func languagePicker(selection: Binding<String>) -> some View {
         Picker("Language", selection: selection) {
             Text("Off").tag("")
-            ForEach(Self.commonLanguages, id: \.self) { Text($0).tag($0) }
+            ForEach(PlayerLanguages.common, id: \.self) { Text($0).tag($0) }
         }
         .pickerStyle(.menu)
         .tint(PanuraTheme.accent)
@@ -977,9 +970,9 @@ struct PlayerView: View {
 
     /// Push the controls' disappearance out. Called by everything the user can
     /// touch, and by the ticker itself while a scrub or a sheet holds them open.
-    private func scheduleHide() { hideAt = Date().addingTimeInterval(Self.autoHide) }
+    private func scheduleHide() { hideAt = Date().addingTimeInterval(PlayerTiming.autoHide) }
 
-    private func scheduleHideLock() { lockHideAt = Date().addingTimeInterval(Self.autoHideLock) }
+    private func scheduleHideLock() { lockHideAt = Date().addingTimeInterval(PlayerTiming.autoHideLock) }
 
     /// One timer for the lifetime of the player, checking both deadlines.
     ///
@@ -1014,21 +1007,6 @@ struct PlayerView: View {
 
     private func clamp01(_ v: CGFloat) -> CGFloat { max(0, min(1, v)) }
     private func clamp01f(_ v: Float) -> Float { max(0, min(1, v)) }
-}
-
-/// Hosts the libVLC drawable UIView and kicks off playback.
-private struct VLCVideoView: UIViewRepresentable {
-    @ObservedObject var model: VLCPlayerModel
-    let item: MediaItem
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
-        view.backgroundColor = .black
-        model.start(item: item, into: view)
-        return view
-    }
-
-    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 /// D-shaped wash on the screen edge for the double-tap seek indicator: flat on
@@ -1127,4 +1105,53 @@ private struct LoadingRing: View {
             }
         }
     }
+}
+
+// MARK: - Constants
+//
+// File scope because PlayerView is generic, and Swift allows no static stored
+// properties in a generic type or in anything nested inside one.
+
+private enum PlayerTiming {
+    static let autoHide: TimeInterval = 4
+    static let autoHideLock: TimeInterval = 3
+}
+
+/// Common languages offered for the preferred-audio/subtitle pickers. Matched
+/// (case-insensitively) against the engine's track names, so it's best-effort.
+private enum PlayerLanguages {
+    static let common = [
+        "English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Marathi",
+        "Bengali", "Spanish", "French", "German", "Italian", "Arabic", "Japanese",
+        "Korean", "Chinese", "Russian", "Portuguese", "Turkish",
+    ]
+}
+
+/// Every control in the two capsules is the same width, whatever its
+/// caption says at the time — but that width depends on how many of them
+/// there are and how much room the screen has.
+///
+/// Four change their own label as they are used — Speed becomes "1.5×", Fit
+/// becomes "Fill", Quality becomes "1080p", Sleep becomes "42m" — and a row
+/// of self-sizing buttons re-spaces itself every time one of them does,
+/// with the widest caption shoving its neighbours apart. So they share one
+/// width. Pinning that width to a constant, though, put seven of them past
+/// the edge of a portrait phone: 7 × 58 plus the capsules' own padding is
+/// wider than an iPhone is. It is computed from the measured row instead.
+private enum QuickMetrics {
+    /// Roomy enough for "Subtitles" at full size. Never exceeded — extra
+    /// room goes to the gap between the two capsules, not into the buttons.
+    static let ideal: CGFloat = 58
+    /// Below this a caption is squeezed past legibility, so the captions go
+    /// instead and the glyphs carry the row.
+    static let captionFloor: CGFloat = 46
+    /// Nothing useful is left of a 17pt glyph's tap target below this.
+    static let hardFloor: CGFloat = 34
+    /// Between the two capsules, at their closest.
+    static let groupGap: CGFloat = 12
+    /// Inside a capsule: 8pt each side, 4pt between buttons.
+    static let capsulePad: CGFloat = 16
+    static let buttonGap: CGFloat = 4
+    /// `controlsOverlay`'s own horizontal padding, per side.
+    static let overlayPad: CGFloat = 18
 }

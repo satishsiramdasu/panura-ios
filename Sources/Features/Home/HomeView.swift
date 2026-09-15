@@ -68,7 +68,7 @@ struct HomeView: View {
                 onDismiss: { showAddress = false }
             )
         }
-        .fullScreenCover(item: $playItem) { PlayerView(item: $0) }
+        .fullScreenCover(item: $playItem) { PlayerScreen(item: $0) }
         .sheet(isPresented: $showShortcutsSheet) { shortcutsSheet }
         .sheet(item: $editingShortcut) { ShortcutEditor(entry: $0) }
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }

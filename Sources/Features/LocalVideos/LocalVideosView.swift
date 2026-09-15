@@ -54,7 +54,7 @@ struct LocalVideosView: View {
             lastPlayedID = LocalVideosModel.lastPlayedID
             await model.load()
         }
-        .fullScreenCover(item: $playItem) { PlayerView(item: $0, playlist: localPlaylist()) }
+        .fullScreenCover(item: $playItem) { PlayerScreen(item: $0, playlist: localPlaylist()) }
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
         .sheet(isPresented: $showAlbums) { albumsSheet }

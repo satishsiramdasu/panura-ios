@@ -26,7 +26,7 @@ struct StreamView: View {
             .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Network Stream") }
             .navigationBarHidden(true)
         }
-        .fullScreenCover(item: $playItem) { PlayerView(item: $0, playlist: channelPlaylist()) }
+        .fullScreenCover(item: $playItem) { PlayerScreen(item: $0, playlist: channelPlaylist()) }
     }
 
     // MARK: entry

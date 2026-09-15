@@ -70,7 +70,7 @@ struct BrowserView: View {
             }
         }
         .overlay(alignment: .bottom) { toastView }
-        .fullScreenCover(item: $playItem) { PlayerView(item: $0) }
+        .fullScreenCover(item: $playItem) { PlayerScreen(item: $0) }
         .fullScreenCover(isPresented: $showAddress) {
             AddressScreen(
                 currentURL: model.currentURL?.absoluteString ?? "",

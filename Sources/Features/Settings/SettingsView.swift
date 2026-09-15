@@ -112,7 +112,7 @@ struct SettingsView: View {
             "preferred_audio_language",
             "gesture_seek", "gesture_brightness", "gesture_volume", "gesture_zoom",
             "gesture_double_tap", "gesture_long_press", "gesture_sensitivity",
-            "mark_last_played", "show_extension", "videos_layout",
+            "mark_last_played", "show_extension", "videos_layout", "player_engine",
             "debug_detection", "auto_play_click", "ad_block", "desktop_mode_default",
         ]
         for key in keys { UserDefaults.standard.removeObject(forKey: key) }
@@ -123,10 +123,14 @@ struct SettingsView: View {
 // MARK: - Playback
 
 struct PlaybackPreferencesView: View {
-    /// Read by VLCPlayerModel; when off, playback pauses on lock/background.
+    /// Read by both players; when off, playback pauses on lock/background.
     @AppStorage("background_play") private var backgroundPlay = false
-    /// Read by VLCPlayerModel — resume each video from where it was left.
+    /// Read by both players — resume each video from where it was left.
     @AppStorage("resume_playback") private var resumePlayback = true
+    /// Which engine plays. A testing control: it goes when the Apple player
+    /// ships alone.
+    @AppStorage(PlayerEngineKind.defaultsKey)
+    private var playerEngine: String = PlayerEngineKind.avPlayer.rawValue
     /// Rate every video opens at; the player's speed control overrides it.
     @AppStorage("default_playback_speed") private var defaultSpeed = 1.0
 
@@ -147,6 +151,26 @@ struct PlaybackPreferencesView: View {
                 )
             } header: {
                 Text("Playback")
+            }
+
+            Section {
+                Picker(selection: $playerEngine) {
+                    ForEach(PlayerEngineKind.allCases) { kind in
+                        Text(kind.label).tag(kind.rawValue)
+                    }
+                } label: {
+                    PreferenceLabel(
+                        title: "Player",
+                        description: "Which engine opens videos",
+                        icon: "play.rectangle"
+                    )
+                }
+                .pickerStyle(.menu)
+                .tint(PanuraTheme.accent)
+            } header: {
+                Text("Engine (testing)")
+            } footer: {
+                Text("The Apple player adds Picture in Picture and AirPlay. VLC stays here while the two are compared, and a video that fails in the Apple player offers VLC on its error screen.")
             }
 
             Section {

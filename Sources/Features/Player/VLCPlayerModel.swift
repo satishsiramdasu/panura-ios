@@ -52,51 +52,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// The view auto-rotates to match on change.
     @Published var videoIsPortrait: Bool?
 
-    struct Track: Identifiable, Hashable { let id: Int; let name: String }
-
-    /// A selectable HLS rendition. `url == nil` means Auto (adaptive = the master).
-    struct Quality: Identifiable, Hashable {
-        let id: String; let label: String; let url: URL?
-        /// Advertised bits/sec, for the size estimate. 0 when unknown or Auto.
-        var bandwidth: Int = 0
-
-        static let auto = Quality(id: "auto", label: "Auto", url: nil)
-
-        /// Rough download size at this bitrate, matching Android's
-        /// `HlsVariant.estimatedSize`: bandwidth is an average, so this is an
-        /// approximation and is labelled as one. Empty when either input is
-        /// unknown — a live stream has no duration, so no estimate is shown.
-        func sizeEstimate(durationSeconds: Double) -> String {
-            guard durationSeconds > 0, bandwidth > 0 else { return "" }
-            let bytes = Double(bandwidth) / 8 * durationSeconds
-            switch bytes {
-            case 1_000_000_000...:
-                return String(format: "~%.1f GB", bytes / 1_000_000_000)
-            case 1_000_000...:
-                return String(format: "~%.0f MB", bytes / 1_000_000)
-            default:
-                return String(format: "~%.0f KB", bytes / 1_000)
-            }
-        }
-    }
-
-    enum AspectMode: String, CaseIterable {
-        case fit, fill, stretch
-        var label: String {
-            switch self {
-            case .fit: return "Fit"
-            case .fill: return "Fill"
-            case .stretch: return "Stretch"
-            }
-        }
-        var icon: String {
-            switch self {
-            case .fit: return "rectangle.arrowtriangle.2.inward"
-            case .fill: return "rectangle.arrowtriangle.2.outward"
-            case .stretch: return "arrow.up.left.and.arrow.down.right"
-            }
-        }
-    }
+    /// Shared with AVPlayerModel — defined in PlayerEngine.swift.
+    typealias Track = PlayerTrack
+    typealias Quality = PlayerQuality
+    typealias AspectMode = PlayerAspectMode
 
     let player = VLCMediaPlayer()
     /// The libVLC drawable — held weakly so the PiP bridge can snapshot it.
@@ -896,4 +855,29 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
             }
         }
     }
+}
+
+// MARK: - PlayerEngine
+
+extension VLCPlayerModel: PlayerEngine {
+    nonisolated static func makeEngine() -> VLCPlayerModel { VLCPlayerModel() }
+
+    var supportsAudioDelay: Bool { true }
+    var supportsAudioBoost: Bool { true }
+    var supportsSubtitleDelay: Bool { true }
+    /// libVLC draws into its own surface, which the system PiP cannot take.
+    var supportsPictureInPicture: Bool { false }
+    var supportsAirPlay: Bool { false }
+    var isPictureInPictureActive: Bool { false }
+
+    func makeVideoView() -> UIView {
+        let view = UIView()
+        view.backgroundColor = .black
+        return view
+    }
+
+    /// libVLC's text renderer reads its style when media opens.
+    func subtitleStyleChanged() { reopenPreservingPosition() }
+
+    func togglePictureInPicture() {}
 }
