@@ -113,7 +113,8 @@ struct SettingsView: View {
             "gesture_seek", "gesture_brightness", "gesture_volume", "gesture_zoom",
             "gesture_double_tap", "gesture_long_press", "gesture_sensitivity",
             "mark_last_played", "show_extension", "videos_layout", "player_engine",
-            "debug_detection", "auto_play_click", "ad_block", "desktop_mode_default",
+            "debug_detection", "auto_play_click", "block_page_fullscreen", "ad_block",
+            "desktop_mode_default",
         ]
         for key in keys { UserDefaults.standard.removeObject(forKey: key) }
         didReset = true
@@ -204,6 +205,7 @@ struct PlaybackPreferencesView: View {
 struct DetectionPreferencesView: View {
     @AppStorage("debug_detection") private var debugDetection = false
     @AppStorage("auto_play_click") private var autoPlayClick = true
+    @AppStorage("block_page_fullscreen") private var blockPageFullscreen = true
     @State private var rulesRefreshed = false
 
     var body: some View {
@@ -230,6 +232,12 @@ struct DetectionPreferencesView: View {
                     description: "Some sites request nothing until their play button is pressed; Panura presses it for them",
                     icon: "play.square",
                     isOn: $autoPlayClick
+                )
+                PreferenceToggle(
+                    title: "Keep page videos inline",
+                    description: "Stop a site's video opening Apple's full-screen player; play it in Panura instead. Reopen the Web tab to apply",
+                    icon: "rectangle.inset.filled",
+                    isOn: $blockPageFullscreen
                 )
             }
 
