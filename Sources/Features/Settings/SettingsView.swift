@@ -235,7 +235,7 @@ struct DetectionPreferencesView: View {
                 )
                 PreferenceToggle(
                     title: "Keep page videos inline",
-                    description: "Stop a site's video opening Apple's full-screen player; play it in Panura instead. Reopen the Web tab to apply",
+                    description: "Pressing play keeps the video in the page; full screen only opens when you tap it. Reopen the Web tab to apply",
                     icon: "rectangle.inset.filled",
                     isOn: $blockPageFullscreen
                 )

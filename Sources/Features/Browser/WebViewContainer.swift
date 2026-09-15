@@ -71,8 +71,8 @@ struct WebViewContainer: UIViewRepresentable {
             ))
         }
 
-        // Page videos stay in the page instead of opening Apple's full-screen
-        // player on play — the stream is opened in ours. Order among the
+        // Page videos start in the page instead of jumping to Apple's
+        // full-screen player on play; full screen stays a separate tap. Order among the
         // document-start scripts does not matter: this one only has to be in
         // place before the page's first play().
         let keepInline = UserDefaults.standard.object(forKey: "block_page_fullscreen") as? Bool ?? true
@@ -92,9 +92,6 @@ struct WebViewContainer: UIViewRepresentable {
         if privateMode { config.websiteDataStore = .nonPersistent() }
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
-        // The element full-screen API (iPad, and sites that use a div rather
-        // than the video) — off at the engine too, not only in script.
-        if keepInline { config.preferences.isElementFullscreenEnabled = false }
         // Block the pop-under/new-window ads these sites open on tap.
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
         return config
