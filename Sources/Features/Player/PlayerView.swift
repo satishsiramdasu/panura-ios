@@ -436,19 +436,6 @@ struct PlayerView<Model: PlayerEngine>: View {
             }
             .ignoresSafeArea()
             .allowsHitTesting(false)
-            // Where the quick-action row learns how much room it has.
-            //
-            // It cannot measure itself: an HStack whose children overflow
-            // reports the overflowed width, so narrowing the buttons would
-            // widen the very reading that called for it. This backdrop fills the
-            // screen and nothing can inflate it, which makes it a stable ruler.
-            .background(
-                GeometryReader { g in
-                    Color.clear
-                        .onAppear { quickRowWidth = g.size.width }
-                        .onChange(of: g.size.width) { quickRowWidth = $0 }
-                }
-            )
 
             // Top bar pinned to the top; bottom bar hugs the very bottom edge
             // (no extra bottom inset) so it sits low, matching Android.
@@ -551,29 +538,40 @@ struct PlayerView<Model: PlayerEngine>: View {
             }
             .foregroundStyle(.white)
 
-            HStack(spacing: 12) {
-                // Bottom-left group
-                HStack(spacing: 4) {
-                    quickAction("waveform", "Audio") { sheet = .audio }
-                    quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
-                    if !model.qualities.isEmpty { qualityQuick }
+            // The roomiest button size that fits, tried in order. The last,
+            // glyphs only, fits any phone — so the row can never be wider than
+            // the screen and drag the seek bar and top bar out with it.
+            ViewThatFits(in: .horizontal) {
+                ForEach(QuickMetrics.steps, id: \.self) { size in
+                    quickRow.environment(\.quickButton, size)
                 }
-                .padding(.horizontal, 8).padding(.vertical, 6)
-                .background(Color.black.opacity(0.3), in: Capsule())
-
-                Spacer()
-
-                // Bottom-right group
-                HStack(spacing: 4) {
-                    quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
-                    sleepQuick
-                    speedQuick
-                    aspectAction
-                }
-                .padding(.horizontal, 8).padding(.vertical, 6)
-                .background(Color.black.opacity(0.3), in: Capsule())
             }
             .foregroundStyle(.white)
+        }
+    }
+
+    private var quickRow: some View {
+        HStack(spacing: 0) {
+            // Bottom-left group
+            HStack(spacing: QuickMetrics.buttonGap) {
+                quickAction("waveform", "Audio") { sheet = .audio }
+                quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
+                if !model.qualities.isEmpty { qualityQuick }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(Color.black.opacity(0.3), in: Capsule())
+
+            Spacer(minLength: QuickMetrics.groupGap)
+
+            // Bottom-right group
+            HStack(spacing: QuickMetrics.buttonGap) {
+                quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
+                sleepQuick
+                speedQuick
+                aspectAction
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(Color.black.opacity(0.3), in: Capsule())
         }
     }
 
@@ -719,60 +717,14 @@ struct PlayerView<Model: PlayerEngine>: View {
         }
     }
 
-    /// Screen width behind the controls; 0 until the first layout pass. The
-    /// 18pt padding on each side is taken off in `quickMetrics`.
-    @State private var quickRowWidth: CGFloat = 0
-
-    /// How many quick actions are on screen. Quality is the only optional one —
-    /// the rest are always there.
-    private var quickActionCount: Int { model.qualities.isEmpty ? 6 : 7 }
-
-    /// The shared button width, and whether there is room to caption them.
-    ///
-    /// Landscape has room for all seven at full size. Portrait does not, so the
-    /// buttons narrow first and, when even that is not enough, drop their
-    /// captions rather than overflow the screen.
-    private var quickMetrics: (width: CGFloat, captions: Bool) {
-        let n = CGFloat(quickActionCount)
-        guard quickRowWidth > 0 else { return (QuickMetrics.ideal, true) }
-        // The ruler spans the whole screen; the controls sit inside the
-        // overlay's horizontal padding. In landscape it also spans the notch
-        // insets, which overstates the room — harmless, because landscape has
-        // enough room for all seven at full size either way.
-        let available = quickRowWidth - QuickMetrics.overlayPad * 2
-        let chrome = QuickMetrics.capsulePad * 2
-            + QuickMetrics.groupGap
-            + (n - 2) * QuickMetrics.buttonGap   // gaps within both capsules
-        let each = (available - chrome) / n
-        if each >= QuickMetrics.captionFloor {
-            return (min(QuickMetrics.ideal, each), true)
-        }
-        return (max(QuickMetrics.hardFloor, each), false)
-    }
-
     private func quickAction(_ system: String, _ title: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             quickActionLabel(system, title)
         }
     }
 
-    /// The stack inside every quick action: glyph over caption, shared width,
-    /// one line of caption that shrinks rather than wrapping or truncating.
     private func quickActionLabel(_ system: String, _ title: String) -> some View {
-        let m = quickMetrics
-        return VStack(spacing: 4) {
-            Image(systemName: system).font(.system(size: 17))
-            if m.captions {
-                Text(title)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-        }
-        .frame(width: m.width)
-        // Without this the glyph-only row has a smaller tap target than the
-        // captioned one, for no reason the user can see.
-        .frame(height: 38)
+        QuickActionLabel(system: system, title: title)
     }
 
     private func failureView(_ text: String) -> some View {
@@ -1141,30 +1093,72 @@ private enum PlayerLanguages {
 }
 
 /// Every control in the two capsules is the same width, whatever its
-/// caption says at the time — but that width depends on how many of them
-/// there are and how much room the screen has.
+/// caption says at the time.
 ///
 /// Four change their own label as they are used — Speed becomes "1.5×", Fit
 /// becomes "Fill", Quality becomes "1080p", Sleep becomes "42m" — and a row
 /// of self-sizing buttons re-spaces itself every time one of them does,
 /// with the widest caption shoving its neighbours apart. So they share one
-/// width. Pinning that width to a constant, though, put seven of them past
-/// the edge of a portrait phone: 7 × 58 plus the capsules' own padding is
-/// wider than an iPhone is. It is computed from the measured row instead.
+/// width, chosen by `ViewThatFits` from `steps`.
+///
+/// That replaced a width computed from a measured screen. The arithmetic
+/// could not see the spacing SwiftUI adds around a Spacer, so seven buttons
+/// came out about 20pt too wide, and before the first measurement they were
+/// full size; either way the row pushed the whole overlay past both edges.
+/// Letting layout try each size cannot be wrong about what fits.
 private enum QuickMetrics {
-    /// Roomy enough for "Subtitles" at full size. Never exceeded — extra
-    /// room goes to the gap between the two capsules, not into the buttons.
-    static let ideal: CGFloat = 58
-    /// Below this a caption is squeezed past legibility, so the captions go
-    /// instead and the glyphs carry the row.
-    static let captionFloor: CGFloat = 46
-    /// Nothing useful is left of a 17pt glyph's tap target below this.
-    static let hardFloor: CGFloat = 34
+    static let steps: [QuickButtonSize] = [
+        // Roomy enough for "Subtitles" at full size.
+        QuickButtonSize(width: 58, captions: true),
+        QuickButtonSize(width: 52, captions: true),
+        // Below this a caption is squeezed past legibility.
+        QuickButtonSize(width: 46, captions: true),
+        // Glyphs carry the row.
+        QuickButtonSize(width: 40, captions: false),
+        // Nothing useful is left of a 17pt glyph's tap target below this.
+        QuickButtonSize(width: 34, captions: false),
+    ]
     /// Between the two capsules, at their closest.
     static let groupGap: CGFloat = 12
-    /// Inside a capsule: 8pt each side, 4pt between buttons.
-    static let capsulePad: CGFloat = 16
     static let buttonGap: CGFloat = 4
-    /// `controlsOverlay`'s own horizontal padding, per side.
-    static let overlayPad: CGFloat = 18
+}
+
+struct QuickButtonSize: Hashable {
+    let width: CGFloat
+    let captions: Bool
+}
+
+private struct QuickButtonSizeKey: EnvironmentKey {
+    static let defaultValue = QuickMetrics.steps[0]
+}
+
+extension EnvironmentValues {
+    var quickButton: QuickButtonSize {
+        get { self[QuickButtonSizeKey.self] }
+        set { self[QuickButtonSizeKey.self] = newValue }
+    }
+}
+
+/// The stack inside every quick action: glyph over caption, at the width the
+/// row settled on, one line of caption that shrinks rather than wrapping.
+private struct QuickActionLabel: View {
+    let system: String
+    let title: String
+    @Environment(\.quickButton) private var size
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: system).font(.system(size: 17))
+            if size.captions {
+                Text(title)
+                    .font(.system(size: 11))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+        }
+        .frame(width: size.width)
+        // Without this the glyph-only row has a smaller tap target than the
+        // captioned one, for no reason the user can see.
+        .frame(height: 38)
+    }
 }
