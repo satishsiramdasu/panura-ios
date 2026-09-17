@@ -8,15 +8,16 @@ import Foundation
 /// in the stream as well as in the sample entry; `hvc1` keeps them in the entry.
 /// Apple's players accept only `hvc1`, so an HEVC file tagged `hev1` — common
 /// from web encoders and FFmpeg's default — fails to open in AVPlayer while
-/// every FFmpeg-based player plays it. Renaming four bytes is the whole fix
-/// when the entry's `hvcC` already carries the parameter sets, which FFmpeg
-/// writes for both tags.
+/// every FFmpeg-based player plays it. The fix is four bytes of tag plus one
+/// flag per parameter-set array in `hvcC`: `hvc1` requires each array to be
+/// marked complete, and FFmpeg writes `hev1` arrays unmarked even though they
+/// hold every set.
 ///
 /// Pure Foundation, so the check in `Tools/hevc-check` runs it against
 /// AVFoundation on a Mac.
 enum HEVCTagPatcher {
     struct Patch: Equatable {
-        /// Absolute file offset of the four-character code.
+        /// Absolute file offset of the first byte replaced.
         var offset: Int64
         var bytes: [UInt8]
     }
@@ -75,8 +76,8 @@ enum HEVCTagPatcher {
         guard !patches.isEmpty, !data.isEmpty else { return }
         let end = offset + Int64(data.count)
         data.withUnsafeMutableBytes { raw in
-            for patch in patches where patch.offset < end && patch.offset + 4 > offset {
-                for k in 0..<4 {
+            for patch in patches where patch.offset < end && patch.offset + Int64(patch.bytes.count) > offset {
+                for k in 0..<patch.bytes.count {
                     let position = patch.offset + Int64(k) - offset
                     if position >= 0, position < Int64(raw.count) {
                         raw[Int(position)] = patch.bytes[k]
@@ -128,14 +129,45 @@ enum HEVCTagPatcher {
                 var j = i + header + 8
                 while j + 8 <= i + size {
                     let entrySize = Int(u32(b, j))
+                    guard entrySize >= 8, j + entrySize <= i + size else { break }
                     if let renamed = renames[fourCC(b, j + 4)] {
                         found.append(Patch(offset: base + Int64(j + 4), bytes: Array(renamed.utf8)))
+                        markArraysComplete(b, entry: j..<(j + entrySize), base: base, into: &found)
                     }
-                    guard entrySize >= 8 else { break }
                     j += entrySize
                 }
             }
             i += size
+        }
+    }
+
+    /// Sets array_completeness on every parameter-set array of the entry's
+    /// `hvcC`. Child boxes of a visual sample entry start 86 bytes in: the box
+    /// header, then 78 bytes of fixed fields.
+    private static func markArraysComplete(_ b: [UInt8], entry: Range<Int>, base: Int64, into found: inout [Patch]) {
+        var k = entry.lowerBound + 86
+        while k + 8 <= entry.upperBound {
+            let size = Int(u32(b, k))
+            guard size >= 8, k + size <= entry.upperBound else { return }
+            if fourCC(b, k + 4) == "hvcC" {
+                let payload = k + 8
+                guard payload + 23 <= k + size else { return }
+                var cursor = payload + 23
+                for _ in 0..<Int(b[payload + 22]) {
+                    guard cursor + 3 <= k + size else { return }
+                    if b[cursor] & 0x80 == 0 {
+                        found.append(Patch(offset: base + Int64(cursor), bytes: [b[cursor] | 0x80]))
+                    }
+                    let units = (Int(b[cursor + 1]) << 8) | Int(b[cursor + 2])
+                    cursor += 3
+                    for _ in 0..<units {
+                        guard cursor + 2 <= k + size else { return }
+                        cursor += 2 + ((Int(b[cursor]) << 8) | Int(b[cursor + 1]))
+                    }
+                }
+                return
+            }
+            k += size
         }
     }
 

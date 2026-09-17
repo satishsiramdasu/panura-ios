@@ -68,7 +68,23 @@ func decodedFrames(_ asset: AVAsset, _ track: AVAssetTrack) throws -> Int {
     }
 }
 
+/// Everything worth reading goes out as an annotation too: a workflow's log
+/// needs a signed-in viewer, annotations are public through the API.
+func notice(_ message: String) {
+    print("::notice::\(message)")
+}
+
 @MainActor func play(_ path: String, name: String, required: Bool) async {
+    // The server first, so a dead server is not mistaken for a refused stream.
+    if let url = URL(string: "http://127.0.0.1:8765/\(path)"),
+       let (data, response) = try? await URLSession.shared.data(from: url) {
+        let http = response as? HTTPURLResponse
+        let firstLines = String(decoding: data.prefix(300), as: UTF8.self).replacingOccurrences(of: "\n", with: " | ")
+        notice("\(name): GET \(http?.statusCode ?? 0) \(http?.value(forHTTPHeaderField: "Content-Type") ?? "-"): \(firstLines)")
+    } else {
+        notice("\(name): server did not answer")
+    }
+
     let item = AVPlayerItem(url: URL(string: "http://127.0.0.1:8765/\(path)")!)
     let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
     item.add(output)
@@ -92,12 +108,16 @@ func decodedFrames(_ asset: AVAsset, _ track: AVAssetTrack) throws -> Int {
     let state: String
     switch item.status {
     case .readyToPlay: state = "ready"
-    case .failed: state = "failed (\(item.error?.localizedDescription ?? "no error"))"
+    case .failed:
+        let error = item.error as NSError?
+        let underlying = error?.userInfo[NSUnderlyingErrorKey] as? NSError
+        let logged = item.errorLog()?.events.last.map { "\($0.errorDomain) \($0.errorStatusCode) \($0.errorComment ?? "")" } ?? "-"
+        state = "failed (\(error?.domain ?? "") \(error?.code ?? 0) \(error?.localizedDescription ?? ""); underlying \(underlying?.domain ?? "-") \(underlying?.code ?? 0); log \(logged))"
     default: state = "never ready"
     }
     let summary = "\(name): \(state), reached \(String(format: "%.1f", item.currentTime().seconds))s, frame decoded \(sawFrame)"
     if !required {
-        print("baseline — \(summary)")
+        notice("baseline — \(summary)")
     } else if item.status != .readyToPlay {
         fail(summary)
     } else if !sawFrame {
@@ -137,7 +157,7 @@ for name in ["hev1-faststart", "hev1-moov-at-end"] {
 
         let original = AVURLAsset(url: url)
         let playable = (try? await original.load(.isPlayable)) ?? false
-        print("baseline — \(name): \(patches.count) patch(es); original isPlayable \(playable)")
+        notice("baseline — \(name): \(patches.count) patch(es); original isPlayable \(playable)")
         await verify(out, name: "\(name) patched")
     } catch {
         fail("\(name): \(error)")
@@ -153,7 +173,7 @@ do {
     try FileManager.default.copyItem(at: source, to: target)
 
     let master = try String(contentsOf: source.appendingPathComponent("master.m3u8"), encoding: .utf8)
-    print("master playlist names hev1: \(HEVCTagPatcher.namesHEV1(master))")
+    notice("master playlist: " + master.replacingOccurrences(of: "\n", with: " | "))
 
     let initURL = target.appendingPathComponent("init.mp4")
     if let renamed = try HEVCTagPatcher.patch(Data(contentsOf: initURL)) {
