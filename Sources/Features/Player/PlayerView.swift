@@ -22,7 +22,11 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// Offered on the error screen when set — the Apple player's way out to VLC
     /// while both are being compared.
     var onFallback: (() -> Void)? = nil
+    /// This screen is VLC trying a video the Apple player could not open. Its
+    /// outcome is reported once, for the decision on keeping VLC.
+    var isFallback = false
     @Environment(\.dismiss) private var dismiss
+    @State private var fallbackOutcomeReported = false
     @StateObject private var model = Model.makeEngine()
 
     // Playlist position
@@ -154,6 +158,7 @@ struct PlayerView<Model: PlayerEngine>: View {
             OrientationManager.allowAll()
             scheduleHide()
             startTicker()
+            PlayerAnalytics.opened(engine: engineName, item: item, fallback: isFallback)
         }
         .onDisappear {
             ticker?.cancel()
@@ -168,6 +173,14 @@ struct PlayerView<Model: PlayerEngine>: View {
         .onChange(of: preferredSubtitleLang) { _ in model.applyPreferredLanguages() }
         .onChange(of: model.videoIsPortrait) { p in
             if let p { OrientationManager.applyVideoOrientation(portrait: p) }
+        }
+        .onChange(of: model.failure) { failure in
+            guard failure != nil else { return }
+            PlayerAnalytics.failed(engine: engineName, item: item)
+            reportFallbackOutcome(played: false)
+        }
+        .onChange(of: model.isPlaying) { playing in
+            if playing { reportFallbackOutcome(played: true) }
         }
     }
 
@@ -740,7 +753,10 @@ struct PlayerView<Model: PlayerEngine>: View {
                     .multilineTextAlignment(.center)
             }
             if let onFallback {
-                Button(action: onFallback) {
+                Button {
+                    PlayerAnalytics.fallbackTapped(item: item)
+                    onFallback()
+                } label: {
                     Label("Try with VLC", systemImage: "arrow.triangle.2.circlepath")
                         .font(.callout.weight(.semibold))
                         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -891,6 +907,14 @@ struct PlayerView<Model: PlayerEngine>: View {
     // MARK: actions
 
     private func close() { model.stop(); dismiss() }
+
+    private var engineName: String { Model.self == VLCPlayerModel.self ? "vlc" : "av" }
+
+    private func reportFallbackOutcome(played: Bool) {
+        guard isFallback, !fallbackOutcomeReported else { return }
+        fallbackOutcomeReported = true
+        PlayerAnalytics.fallbackResult(played: played, item: item)
+    }
 
     // MARK: playlist next / previous
 

@@ -1,0 +1,54 @@
+name: HEVC Check
+
+# The hev1 → hvc1 rename, proven against Apple's own decoder on a Mac: FFmpeg
+# makes hev1-tagged HDR10 files and an fMP4 HLS stream, the app's
+# HEVCTagPatcher renames them, and AVFoundation must then open, decode and play
+# the result. Runs only when the patcher or this check changes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Sources/Features/Player/HEVCTagPatcher.swift'
+      - 'Tools/hevc-check/**'
+      - '.github/workflows/hevc-check.yml'
+
+concurrency:
+  group: hevc-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Select latest Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install FFmpeg
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install ffmpeg
+
+      - name: Make fixtures
+        run: bash Tools/hevc-check/make-fixtures.sh "$RUNNER_TEMP/fixtures"
+
+      - name: Build checker
+        run: |
+          mkdir -p build
+          cp Sources/Features/Player/HEVCTagPatcher.swift Tools/hevc-check/Sources/hevc-check/
+          set -o pipefail
+          swift build -c release --package-path Tools/hevc-check 2>&1 | tee build/xcodebuild.log
+
+      - name: Report compile errors
+        if: failure()
+        run: bash .github/scripts/annotate-errors.sh 0
+
+      - name: Run checks
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory "$RUNNER_TEMP/fixtures" >/dev/null 2>&1 &
+          sleep 2
+          BIN="$(swift build -c release --package-path Tools/hevc-check --show-bin-path)"
+          "$BIN/hevc-check" "$RUNNER_TEMP/fixtures"

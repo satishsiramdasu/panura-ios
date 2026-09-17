@@ -1,0 +1,3 @@
+.build/
+# Copied from Sources/Features/Player by CI.
+Sources/hevc-check/HEVCTagPatcher.swift

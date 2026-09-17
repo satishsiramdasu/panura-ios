@@ -79,6 +79,15 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     private var playedThroughRelay = false
     /// One relay retry per item; a second would loop on a stream that is dead.
     private var relayRetryUsed = false
+    /// How this item is opened. Starts direct; `PlaybackRouter` may move it to
+    /// an HEVC tag repair once it has looked at the source.
+    private var plan = PlaybackPlan.direct
+    private var probeTask: Task<Void, Never>?
+    /// True while the router is still looking. A failure in that window waits
+    /// for its answer rather than showing the error the repair would prevent.
+    private var probing = false
+    private var failedWhileProbing = false
+    private var hevcLoader: HEVCTagLoader?
 
     private var pendingResumeSeconds: Double?
     private var resumeApplied = false
@@ -166,6 +175,8 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         relayRetryUsed = false; forceRelay = false
         thumbnailCaptured = false
         userPaused = false
+        plan = .direct
+        failedWhileProbing = false
         clearSidecar()
         // Offered at once: the page's subtitle files are known before the
         // stream's own options have loaded.
@@ -181,6 +192,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
 
         buildAndPlay()
         loadQualities()
+        startProbe(newItem)
     }
 
     /// (Re)builds the player item for the current source and starts it.
@@ -194,9 +206,13 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         // Headers do NOT need it: AVURLAsset sends them itself, below.
         let path = item.url.path.lowercased()
         let needsTypeRelay = !item.isLocal && item.contentType == "hls" && !path.hasSuffix(".m3u8")
-        let relay = !item.isLocal && (needsTypeRelay || forceRelay)
+        let renameTags = plan.route == .hevcTagStream
+        let relay = !item.isLocal && (needsTypeRelay || forceRelay || renameTags)
         let playURL = relay
-            ? StreamProxy.shared.proxied(url: item.url, headers: item.headers, playlistHint: needsTypeRelay)
+            ? StreamProxy.shared.proxied(
+                url: item.url, headers: item.headers,
+                playlistHint: needsTypeRelay || renameTags, renameHEVCTags: renameTags
+            )
             : item.url
         playedThroughRelay = relay
 
@@ -211,7 +227,18 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             // which is fine for a 4 MB segment and ruinous for a 2 GB MP4.
             options["AVURLAssetHTTPHeaderFieldsKey"] = item.headers
         }
-        let asset = AVURLAsset(url: playURL, options: options)
+        hevcLoader?.invalidate()
+        hevcLoader = nil
+        let asset: AVURLAsset
+        if plan.route == .hevcTagFile, let source = plan.file {
+            // Byte ranges streamed from the source with the tag renamed in
+            // passing; the relay would read the whole file first.
+            let loader = HEVCTagLoader(source: source)
+            hevcLoader = loader
+            asset = loader.makeAsset()
+        } else {
+            asset = AVURLAsset(url: playURL, options: options)
+        }
         let playerItem = AVPlayerItem(asset: asset)
 
         attachVideoOutput(to: playerItem)
@@ -238,7 +265,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     /// completely before a single frame played.
     @discardableResult
     private func retryThroughRelay() -> Bool {
-        guard let item, !item.isLocal, !relayRetryUsed, !playedThroughRelay,
+        guard let item, plan.route == .direct, !item.isLocal, !relayRetryUsed, !playedThroughRelay,
               !Self.isProgressive(item) else { return false }
         relayRetryUsed = true
         forceRelay = true
@@ -267,6 +294,10 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         if let subtitleObserver { player.removeTimeObserver(subtitleObserver) }
         subtitleObserver = nil
         sidecarTask?.cancel()
+        probeTask?.cancel()
+        probing = false
+        hevcLoader?.invalidate()
+        hevcLoader = nil
         playerObservations.removeAll()
         itemObservations.removeAll()
         for token in itemNotifications { NotificationCenter.default.removeObserver(token) }
@@ -361,17 +392,60 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             applyResumeIfPending()
             updateNowPlaying(force: true)
         case .failed:
-            // One more attempt, through the relay — a genuinely different
-            // request: the playlist re-served with a playlist MIME type, every
-            // segment under an extensionless URL with its real Content-Type,
-            // decoy image headers stripped on the way through.
-            if retryThroughRelay() { return }
-            buffering = false
-            isPlaying = false
-            failure = "This stream could not be opened."
-            dropResumeIfSourceIsGone()
+            if probing {
+                failedWhileProbing = true
+                return
+            }
+            handleFailure()
         default:
             break
+        }
+    }
+
+    private func handleFailure() {
+        // One more attempt, through the relay — a genuinely different
+        // request: the playlist re-served with a playlist MIME type, every
+        // segment under an extensionless URL with its real Content-Type,
+        // decoy image headers stripped on the way through.
+        if retryThroughRelay() { return }
+        buffering = false
+        isPlaying = false
+        failure = "This stream could not be opened."
+        dropResumeIfSourceIsGone()
+    }
+
+    /// Asks `PlaybackRouter` about the item alongside the direct start. A repair
+    /// route rebuilds the item on it — unless the direct start is already
+    /// showing video, in which case the source needed no help.
+    private func startProbe(_ probed: MediaItem) {
+        probeTask?.cancel()
+        guard PlaybackRouter.worthProbing(probed) else {
+            probing = false
+            return
+        }
+        probing = true
+        probeTask = Task { [weak self] in
+            let found = await PlaybackRouter.plan(for: probed)
+            guard let self, !Task.isCancelled, self.item?.id == probed.id else { return }
+            self.probing = false
+            let current = self.player.currentItem
+            let showingVideo = current?.status == .readyToPlay && current?.presentationSize != .zero
+            if found.route != .direct, !showingVideo {
+                self.plan = found
+                PlayerAnalytics.route(found.route, item: probed)
+                let at = self.elapsedSeconds
+                if at > 2 {
+                    self.pendingResumeSeconds = at
+                    self.resumeApplied = false
+                }
+                self.failedWhileProbing = false
+                self.failure = nil
+                self.buffering = true
+                self.buildAndPlay()
+            } else if self.failedWhileProbing {
+                self.failedWhileProbing = false
+                self.handleFailure()
+            }
         }
     }
 

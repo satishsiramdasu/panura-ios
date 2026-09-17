@@ -207,7 +207,7 @@ struct PlayerScreen: View {
 
     var body: some View {
         if fellBackToVLC || engine == PlayerEngineKind.vlc.rawValue {
-            PlayerView<VLCPlayerModel>(item: item, playlist: playlist)
+            PlayerView<VLCPlayerModel>(item: item, playlist: playlist, isFallback: fellBackToVLC)
         } else {
             PlayerView<AVPlayerModel>(item: item, playlist: playlist, onFallback: { fellBackToVLC = true })
         }

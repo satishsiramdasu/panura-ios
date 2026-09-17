@@ -37,8 +37,8 @@ packages:
   VLCKitSPM:
     url: https://github.com/tylerjonesio/vlckit-spm
     exactVersion: "3.6.0"
-  # Crashlytics + Analytics, as Android ships them (firebase-bom with both and no
-  # custom calls): automatic crash reports and Analytics' default events only.
+  # Crashlytics + Analytics: automatic crash reports, Analytics' default events,
+  # and the few playback events in Sources/Core/PlayerAnalytics.swift.
   Firebase:
     url: https://github.com/firebase/firebase-ios-sdk
     from: "12.0.0"
