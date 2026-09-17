@@ -27,6 +27,48 @@ enum HLSVariants {
         return parse(text, base: url)
     }
 
+    /// Total duration of a finished (VOD) HLS stream in seconds: the sum of its
+    /// `#EXTINF` segment durations. For a master playlist the first variant is
+    /// read instead — every rendition of one title runs the same length. nil for
+    /// a live playlist (no `#EXT-X-ENDLIST`) or anything that is not HLS.
+    ///
+    /// The player's own length comes from media timestamps, and those can be
+    /// wrong in ways the playlist cannot: see `VLCPlayerModel.durationMs`.
+    static func duration(url: URL, headers: [String: String]) async -> Double? {
+        guard let text = await playlistText(url: url, headers: headers) else { return nil }
+        if text.contains("#EXT-X-STREAM-INF") {
+            guard let first = parse(text, base: url).last,
+                  let media = await playlistText(url: first.url, headers: headers) else { return nil }
+            return mediaDuration(media)
+        }
+        return mediaDuration(text)
+    }
+
+    /// A long VOD playlist runs to hundreds of kilobytes, so this read is not
+    /// capped the way `fetch` is — but it is still refused past a few megabytes,
+    /// which no playlist reaches and any video file does.
+    private static func playlistText(url: URL, headers: [String: String]) async -> String? {
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 10
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+        req.setValue("bytes=0-4194303", forHTTPHeaderField: "Range")
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let text = String(data: data, encoding: .utf8),
+              text.hasPrefix("#EXTM3U") || text.contains("#EXTINF") || text.contains("#EXT-X-STREAM-INF")
+        else { return nil }
+        return text
+    }
+
+    private static func mediaDuration(_ text: String) -> Double? {
+        guard text.contains("#EXT-X-ENDLIST") else { return nil }
+        var total = 0.0
+        for line in text.components(separatedBy: .newlines) where line.hasPrefix("#EXTINF:") {
+            let value = line.dropFirst("#EXTINF:".count).prefix { $0 != "," }
+            total += Double(value.trimmingCharacters(in: .whitespaces)) ?? 0
+        }
+        return total > 0 ? total : nil
+    }
+
     static func parse(_ text: String, base: URL) -> [HLSVariant] {
         var out: [HLSVariant] = []
         let lines = text.components(separatedBy: .newlines)

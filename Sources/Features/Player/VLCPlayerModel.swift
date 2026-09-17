@@ -73,6 +73,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// Length in milliseconds as libVLC last reported it. A stream often has no
     /// length when it opens, so this follows the player's length events.
     private var lengthMs: Int64 = 0
+    /// Length from the HLS playlist itself, when it is a finished one. Per item:
+    /// a quality switch reopens the same title, so it survives that.
+    private var playlistDurationMs: Int = 0
 
     private var tracksLoaded = false
     private var item: MediaItem?
@@ -148,6 +151,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // position save, and an item that never appears can't be resumed from.
         BrowsingStore.shared.beginWatching(item)
         thumbnailCaptured = false
+        playlistDurationMs = 0
         // A fresh item gets a fresh relay-retry budget; the flags are per item,
         // not per player.
         relayRetryUsed = false; forceRelay = false
@@ -316,6 +320,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         currentAudioId = -1; currentSubtitleId = -1
         tracksLoaded = false
         preferredLanguagesApplied = false
+        playlistDurationMs = 0
         pendingResumeSeconds = nil; resumeApplied = false
         relayRetryUsed = false; forceRelay = false
         if resumeEnabled {
@@ -350,7 +355,15 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     }
 
     func seek(to fraction: Float) {
-        player.position = Double(max(0, min(1, fraction)))
+        let clamped = max(0, min(1, fraction))
+        // By time against the corrected length: libVLC's position is a fraction
+        // of its OWN length, which is the value that can be a day too long.
+        let total = durationMs
+        if total > 0 {
+            player.time = VLCTime(int: Int32(clamping: Int(Double(clamped) * Double(total))))
+        } else {
+            player.position = Double(clamped)
+        }
         // VLC can wedge in the buffering state after a seek (notably local files),
         // leaving the spinner up and playback stalled — nudge it when the user
         // expects playback. Harmless if already playing.
@@ -601,6 +614,16 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         else { return }
 
         let url = item.url, headers = item.headers
+        let itemId = item.id
+        Task { [weak self] in
+            guard let seconds = await HLSVariants.duration(url: url, headers: headers) else { return }
+            await MainActor.run {
+                guard let self, self.item?.id == itemId else { return }
+                self.playlistDurationMs = Int(seconds * 1000)
+                self.videoDrawable?.lengthMs = Int64(self.durationMs)
+                self.invalidatePictureInPicture()
+            }
+        }
         Task { [weak self] in
             let variants = await HLSVariants.fetch(url: url, headers: headers)
             guard variants.count > 1 else { return }
@@ -624,11 +647,30 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     /// Length from libVLC's length event, else the media's own, else elapsed
     /// plus remaining — whichever is known first for this stream.
+    ///
+    /// libVLC 4 derives length from media timestamps, and MPEG-TS timestamps are
+    /// 33-bit at 90 kHz: they roll over every 2^33 / 90000 s, about 26 h 30 m.
+    /// A stream whose clock starts near that rollover reads a day too long — a
+    /// three-hour film shown as 29 hours. A finished HLS playlist states its
+    /// real length, so that wins; anything else past a full rollover has the
+    /// rollover taken off, since nothing this app plays is a day long.
     private var durationMs: Int {
-        if lengthMs > 0 { return Int(lengthMs) }
-        if let media = player.media, media.length.intValue > 0 { return Int(media.length.intValue) }
+        if playlistDurationMs > 0 { return playlistDurationMs }
+        if lengthMs > 0 { return Self.unwrapped(Int(lengthMs)) }
+        if let media = player.media, media.length.intValue > 0 {
+            return Self.unwrapped(Int(media.length.intValue))
+        }
         let remaining: VLCTime? = player.remainingTime
-        return Int(player.time.intValue) + abs(Int(remaining?.intValue ?? 0))
+        return Self.unwrapped(Int(player.time.intValue) + abs(Int(remaining?.intValue ?? 0)))
+    }
+
+    /// 2^33 / 90 kHz, in milliseconds.
+    private static let tsClockWrapMs = 95_443_718
+
+    private static func unwrapped(_ ms: Int) -> Int {
+        var value = ms
+        while value > tsClockWrapMs { value -= tsClockWrapMs }
+        return value
     }
     var elapsedSeconds: Double { Double(player.time.intValue) / 1000 }
 
@@ -945,6 +987,7 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
     nonisolated func mediaPlayerLengthChanged(_ length: Int64) {
         Task { @MainActor in
             lengthMs = length
+            videoDrawable?.lengthMs = Int64(durationMs)
             invalidatePictureInPicture()
         }
     }
@@ -964,9 +1007,9 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
 
     nonisolated func mediaPlayerTimeChanged(_ aNotification: Notification) {
         Task { @MainActor in
-            position = Float(player.position)
             let elapsedMs = Int(player.time.intValue)
             let totalMs = durationMs
+            position = totalMs > 0 ? Float(min(1, Double(elapsedMs) / Double(totalMs))) : Float(player.position)
             elapsed = Self.fmt(Int32(clamping: elapsedMs))
             remaining = "-" + Self.fmt(Int32(clamping: max(0, totalMs - elapsedMs)))
             total = Self.fmt(Int32(clamping: totalMs))

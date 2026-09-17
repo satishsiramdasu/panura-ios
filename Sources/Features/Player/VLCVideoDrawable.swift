@@ -19,6 +19,10 @@ final class VLCVideoDrawable: NSObject {
     /// The player's video view; the vout view is added inside it.
     weak var container: UIView?
     weak var player: VLCMediaPlayer?
+    /// The model's corrected length, in milliseconds; 0 when unknown. Kept here
+    /// because PiP asks from outside the main actor, and libVLC's own length is
+    /// the value that needed correcting.
+    var lengthMs: Int64 = 0
 
     /// Handed the PiP controller once the video output can float, and told
     /// whenever PiP starts or stops.
@@ -74,7 +78,7 @@ extension VLCVideoDrawable: VLCPictureInPictureMediaControlling {
     }
 
     func mediaLength() -> Int64 {
-        player?.media?.length.value?.int64Value ?? 0
+        lengthMs > 0 ? lengthMs : (player?.media?.length.value?.int64Value ?? 0)
     }
 
     func mediaTime() -> Int64 {
