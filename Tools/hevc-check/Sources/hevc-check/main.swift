@@ -6,10 +6,13 @@ import CoreVideo
 // hevc-check <fixtures dir>
 //
 // Renames hev1 → hvc1 with the app's HEVCTagPatcher, then makes AVFoundation
-// prove the result: the sample entry reads hvc1, every frame decodes, and the
-// HLS stream plays over HTTP (served by the workflow on port 8765). The
-// unpatched originals are tried too, and only reported — they show what the
-// patch is for.
+// prove the result: the sample entry reads hvc1 and every frame decodes.
+//
+// HLS is proven the same way, from a file: the patched init segment followed by
+// the stream's own media segments is a fragmented MP4, so decoding it tests
+// exactly the bytes the relay rewrites. Playback over HTTP is attempted too but
+// only reported — on the hosted runner even FFmpeg's own hvc1 stream fails
+// there (CoreMedia -12927), so it cannot tell a good stream from a bad one.
 
 enum Report {
     static var failures = 0
@@ -62,7 +65,7 @@ func decodedFrames(_ asset: AVAsset, _ track: AVAssetTrack) throws -> Int {
         ) as? String
         let frames = try decodedFrames(asset, video)
         if frames < 190 { fail("\(name): decoded \(frames) frames, expected 200") }
-        print("\(name): hvc1, transfer \(transfer ?? "none"), \(frames) frames decoded")
+        notice("\(name): hvc1, transfer \(transfer ?? "none"), \(frames) frames decoded")
     } catch {
         fail("\(name): \(error)")
     }
@@ -184,7 +187,26 @@ do {
             let text = try String(contentsOf: url, encoding: .utf8)
             try HEVCTagPatcher.renameCodecs(text).write(to: url, atomically: true, encoding: .utf8)
         }
-        await play("hls-hev1-patched/master.m3u8", name: "HLS fMP4 patched", required: true)
+
+        let segments = try FileManager.default.contentsOfDirectory(atPath: source.path)
+            .filter { $0.hasSuffix(".m4s") }
+            .sorted()
+        var original = try Data(contentsOf: source.appendingPathComponent("init.mp4"))
+        var patched = renamed
+        for segment in segments {
+            let bytes = try Data(contentsOf: source.appendingPathComponent(segment))
+            original.append(bytes)
+            patched.append(bytes)
+        }
+        let originalFlat = root.appendingPathComponent("hls-hev1-joined.mp4")
+        let patchedFlat = root.appendingPathComponent("hls-hev1-patched-joined.mp4")
+        try original.write(to: originalFlat)
+        try patched.write(to: patchedFlat)
+        let playable = (try? await AVURLAsset(url: originalFlat).load(.isPlayable)) ?? false
+        notice("baseline — HLS init + \(segments.count) segments, unpatched: isPlayable \(playable)")
+        await verify(patchedFlat, name: "HLS init + segments patched")
+
+        await play("hls-hev1-patched/master.m3u8", name: "HLS fMP4 patched", required: false)
     } else {
         fail("HLS: init segment has no hev1 sample entry")
     }
