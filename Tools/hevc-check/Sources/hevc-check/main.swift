@@ -11,11 +11,13 @@ import CoreVideo
 // unpatched originals are tried too, and only reported — they show what the
 // patch is for.
 
-@MainActor var failures = 0
+enum Report {
+    static var failures = 0
+}
 
 @MainActor func fail(_ message: String) {
     print("::error::\(message)")
-    failures += 1
+    Report.failures += 1
 }
 
 let root = URL(fileURLWithPath: CommandLine.arguments[1])
@@ -170,5 +172,5 @@ do {
     fail("HLS: \(error)")
 }
 
-print(failures == 0 ? "all checks passed" : "\(failures) check(s) failed")
-exit(failures == 0 ? 0 : 1)
+print(Report.failures == 0 ? "all checks passed" : "\(Report.failures) check(s) failed")
+exit(Report.failures == 0 ? 0 : 1)
