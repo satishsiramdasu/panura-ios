@@ -112,7 +112,7 @@ struct SettingsView: View {
             "preferred_audio_language",
             "gesture_seek", "gesture_brightness", "gesture_volume", "gesture_zoom",
             "gesture_double_tap", "gesture_long_press", "gesture_sensitivity",
-            "mark_last_played", "show_extension", "videos_layout", "player_engine",
+            "mark_last_played", "show_extension", "videos_layout", "player_engine_mode",
             "debug_detection", "auto_play_click", "block_page_fullscreen", "ad_block",
             "desktop_mode_default",
         ]
@@ -128,10 +128,9 @@ struct PlaybackPreferencesView: View {
     @AppStorage("background_play") private var backgroundPlay = false
     /// Read by both players — resume each video from where it was left.
     @AppStorage("resume_playback") private var resumePlayback = true
-    /// Which engine plays. A testing control: it goes when the Apple player
-    /// ships alone.
+    /// Which engine plays. Auto picks per video; the other two force one.
     @AppStorage(PlayerEngineKind.defaultsKey)
-    private var playerEngine: String = PlayerEngineKind.avPlayer.rawValue
+    private var playerEngine: String = PlayerEngineKind.auto.rawValue
     /// Rate every video opens at; the player's speed control overrides it.
     @AppStorage("default_playback_speed") private var defaultSpeed = 1.0
 
@@ -169,9 +168,9 @@ struct PlaybackPreferencesView: View {
                 .pickerStyle(.menu)
                 .tint(PanuraTheme.accent)
             } header: {
-                Text("Engine (testing)")
+                Text("Engine")
             } footer: {
-                Text("The Apple player adds Picture in Picture and AirPlay. VLC stays here while the two are compared, and a video that fails in the Apple player offers VLC on its error screen.")
+                Text("Auto plays videos in the Apple player, with Picture in Picture, AirPlay and HDR, and switches to VLC by itself when a video's format needs it.")
             }
 
             Section {

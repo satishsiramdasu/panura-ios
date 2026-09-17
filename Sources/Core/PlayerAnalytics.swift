@@ -2,31 +2,30 @@ import Foundation
 import FirebaseCore
 import FirebaseAnalytics
 
-/// The playback events that decide whether VLC stays in the app: how often the
-/// Apple player fails, on what kind of source, whether VLC then rescues it, and
-/// how often an HEVC repair route is taken.
+/// The playback events that decide whether VLC stays in the app: how often Auto
+/// hands a video to VLC, why, on what kind of source, and whether VLC then
+/// plays it.
 ///
 /// Types only, by design. No URL, host, title or file name is ever sent — the
 /// privacy policy says what leaves the device, and a page address is not on it.
 enum PlayerAnalytics {
-    static func opened(engine: String, item: MediaItem, fallback: Bool) {
-        log("player_open", engine: engine, item: item, extra: ["fallback": fallback ? "yes" : "no"])
+    /// `switched` is why Auto handed this video to VLC — extension, failed,
+    /// unsupported — or "no".
+    static func opened(engine: String, item: MediaItem, switchReason: String?) {
+        log("player_open", engine: engine, item: item, extra: ["switched": switchReason ?? "no"])
     }
 
+    /// An error the user actually saw: a forced engine, or VLC after a switch.
     static func failed(engine: String, item: MediaItem) {
         log("player_failed", engine: engine, item: item)
     }
 
-    static func fallbackTapped(item: MediaItem) {
-        log("vlc_fallback_tap", engine: "av", item: item)
-    }
-
-    static func fallbackResult(played: Bool, item: MediaItem) {
-        log("vlc_fallback_result", engine: "vlc", item: item, extra: ["result": played ? "played" : "failed"])
-    }
-
-    static func route(_ route: PlaybackRoute, item: MediaItem) {
-        log("player_route", engine: "av", item: item, extra: ["route": route.rawValue])
+    /// Whether VLC played what the Apple player could not.
+    static func switchResult(played: Bool, item: MediaItem, reason: String) {
+        log("vlc_switch_result", engine: "vlc", item: item, extra: [
+            "result": played ? "played" : "failed",
+            "reason": reason,
+        ])
     }
 
     /// The container or protocol, from the site rule's type or the extension.

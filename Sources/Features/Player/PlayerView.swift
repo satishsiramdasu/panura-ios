@@ -19,14 +19,16 @@ struct PlayerPlaylist {
 struct PlayerView<Model: PlayerEngine>: View {
     let item: MediaItem
     var playlist: PlayerPlaylist? = nil
-    /// Offered on the error screen when set — the Apple player's way out to VLC
-    /// while both are being compared.
-    var onFallback: (() -> Void)? = nil
-    /// This screen is VLC trying a video the Apple player could not open. Its
+    /// Auto's hand-over to VLC: called once, with the playlist position and a
+    /// reason, when this player cannot play the current video. While it is set
+    /// the error screen never shows — VLC replaces this view instead.
+    var onUnsupported: ((Int, String) -> Void)? = nil
+    /// On the VLC screen that took over from the Apple player: why it did. Its
     /// outcome is reported once, for the decision on keeping VLC.
-    var isFallback = false
+    var switchReason: String? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var fallbackOutcomeReported = false
+    @State private var handedOver = false
     @StateObject private var model = Model.makeEngine()
 
     // Playlist position
@@ -131,9 +133,11 @@ struct PlayerView<Model: PlayerEngine>: View {
 
             gestureSurface.ignoresSafeArea()
 
-            if let failure = model.failure {
+            if let failure = model.failure, onUnsupported == nil {
                 failureView(failure)
-            } else if isLoading {
+            } else if isLoading || model.failure != nil {
+                // A failure about to be handed to VLC reads as loading, not as
+                // an error the user is then told to ignore.
                 LoadingRing()
             }
 
@@ -158,7 +162,7 @@ struct PlayerView<Model: PlayerEngine>: View {
             OrientationManager.allowAll()
             scheduleHide()
             startTicker()
-            PlayerAnalytics.opened(engine: engineName, item: item, fallback: isFallback)
+            PlayerAnalytics.opened(engine: engineName, item: item, switchReason: switchReason)
         }
         .onDisappear {
             ticker?.cancel()
@@ -175,9 +179,15 @@ struct PlayerView<Model: PlayerEngine>: View {
             if let p { OrientationManager.applyVideoOrientation(portrait: p) }
         }
         .onChange(of: model.failure) { failure in
-            guard failure != nil else { return }
-            PlayerAnalytics.failed(engine: engineName, item: item)
-            reportFallbackOutcome(played: false)
+            guard let failure else { return }
+            if let onUnsupported {
+                guard !handedOver else { return }
+                handedOver = true
+                onUnsupported(index, failure == AVPlayerModel.unsupportedMessage ? "unsupported" : "failed")
+            } else {
+                PlayerAnalytics.failed(engine: engineName, item: item)
+                reportFallbackOutcome(played: false)
+            }
         }
         .onChange(of: model.isPlaying) { playing in
             if playing { reportFallbackOutcome(played: true) }
@@ -752,19 +762,6 @@ struct PlayerView<Model: PlayerEngine>: View {
                     .foregroundStyle(.white.opacity(0.7))
                     .multilineTextAlignment(.center)
             }
-            if let onFallback {
-                Button {
-                    PlayerAnalytics.fallbackTapped(item: item)
-                    onFallback()
-                } label: {
-                    Label("Try with VLC", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.callout.weight(.semibold))
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(PanuraTheme.accent, in: Capsule())
-                        .foregroundStyle(.black)
-                }
-                .padding(.top, 6)
-            }
         }
         .padding(24)
     }
@@ -911,9 +908,9 @@ struct PlayerView<Model: PlayerEngine>: View {
     private var engineName: String { Model.self == VLCPlayerModel.self ? "vlc" : "av" }
 
     private func reportFallbackOutcome(played: Bool) {
-        guard isFallback, !fallbackOutcomeReported else { return }
+        guard let switchReason, !fallbackOutcomeReported else { return }
         fallbackOutcomeReported = true
-        PlayerAnalytics.fallbackResult(played: played, item: item)
+        PlayerAnalytics.switchResult(played: played, item: item, reason: switchReason)
     }
 
     // MARK: playlist next / previous

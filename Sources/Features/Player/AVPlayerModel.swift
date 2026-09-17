@@ -79,15 +79,6 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     private var playedThroughRelay = false
     /// One relay retry per item; a second would loop on a stream that is dead.
     private var relayRetryUsed = false
-    /// How this item is opened. Starts direct; `PlaybackRouter` may move it to
-    /// an HEVC tag repair once it has looked at the source.
-    private var plan = PlaybackPlan.direct
-    private var probeTask: Task<Void, Never>?
-    /// True while the router is still looking. A failure in that window waits
-    /// for its answer rather than showing the error the repair would prevent.
-    private var probing = false
-    private var failedWhileProbing = false
-    private var hevcLoader: HEVCTagLoader?
 
     private var pendingResumeSeconds: Double?
     private var resumeApplied = false
@@ -112,6 +103,14 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     /// that stops playback (an audio interruption, a web page grabbing the
     /// session) is undone once it ends; a pause the user asked for never is.
     private var userPaused = false
+    /// The HLS format check and the no-picture watch, per item.
+    private var supportTask: Task<Void, Never>?
+    private var pictureWatch: Task<Void, Never>?
+
+    /// Raised when this player cannot play the video's format: HEVC in MPEG-TS
+    /// found by `AppleHLSSupport`, or no picture ever appearing. Auto hands the
+    /// video to VLC on it; with the Apple player forced, the user reads it.
+    static let unsupportedMessage = "The Apple player can't play this video's format. Choose Auto or VLC in Settings → Playback."
 
     private var timeObserver: Any?
     private var playerObservations: [NSKeyValueObservation] = []
@@ -175,8 +174,6 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         relayRetryUsed = false; forceRelay = false
         thumbnailCaptured = false
         userPaused = false
-        plan = .direct
-        failedWhileProbing = false
         clearSidecar()
         // Offered at once: the page's subtitle files are known before the
         // stream's own options have loaded.
@@ -192,7 +189,8 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
 
         buildAndPlay()
         loadQualities()
-        startProbe(newItem)
+        checkSupport(newItem)
+        watchForPicture(newItem)
     }
 
     /// (Re)builds the player item for the current source and starts it.
@@ -206,13 +204,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         // Headers do NOT need it: AVURLAsset sends them itself, below.
         let path = item.url.path.lowercased()
         let needsTypeRelay = !item.isLocal && item.contentType == "hls" && !path.hasSuffix(".m3u8")
-        let renameTags = plan.route == .hevcTagStream
-        let relay = !item.isLocal && (needsTypeRelay || forceRelay || renameTags)
+        let relay = !item.isLocal && (needsTypeRelay || forceRelay)
         let playURL = relay
-            ? StreamProxy.shared.proxied(
-                url: item.url, headers: item.headers,
-                playlistHint: needsTypeRelay || renameTags, renameHEVCTags: renameTags
-            )
+            ? StreamProxy.shared.proxied(url: item.url, headers: item.headers, playlistHint: needsTypeRelay)
             : item.url
         playedThroughRelay = relay
 
@@ -227,18 +221,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             // which is fine for a 4 MB segment and ruinous for a 2 GB MP4.
             options["AVURLAssetHTTPHeaderFieldsKey"] = item.headers
         }
-        hevcLoader?.invalidate()
-        hevcLoader = nil
-        let asset: AVURLAsset
-        if plan.route == .hevcTagFile, let source = plan.file {
-            // Byte ranges streamed from the source with the tag renamed in
-            // passing; the relay would read the whole file first.
-            let loader = HEVCTagLoader(source: source)
-            hevcLoader = loader
-            asset = loader.makeAsset()
-        } else {
-            asset = AVURLAsset(url: playURL, options: options)
-        }
+        let asset = AVURLAsset(url: playURL, options: options)
         let playerItem = AVPlayerItem(asset: asset)
 
         attachVideoOutput(to: playerItem)
@@ -265,7 +248,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     /// completely before a single frame played.
     @discardableResult
     private func retryThroughRelay() -> Bool {
-        guard let item, plan.route == .direct, !item.isLocal, !relayRetryUsed, !playedThroughRelay,
+        guard let item, !item.isLocal, !relayRetryUsed, !playedThroughRelay,
               !Self.isProgressive(item) else { return false }
         relayRetryUsed = true
         forceRelay = true
@@ -294,10 +277,8 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         if let subtitleObserver { player.removeTimeObserver(subtitleObserver) }
         subtitleObserver = nil
         sidecarTask?.cancel()
-        probeTask?.cancel()
-        probing = false
-        hevcLoader?.invalidate()
-        hevcLoader = nil
+        supportTask?.cancel()
+        pictureWatch?.cancel()
         playerObservations.removeAll()
         itemObservations.removeAll()
         for token in itemNotifications { NotificationCenter.default.removeObserver(token) }
@@ -392,60 +373,17 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             applyResumeIfPending()
             updateNowPlaying(force: true)
         case .failed:
-            if probing {
-                failedWhileProbing = true
-                return
-            }
-            handleFailure()
+            // One more attempt, through the relay — a genuinely different
+            // request: the playlist re-served with a playlist MIME type, every
+            // segment under an extensionless URL with its real Content-Type,
+            // decoy image headers stripped on the way through.
+            if retryThroughRelay() { return }
+            buffering = false
+            isPlaying = false
+            failure = "This stream could not be opened."
+            dropResumeIfSourceIsGone()
         default:
             break
-        }
-    }
-
-    private func handleFailure() {
-        // One more attempt, through the relay — a genuinely different
-        // request: the playlist re-served with a playlist MIME type, every
-        // segment under an extensionless URL with its real Content-Type,
-        // decoy image headers stripped on the way through.
-        if retryThroughRelay() { return }
-        buffering = false
-        isPlaying = false
-        failure = "This stream could not be opened."
-        dropResumeIfSourceIsGone()
-    }
-
-    /// Asks `PlaybackRouter` about the item alongside the direct start. A repair
-    /// route rebuilds the item on it — unless the direct start is already
-    /// showing video, in which case the source needed no help.
-    private func startProbe(_ probed: MediaItem) {
-        probeTask?.cancel()
-        guard PlaybackRouter.worthProbing(probed) else {
-            probing = false
-            return
-        }
-        probing = true
-        probeTask = Task { [weak self] in
-            let found = await PlaybackRouter.plan(for: probed)
-            guard let self, !Task.isCancelled, self.item?.id == probed.id else { return }
-            self.probing = false
-            let current = self.player.currentItem
-            let showingVideo = current?.status == .readyToPlay && current?.presentationSize != .zero
-            if found.route != .direct, !showingVideo {
-                self.plan = found
-                PlayerAnalytics.route(found.route, item: probed)
-                let at = self.elapsedSeconds
-                if at > 2 {
-                    self.pendingResumeSeconds = at
-                    self.resumeApplied = false
-                }
-                self.failedWhileProbing = false
-                self.failure = nil
-                self.buffering = true
-                self.buildAndPlay()
-            } else if self.failedWhileProbing {
-                self.failedWhileProbing = false
-                self.handleFailure()
-            }
         }
     }
 
@@ -463,6 +401,54 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             lastResumeSave = Date()
             saveResume()
         }
+    }
+
+    /// Beside the direct start, never before it: a supported stream pays nothing.
+    private func checkSupport(_ checked: MediaItem) {
+        supportTask?.cancel()
+        supportTask = Task { [weak self] in
+            guard await AppleHLSSupport.isUnsupported(checked) else { return }
+            guard let self, !Task.isCancelled, self.item?.id == checked.id else { return }
+            self.raiseUnsupported()
+        }
+    }
+
+    /// The backstop for what the format check cannot see. AVPlayer given video
+    /// it cannot decode rarely says so: it plays the audio over a black screen,
+    /// or never gets past loading. Three seconds of playback without a picture,
+    /// or twenty seconds of trying without one, count as unsupported. A pause
+    /// before the first picture restarts the clock — nothing is being tried.
+    /// Runs on its own clock because the time observer does not fire while
+    /// nothing plays.
+    private func watchForPicture(_ watched: MediaItem) {
+        pictureWatch?.cancel()
+        pictureWatch = Task { [weak self] in
+            var started = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard let self, self.item?.id == watched.id, self.failure == nil else { return }
+                guard let current = self.player.currentItem else { continue }
+                if current.presentationSize != .zero { return }
+                if self.userPaused {
+                    started = Date()
+                    continue
+                }
+                let playedWithoutPicture = current.status == .readyToPlay && self.elapsedSeconds > 3
+                if playedWithoutPicture || Date().timeIntervalSince(started) > 20 {
+                    self.raiseUnsupported()
+                    return
+                }
+            }
+        }
+    }
+
+    private func raiseUnsupported() {
+        guard failure == nil else { return }
+        pictureWatch?.cancel()
+        player.pause()
+        buffering = false
+        isPlaying = false
+        failure = Self.unsupportedMessage
     }
 
     private func reachedEnd() {

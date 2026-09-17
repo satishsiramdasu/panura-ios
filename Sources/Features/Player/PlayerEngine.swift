@@ -172,44 +172,94 @@ protocol PlayerEngine: ObservableObject {
 // MARK: - Engine choice
 
 enum PlayerEngineKind: String, CaseIterable, Identifiable {
+    case auto = "auto"
     case avPlayer = "av"
     case vlc = "vlc"
 
-    static let defaultsKey = "player_engine"
+    /// A new key rather than the testing one: whoever picked a single engine
+    /// while the two were compared starts on Auto, not on that old choice.
+    static let defaultsKey = "player_engine_mode"
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
+        case .auto: return "Auto"
         case .avPlayer: return "Apple player"
         case .vlc: return "VLC"
         }
     }
+
+    /// Containers the Apple player never reads, so Auto opens them in VLC at
+    /// once instead of waiting for a failure. A hint only — sites disguise
+    /// extensions (a playlist as .txt, segments as .css or .woff), which is why
+    /// the hand-over also listens to the player itself.
+    static func needsVLC(_ item: MediaItem) -> Bool {
+        let path = item.url.path.lowercased()
+        return ["mkv", "avi", "webm", "flv", "wmv", "rmvb", "ts", "mpg", "mpeg", "vob", "ogv", "divx"]
+            .contains { path.hasSuffix("." + $0) }
+    }
 }
 
-/// What every screen presents to play something. Picks the engine, and owns
-/// the one-tap fallback to VLC while the two are being compared.
+/// What every screen presents to play something, and where the engine is chosen.
 ///
-/// ⚠️ Testing scaffold. When the Apple player ships alone (phase 6), this
-/// collapses to `PlayerView<AVPlayerModel>`, the setting goes, and VLCKit
-/// leaves the build — keeping it would keep its size.
+/// Auto, the default, opens the Apple player — Picture in Picture, AirPlay, HDR,
+/// hardware decoding — and hands the video to VLC without asking when the Apple
+/// player cannot play it: a container it never reads, a stream it refuses, or
+/// one it plays without ever showing a picture (HEVC inside MPEG-TS does that).
+/// The user sees the video start, not a choice. Settings can still force
+/// either engine; forced, the Apple player shows its error instead.
 struct PlayerScreen: View {
     let item: MediaItem
     var playlist: PlayerPlaylist? = nil
 
     @AppStorage(PlayerEngineKind.defaultsKey)
-    private var engine: String = PlayerEngineKind.avPlayer.rawValue
+    private var engine: String = PlayerEngineKind.auto.rawValue
 
-    /// Set when the Apple player could not open this item and the user asked
-    /// VLC to try. Per presentation: the next video starts on the chosen engine
-    /// again, so one bad stream does not quietly change what gets tested.
-    @State private var fellBackToVLC = false
+    /// VLC taking over from the Apple player, and what it should open. Per
+    /// presentation: the next video starts on the Apple player again.
+    @State private var takeover: Takeover?
+
+    private struct Takeover {
+        let item: MediaItem
+        let playlist: PlayerPlaylist?
+        let reason: String
+    }
 
     var body: some View {
-        if fellBackToVLC || engine == PlayerEngineKind.vlc.rawValue {
-            PlayerView<VLCPlayerModel>(item: item, playlist: playlist, isFallback: fellBackToVLC)
+        let kind = PlayerEngineKind(rawValue: engine) ?? .auto
+        if let takeover {
+            PlayerView<VLCPlayerModel>(item: takeover.item, playlist: takeover.playlist, switchReason: takeover.reason)
+        } else if kind == .vlc {
+            PlayerView<VLCPlayerModel>(item: item, playlist: playlist)
+        } else if kind == .auto, PlayerEngineKind.needsVLC(item) {
+            PlayerView<VLCPlayerModel>(item: item, playlist: playlist, switchReason: "extension")
         } else {
-            PlayerView<AVPlayerModel>(item: item, playlist: playlist, onFallback: { fellBackToVLC = true })
+            PlayerView<AVPlayerModel>(
+                item: item,
+                playlist: playlist,
+                onUnsupported: kind == .auto ? { index, reason in handOver(at: index, reason: reason) } : nil
+            )
+        }
+    }
+
+    /// VLC opens the video the Apple player was on — not necessarily the first,
+    /// if the user had moved through a playlist.
+    private func handOver(at index: Int, reason: String) {
+        guard let playlist, index != playlist.startIndex else {
+            takeover = Takeover(item: item, playlist: playlist, reason: reason)
+            return
+        }
+        Task {
+            if let current = await playlist.load(index) {
+                takeover = Takeover(
+                    item: current,
+                    playlist: PlayerPlaylist(count: playlist.count, startIndex: index, load: playlist.load),
+                    reason: reason
+                )
+            } else {
+                takeover = Takeover(item: item, playlist: playlist, reason: reason)
+            }
         }
     }
 }

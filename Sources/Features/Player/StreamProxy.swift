@@ -24,13 +24,8 @@ final class StreamProxy {
     private let server = HttpServer()
     private var started = false
     private var port: UInt16 = 0
-    /// session → header set captured at detection time, and whether HEVC
-    /// `hev1` tags are renamed on the way through.
-    private var sessions: [String: Session] = [:]
-    private struct Session {
-        var headers: [String: String]
-        var renameHEVCTags: Bool
-    }
+    /// session → header set captured at detection time.
+    private var sessions: [String: [String: String]] = [:]
     /// id → upstream URL. The URL is kept HERE rather than encoded into the
     /// proxy URL: base64 of a real segment URL routinely contains `/` and `=`,
     /// and query-string parsing mangles both (`+` also decodes to a space), so
@@ -54,12 +49,7 @@ final class StreamProxy {
     /// demuxer from the extension as well as the MIME type, and these CDNs give
     /// it neither — so the hint plus the relay's corrected Content-Type make
     /// both agree that this is HLS.
-    ///
-    /// `renameHEVCTags` turns `hev1` into `hvc1` in playlist CODECS attributes
-    /// and init segments, for the Apple player — see `HEVCTagPatcher`.
-    func proxied(
-        url: URL, headers: [String: String], playlistHint: Bool = false, renameHEVCTags: Bool = false
-    ) -> URL {
+    func proxied(url: URL, headers: [String: String], playlistHint: Bool = false) -> URL {
         guard start() else { return url }
         let session = UUID().uuidString
         lock.lock()
@@ -71,7 +61,7 @@ final class StreamProxy {
             targetIDs = targetIDs.filter { !$0.key.hasPrefix("\(old)|") }
         }
         currentSession = session
-        sessions[session] = Session(headers: headers, renameHEVCTags: renameHEVCTags)
+        sessions[session] = headers
         lock.unlock()
         return proxyURL(for: url, session: session, suffix: playlistHint ? ".m3u8" : "") ?? url
     }
@@ -120,8 +110,7 @@ final class StreamProxy {
             // The id may carry the .m3u8 demuxer hint; it is not part of the key.
             let key = id.hasSuffix(".m3u8") ? String(id.dropLast(5)) : id
             self.lock.lock()
-            let headers = self.sessions[session]?.headers ?? [:]
-            let renameTags = self.sessions[session]?.renameHEVCTags ?? false
+            let headers = self.sessions[session] ?? [:]
             let target = self.targets[key]?.url
             self.lock.unlock()
 
@@ -134,21 +123,13 @@ final class StreamProxy {
             }
 
             if self.isPlaylist(target: target, mime: result.mime, body: result.body) {
-                var rewritten = self.rewritePlaylist(result.body, base: target, session: session)
-                if renameTags, let text = String(data: rewritten, encoding: .utf8) {
-                    rewritten = Data(HEVCTagPatcher.renameCodecs(text).utf8)
-                }
+                let rewritten = self.rewritePlaylist(result.body, base: target, session: session)
                 return .ok(.data(rewritten, contentType: "application/vnd.apple.mpegurl"))
             }
 
             // Only safe on a whole-body response: stripping bytes would
             // invalidate the offsets a ranged request was answered with.
-            var body = range == nil ? Self.stripDecoyHeader(result.body) : result.body
-            // Init segments are a few kilobytes. A media segment is only walked
-            // at its top level — moof, mdat — and comes back untouched.
-            if renameTags, range == nil, body.count <= 8_000_000, let renamed = HEVCTagPatcher.patch(body) {
-                body = renamed
-            }
+            let body = range == nil ? Self.stripDecoyHeader(result.body) : result.body
 
             var out = ["Content-Type": result.mime ?? "application/octet-stream"]
             result.contentRange.map { out["Content-Range"] = $0 }

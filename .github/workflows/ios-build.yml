@@ -11,8 +11,6 @@ on:
       - '**/*.md'
       - '.gitignore'
       - 'docs/**'
-      - 'Tools/**'
-      - '.github/workflows/hevc-check.yml'
 
 # A second push supersedes the first instead of paying for both.
 concurrency:
