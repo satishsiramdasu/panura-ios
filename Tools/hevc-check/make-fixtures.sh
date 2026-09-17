@@ -16,18 +16,25 @@ encode() {
     -f lavfi -i "sine=frequency=440:sample_rate=48000" \
     -t 8 -map 0:v -map 1:a \
     -c:v libx265 -preset ultrafast -pix_fmt yuv420p10le -x265-params "$X265" \
-    -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc -tag:v hev1 \
+    -color_primaries bt2020 -color_trc smpte2084 -colorspace bt2020nc \
     -c:a aac -b:a 128k \
     "$@"
 }
 
-encode -movflags +faststart hev1-faststart.mp4
-encode hev1-moov-at-end.mp4
+hls() {  # hls <dir> <tag>
+  mkdir -p "$1"
+  encode -tag:v "$2" -f hls -hls_time 2 -hls_playlist_type vod -hls_segment_type fmp4 \
+    -hls_fmp4_init_filename init.mp4 -hls_segment_filename "$1/seg%03d.m4s" \
+    -master_pl_name master.m3u8 "$1/index.m3u8"
+}
 
-mkdir -p hls-hev1
-encode -f hls -hls_time 2 -hls_playlist_type vod -hls_segment_type fmp4 \
-  -hls_fmp4_init_filename init.mp4 -hls_segment_filename "hls-hev1/seg%03d.m4s" \
-  -master_pl_name master.m3u8 hls-hev1/index.m3u8
+encode -tag:v hev1 -movflags +faststart hev1-faststart.mp4
+encode -tag:v hev1 hev1-moov-at-end.mp4
+
+hls hls-hev1 hev1
+# Control: the same stream as FFmpeg writes it for Apple. If this does not play
+# either, the failure is the runner or the harness, not the rename.
+hls hls-hvc1 hvc1
 
 ffprobe -hide_banner -loglevel error -select_streams v \
   -show_entries stream=codec_tag_string,color_transfer -of compact hev1-faststart.mp4

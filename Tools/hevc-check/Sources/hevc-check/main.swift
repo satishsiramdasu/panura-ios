@@ -172,8 +172,9 @@ do {
     try? FileManager.default.removeItem(at: target)
     try FileManager.default.copyItem(at: source, to: target)
 
-    let master = try String(contentsOf: source.appendingPathComponent("master.m3u8"), encoding: .utf8)
-    notice("master playlist: " + master.replacingOccurrences(of: "\n", with: " | "))
+    let media = try String(contentsOf: source.appendingPathComponent("index.m3u8"), encoding: .utf8)
+    notice("media playlist: " + media.prefix(400).replacingOccurrences(of: "\n", with: " | "))
+    await play("hls-hvc1/master.m3u8", name: "HLS fMP4 hvc1 control", required: false)
 
     let initURL = target.appendingPathComponent("init.mp4")
     if let renamed = try HEVCTagPatcher.patch(Data(contentsOf: initURL)) {
