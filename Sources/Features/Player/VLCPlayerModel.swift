@@ -949,20 +949,16 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
         }
     }
 
-    // Track events. Named by selector: they are optional requirements, and the
-    // Swift names libVLC's headers import under are not worth depending on.
-    @objc(mediaPlayerTrackAdded:withType:)
-    nonisolated func vlcTrackAdded(_ trackId: String, type: VLCMedia.TrackType) {
+    // Track events: a track appeared, went away, or changed selection.
+    nonisolated func mediaPlayerTrackAdded(_ trackId: String, with trackType: VLCMedia.TrackType) {
         Task { @MainActor in refreshTracks() }
     }
 
-    @objc(mediaPlayerTrackRemoved:withType:)
-    nonisolated func vlcTrackRemoved(_ trackId: String, type: VLCMedia.TrackType) {
+    nonisolated func mediaPlayerTrackRemoved(_ trackId: String, with trackType: VLCMedia.TrackType) {
         Task { @MainActor in refreshTracks() }
     }
 
-    @objc(mediaPlayerTrackSelected:selectedId:unselectedId:)
-    nonisolated func vlcTrackSelected(_ type: VLCMedia.TrackType, selectedId: String?, unselectedId: String?) {
+    nonisolated func mediaPlayerTrackSelected(_ trackType: VLCMedia.TrackType, selectedId: String, unselectedId: String) {
         Task { @MainActor in refreshTracks() }
     }
 
