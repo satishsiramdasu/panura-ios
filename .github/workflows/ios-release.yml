@@ -63,7 +63,7 @@ jobs:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Packages/**/Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
       # ⚠️ A release build MUST carry the rotated salt, not the one committed to

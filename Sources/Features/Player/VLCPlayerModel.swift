@@ -2,7 +2,8 @@ import Foundation
 import UIKit
 import AVFoundation
 import MediaPlayer
-import VLCKitSPM
+import AVKit
+import VLCKit
 
 /// Wraps VLCMediaPlayer (libVLC) — plays every format AVPlayer can't and, unlike
 /// AVPlayer, reliably honors HTTP Referer/User-Agent/Cookie headers, so
@@ -58,8 +59,20 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     typealias AspectMode = PlayerAspectMode
 
     let player = VLCMediaPlayer()
-    /// The libVLC drawable — held weakly so the PiP bridge can snapshot it.
+    /// The player's video view, which libVLC's own output view sits inside.
     private(set) weak var drawableView: UIView?
+    /// What libVLC is actually handed as its drawable — see `VLCVideoDrawable`.
+    private var videoDrawable: VLCVideoDrawable?
+
+    /// VLCKit 4's PiP controller, once the video output can float. Held weakly,
+    /// as VLC for iOS does: the video output owns it and ends it with itself.
+    private weak var pipController: VLCPictureInPictureWindowControlling?
+    @Published private(set) var pipAvailable = false
+    @Published private(set) var isPictureInPictureActive = false
+
+    /// Length in milliseconds as libVLC last reported it. A stream often has no
+    /// length when it opens, so this follows the player's length events.
+    private var lengthMs: Int64 = 0
 
     private var tracksLoaded = false
     private var item: MediaItem?
@@ -73,10 +86,6 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// dead.
     private var relayRetryUsed = false
     private var observersAdded = false
-
-    // char* options libVLC copies internally; we own the buffers and free on change.
-    private var aspectPtr: UnsafeMutablePointer<CChar>?
-    private var cropPtr: UnsafeMutablePointer<CChar>?
 
     // Resume-from-position bookkeeping.
     private var pendingResumeSeconds: Double?
@@ -118,7 +127,17 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         self.item = item
         displayTitle = item.title
         drawableView = view
-        player.drawable = view
+        let drawable = VLCVideoDrawable(container: view, player: player)
+        drawable.onPictureInPictureReady = { [weak self] controller in
+            Task { @MainActor in self?.pictureInPictureReady(controller) }
+        }
+        drawable.onPictureInPictureChanged = { [weak self] started in
+            Task { @MainActor in self?.isPictureInPictureActive = started }
+        }
+        videoDrawable = drawable
+        // Before the first play(): the video output checks the drawable for PiP
+        // support when it is created, not afterwards.
+        player.drawable = drawable
         player.delegate = self
 
         if resumeEnabled {
@@ -174,7 +193,12 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             : sourceURL
         playedThroughRelay = relay
 
-        let media = VLCMedia(url: playURL)
+        guard let media = VLCMedia(url: playURL) else {
+            buffering = false
+            failure = "This stream could not be opened."
+            return
+        }
+        lengthMs = 0
         applyHeaders(item.headers, to: media)     // belt-and-braces for the direct path
         applySubtitleStyle(to: media)
         player.media = media
@@ -189,10 +213,11 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // Sidecar subtitles sniffed from the page — the stream itself usually
         // carries none, so without these there are no captions at all.
         for track in item.subtitles {
-            player.addPlaybackSlave(track.url, type: .subtitle, enforce: false)
+            _ = player.addPlaybackSlave(track.url, type: .subtitle, enforce: false)
         }
 
         tracksLoaded = false
+        preferredLanguagesApplied = false
     }
 
     /// Headers libVLC can set itself, via the options in `applyHeaders`.
@@ -290,6 +315,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         audioTracks = []; subtitleTracks = []
         currentAudioId = -1; currentSubtitleId = -1
         tracksLoaded = false
+        preferredLanguagesApplied = false
         pendingResumeSeconds = nil; resumeApplied = false
         relayRetryUsed = false; forceRelay = false
         if resumeEnabled {
@@ -316,14 +342,15 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         let v = UserDefaults.standard.integer(forKey: "skip_interval")
         return v > 0 ? v : 10
     }
-    func skipForward()  { player.jumpForward(Int32(skipInterval)) }
-    func skipBackward() { player.jumpBackward(Int32(skipInterval)) }
+    func skipForward()  { skip(skipInterval) }
+    func skipBackward() { skip(-skipInterval) }
+    /// One relative seek. libVLC 4 takes the offset in milliseconds.
     func skip(_ seconds: Int) {
-        seconds >= 0 ? player.jumpForward(Int32(seconds)) : player.jumpBackward(Int32(-seconds))
+        player.jump(withOffset: Int32(seconds * 1000))
     }
 
     func seek(to fraction: Float) {
-        player.position = max(0, min(1, fraction))
+        player.position = Double(max(0, min(1, fraction)))
         // VLC can wedge in the buffering state after a seek (notably local files),
         // leaving the spinner up and playback stalled — nudge it when the user
         // expects playback. Harmless if already playing.
@@ -336,6 +363,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     func endSpeedBoost()   { setRate(rateBeforeBoost) }
 
     func stop() {
+        if isPictureInPictureActive { pipController?.stopPictureInPicture() }
         bufferWatchdog?.cancel()
         sleepTask?.cancel()
         sleepTask = nil
@@ -344,16 +372,29 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         NotificationCenter.default.removeObserver(self)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        if let p = aspectPtr { free(p); aspectPtr = nil }
-        if let p = cropPtr { free(p); cropPtr = nil }
         ScreenBrightness.restore()
     }
 
+    /// Ids are positions in libVLC's track lists; -1 turns the kind off.
     func selectAudio(_ id: Int) {
-        player.currentAudioTrackIndex = Int32(id); currentAudioId = id
+        let tracks = player.audioTracks
+        if tracks.indices.contains(id) {
+            tracks[id].isSelectedExclusively = true
+            currentAudioId = id
+        } else {
+            player.deselectAllAudioTracks()
+            currentAudioId = -1
+        }
     }
     func selectSubtitle(_ id: Int) {
-        player.currentVideoSubTitleIndex = Int32(id); currentSubtitleId = id
+        let tracks = player.textTracks
+        if tracks.indices.contains(id) {
+            tracks[id].isSelectedExclusively = true
+            currentSubtitleId = id
+        } else {
+            player.deselectAllTextTracks()
+            currentSubtitleId = -1
+        }
     }
 
     // MARK: aspect / zoom
@@ -365,27 +406,25 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         applyAspect()
     }
 
+    /// libVLC 4 has fit modes of its own, so Fill no longer fakes a crop from
+    /// the view's pixel size. Stretch is still a forced aspect ratio: the
+    /// view's, which the fitted picture then fills exactly.
     private func applyAspect() {
-        let size = drawableView?.bounds.size ?? UIScreen.main.bounds.size
-        let scale = UIScreen.main.scale
-        let w = max(1, Int(size.width * scale))
-        let h = max(1, Int(size.height * scale))
+        player.scaleFactor = 0
         switch aspect {
-        case .fit:     setCrop(nil);        setAspectRatio(nil)
-        case .fill:    setAspectRatio(nil); setCrop("\(w):\(h)")
-        case .stretch: setCrop(nil);        setAspectRatio("\(w):\(h)")
+        case .fit:
+            player.videoAspectRatio = nil
+            player.videoFitMode = .smaller
+        case .fill:
+            player.videoAspectRatio = nil
+            player.videoFitMode = .larger
+        case .stretch:
+            let size = drawableView?.bounds.size ?? UIScreen.main.bounds.size
+            let w = max(1, Int(size.width.rounded()))
+            let h = max(1, Int(size.height.rounded()))
+            player.videoFitMode = .smaller
+            player.videoAspectRatio = "\(w):\(h)"
         }
-    }
-
-    private func setAspectRatio(_ s: String?) {
-        player.videoAspectRatio = nil
-        if let old = aspectPtr { free(old); aspectPtr = nil }
-        if let s { let p = strdup(s); aspectPtr = p; player.videoAspectRatio = p }
-    }
-    private func setCrop(_ s: String?) {
-        player.videoCropGeometry = nil
-        if let old = cropPtr { free(old); cropPtr = nil }
-        if let s { let p = strdup(s); cropPtr = p; player.videoCropGeometry = p }
     }
 
     // MARK: A-V sync
@@ -433,20 +472,14 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         videoIsPortrait = portrait
     }
 
-    /// Whether the video track carries a 90°/270° rotation. Read from the media
-    /// metadata without depending on an exact VLCKit constant name (it varies by
-    /// build): any track key mentioning "orientation" whose value is a
-    /// VLCMediaOrientation raw >= 4 is a quarter-turn. nil when unknown.
+    /// Whether the video track carries a 90°/270° rotation: the transposed
+    /// VLCMediaOrientation cases are the last four. nil while the player has no
+    /// video track yet — a stream's tracks arrive after it opens.
     private func videoIsQuarterRotated() -> Bool? {
-        guard let tracks = player.media?.tracksInformation as? [[AnyHashable: Any]] else { return nil }
-        for t in tracks {
-            if let entry = t.first(where: {
-                ($0.key as? String)?.lowercased().contains("orientation") == true
-            }), let n = entry.value as? NSNumber {
-                return n.intValue >= 4
-            }
-        }
-        return nil
+        let tracks = player.videoTracks
+        guard let track = tracks.first(where: { $0.isSelected }) ?? tracks.first,
+              let video = track.video else { return nil }
+        return video.orientation.rawValue >= 4
     }
 
     // MARK: audio boost
@@ -488,26 +521,57 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     func setAudioBoost(_ percent: Int) {
         audioBoost = max(100, min(200, percent))
-        player.audio?.volume = Int32(audioBoost)
+        let audio: VLCAudio? = player.audio
+        audio?.volume = Int32(audioBoost)
     }
     private func reapplyAudioBoost() {
-        if audioBoost != 100 { player.audio?.volume = Int32(audioBoost) }
+        guard audioBoost != 100 else { return }
+        let audio: VLCAudio? = player.audio
+        audio?.volume = Int32(audioBoost)
     }
 
-    // MARK: preferred languages — best-effort match on the track name
+    // MARK: preferred languages
 
-    /// Auto-select the audio/subtitle track whose name contains the user's
-    /// preferred language. Runs on first track load and when the preference
+    /// Auto-select the audio/subtitle track in the user's preferred language.
+    /// Runs once per item when its tracks first appear, and when the preference
     /// changes mid-playback.
+    ///
+    /// The setting stores an English language name ("Telugu"). libVLC 4 gives
+    /// each track its language code, so a track matches when that code names the
+    /// language — which catches the many streams whose track titles say only
+    /// "Track 2" — or, failing that, when its title contains the name.
     func applyPreferredLanguages() {
-        if let pa = UserDefaults.standard.string(forKey: "preferred_audio_language"), !pa.isEmpty,
-           let t = audioTracks.first(where: { $0.name.range(of: pa, options: .caseInsensitive) != nil }) {
-            selectAudio(t.id)
+        let defaults = UserDefaults.standard
+        if let pa = defaults.string(forKey: "preferred_audio_language"), !pa.isEmpty,
+           let id = Self.trackIndex(in: player.audioTracks, matching: pa) {
+            selectAudio(id)
         }
-        if let ps = UserDefaults.standard.string(forKey: "preferred_subtitle_language"), !ps.isEmpty,
-           let t = subtitleTracks.first(where: { $0.name.range(of: ps, options: .caseInsensitive) != nil }) {
-            selectSubtitle(t.id)
+        if let ps = defaults.string(forKey: "preferred_subtitle_language"), !ps.isEmpty,
+           let id = Self.trackIndex(in: player.textTracks, matching: ps) {
+            selectSubtitle(id)
         }
+    }
+
+    private static func trackIndex(in tracks: [VLCMediaPlayer.Track], matching language: String) -> Int? {
+        let english = Locale(identifier: "en")
+        if let byCode = tracks.firstIndex(where: { track in
+            guard let code = track.language, !code.isEmpty,
+                  let name = english.localizedString(forLanguageCode: code) else { return false }
+            return name.caseInsensitiveCompare(language) == .orderedSame
+        }) {
+            return byCode
+        }
+        return tracks.firstIndex { displayName(of: $0).range(of: language, options: .caseInsensitive) != nil }
+    }
+
+    /// The title libVLC gives a track, else its language, else a placeholder.
+    private static func displayName(of track: VLCMediaPlayer.Track) -> String {
+        if !track.trackName.isEmpty { return track.trackName }
+        if let code = track.language, !code.isEmpty,
+           let name = Locale(identifier: "en").localizedString(forLanguageCode: code) {
+            return name
+        }
+        return track.trackDescription ?? "Track"
     }
 
     // MARK: HLS quality
@@ -556,10 +620,15 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     // MARK: helpers exposed to the view
 
-    var totalSeconds: Double {
-        let e = Double(player.time.intValue) / 1000
-        let r = Double(abs(player.remainingTime?.intValue ?? 0)) / 1000
-        return e + r
+    var totalSeconds: Double { Double(durationMs) / 1000 }
+
+    /// Length from libVLC's length event, else the media's own, else elapsed
+    /// plus remaining — whichever is known first for this stream.
+    private var durationMs: Int {
+        if lengthMs > 0 { return Int(lengthMs) }
+        if let media = player.media, media.length.intValue > 0 { return Int(media.length.intValue) }
+        let remaining: VLCTime? = player.remainingTime
+        return Int(player.time.intValue) + abs(Int(remaining?.intValue ?? 0))
     }
     var elapsedSeconds: Double { Double(player.time.intValue) / 1000 }
 
@@ -571,13 +640,12 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// us, which is why no media notification appeared.
     private func updateNowPlaying() {
         let elapsedMs = Int(player.time.intValue)
-        let remainingMs = abs(Int(player.remainingTime?.intValue ?? 0))
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: (item?.title.isEmpty == false ? item!.title : "Panura"),
             MPNowPlayingInfoPropertyElapsedPlaybackTime: Double(elapsedMs) / 1000,
             MPNowPlayingInfoPropertyPlaybackRate: player.isPlaying ? Double(player.rate) : 0,
         ]
-        let durationMs = elapsedMs + remainingMs
+        let durationMs = self.durationMs
         if durationMs > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = Double(durationMs) / 1000
         }
@@ -609,8 +677,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             }
             Task { @MainActor in
                 guard let self else { return }
-                let elapsed = Int(self.player.time.intValue)
-                let total = elapsed + abs(Int(self.player.remainingTime?.intValue ?? 0))
+                let total = self.durationMs
                 if total > 0 {
                     self.seek(to: Float(e.positionTime * 1000 / Double(total)))
                 }
@@ -628,7 +695,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self, !self.backgroundPlayEnabled else { return }
+                // Picture in Picture is the reason to keep playing; it owns the
+                // picture while it runs.
+                guard let self, !self.backgroundPlayEnabled, !self.isPictureInPictureActive else { return }
                 self.player.pause()
             }
         }
@@ -645,9 +714,11 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// vout is destroyed (black frame, audio-only). Reassigning the drawable
     /// forces a fresh vout; a zero-distance seek re-renders a frame immediately.
     private func refreshVideoOutput() {
-        guard let v = drawableView else { return }
+        // Returning from PiP: the output was never torn down, and rebuilding it
+        // would drop the PiP controller with it.
+        guard !isPictureInPictureActive, let drawable = videoDrawable else { return }
         player.drawable = nil
-        player.drawable = v
+        player.drawable = drawable
         if player.isPlaying {
             let p = player.position
             player.position = p
@@ -679,7 +750,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         guard !resumeApplied, let target = pendingResumeSeconds, total > 0 else { return }
         // Only seek once the tail leaves room — never resume into the last 15s.
         guard target < total - 15 else { resumeApplied = true; return }
-        player.position = Float(target / total)     // position is read-write across VLCKit builds
+        player.time = VLCTime(int: Int32(clamping: Int(target * 1000)))
         resumeApplied = true
     }
 
@@ -766,27 +837,55 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     // MARK: track loading
 
+    /// Set once an item's tracks have been matched against the preferred
+    /// languages, so a later track event does not undo the user's own pick.
+    private var preferredLanguagesApplied = false
+
     private func loadTracksIfNeeded() {
         guard !tracksLoaded else { return }
-        // VLC prepends a synthetic index -1 ("Disable"); drop it — the sheets
-        // offer their own "Off" row.
-        let aIdx = (player.audioTrackIndexes as? [NSNumber]) ?? []
-        let aName = (player.audioTrackNames as? [String]) ?? []
-        audioTracks = zip(aIdx, aName)
-            .compactMap { $0.intValue >= 0 ? Track(id: $0.intValue, name: $1) : nil }
+        refreshTracks()
+    }
 
-        let sIdx = (player.videoSubTitlesIndexes as? [NSNumber]) ?? []
-        let sName = (player.videoSubTitlesNames as? [String]) ?? []
-        subtitleTracks = zip(sIdx, sName)
-            .compactMap { $0.intValue >= 0 ? Track(id: $0.intValue, name: $1) : nil }
+    /// Mirrors libVLC's track lists into the sheets. libVLC 4 announces every
+    /// track that appears, disappears or changes selection — a sidecar subtitle
+    /// arrives well after the stream's own tracks — so this runs on each of
+    /// those, not just once.
+    fileprivate func refreshTracks() {
+        let audio = player.audioTracks
+        let text = player.textTracks
+        audioTracks = audio.enumerated().map { Track(id: $0.offset, name: Self.displayName(of: $0.element)) }
+        subtitleTracks = text.enumerated().map { Track(id: $0.offset, name: Self.displayName(of: $0.element)) }
+        currentAudioId = audio.firstIndex(where: { $0.isSelected }) ?? -1
+        currentSubtitleId = text.firstIndex(where: { $0.isSelected }) ?? -1
 
-        currentAudioId = Int(player.currentAudioTrackIndex)
-        currentSubtitleId = Int(player.currentVideoSubTitleIndex)
-
-        if !audioTracks.isEmpty || !subtitleTracks.isEmpty {
-            tracksLoaded = true
+        guard !audio.isEmpty || !text.isEmpty else { return }
+        tracksLoaded = true
+        if !preferredLanguagesApplied {
+            preferredLanguagesApplied = true
             applyPreferredLanguages()
         }
+    }
+
+    // MARK: Picture in Picture
+
+    private func pictureInPictureReady(_ controller: VLCPictureInPictureWindowControlling) {
+        pipController = controller
+        pipAvailable = AVPictureInPictureController.isPictureInPictureSupported()
+    }
+
+    func togglePictureInPicture() {
+        guard let pipController else { return }
+        if isPictureInPictureActive {
+            pipController.stopPictureInPicture()
+        } else {
+            pipController.startPictureInPicture()
+        }
+    }
+
+    /// The PiP window shows its own play state and progress, and reads them
+    /// again only when told something changed.
+    fileprivate func invalidatePictureInPicture() {
+        pipController?.invalidatePlaybackState()
     }
 
     private static func fmt(_ ms: Int32) -> String {
@@ -798,13 +897,14 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 }
 
 extension VLCPlayerModel: VLCMediaPlayerDelegate {
-    nonisolated func mediaPlayerStateChanged(_ aNotification: Notification) {
+    nonisolated func mediaPlayerStateChanged(_ newState: VLCMediaPlayerState) {
         Task { @MainActor in
             isPlaying = player.isPlaying
-            switch player.state {
-            case .buffering, .opening:
-                buffering = !player.isPlaying
-                if buffering { scheduleBufferWatchdog() }
+            invalidatePictureInPicture()
+            switch newState {
+            case .opening:
+                buffering = true
+                scheduleBufferWatchdog()
             case .playing:
                 bufferWatchdog?.cancel()
                 buffering = false; failure = nil
@@ -833,16 +933,47 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
         }
     }
 
+    /// libVLC 4 has no buffering state; it reports progress instead, from 0 to 1.
+    nonisolated func mediaPlayerBufferingChanged(_ progress: Float) {
+        Task { @MainActor in
+            let stalled = progress < 1 && !player.isPlaying
+            buffering = stalled
+            if stalled { scheduleBufferWatchdog() } else { bufferWatchdog?.cancel() }
+        }
+    }
+
+    nonisolated func mediaPlayerLengthChanged(_ length: Int64) {
+        Task { @MainActor in
+            lengthMs = length
+            invalidatePictureInPicture()
+        }
+    }
+
+    // Track events. Named by selector: they are optional requirements, and the
+    // Swift names libVLC's headers import under are not worth depending on.
+    @objc(mediaPlayerTrackAdded:withType:)
+    nonisolated func vlcTrackAdded(_ trackId: String, type: VLCMedia.TrackType) {
+        Task { @MainActor in refreshTracks() }
+    }
+
+    @objc(mediaPlayerTrackRemoved:withType:)
+    nonisolated func vlcTrackRemoved(_ trackId: String, type: VLCMedia.TrackType) {
+        Task { @MainActor in refreshTracks() }
+    }
+
+    @objc(mediaPlayerTrackSelected:selectedId:unselectedId:)
+    nonisolated func vlcTrackSelected(_ type: VLCMedia.TrackType, selectedId: String?, unselectedId: String?) {
+        Task { @MainActor in refreshTracks() }
+    }
+
     nonisolated func mediaPlayerTimeChanged(_ aNotification: Notification) {
         Task { @MainActor in
-            position = player.position
-            // remainingTime is NEGATIVE; abs it, then derive the end time so the
-            // duration shows even when the stream reports no length up front.
-            let elapsedMs = player.time.intValue
-            let remMs = abs(player.remainingTime?.intValue ?? 0)
-            elapsed = Self.fmt(elapsedMs)
-            remaining = "-" + Self.fmt(remMs)
-            total = Self.fmt(elapsedMs + remMs)
+            position = Float(player.position)
+            let elapsedMs = Int(player.time.intValue)
+            let totalMs = durationMs
+            elapsed = Self.fmt(Int32(clamping: elapsedMs))
+            remaining = "-" + Self.fmt(Int32(clamping: max(0, totalMs - elapsedMs)))
+            total = Self.fmt(Int32(clamping: totalMs))
             buffering = false
             loadTracksIfNeeded()
             applyResumeIfPending()
@@ -865,10 +996,10 @@ extension VLCPlayerModel: PlayerEngine {
     var supportsAudioDelay: Bool { true }
     var supportsAudioBoost: Bool { true }
     var supportsSubtitleDelay: Bool { true }
-    /// libVLC draws into its own surface, which the system PiP cannot take.
-    var supportsPictureInPicture: Bool { false }
+    /// VLCKit 4 floats its own sample-buffer layer; available once the video
+    /// output has handed over its controller.
+    var supportsPictureInPicture: Bool { pipAvailable }
     var supportsAirPlay: Bool { false }
-    var isPictureInPictureActive: Bool { false }
     /// libVLC renders every subtitle into the picture itself.
     var overlaySubtitle: String? { nil }
 
@@ -880,6 +1011,4 @@ extension VLCPlayerModel: PlayerEngine {
 
     /// libVLC's text renderer reads its style when media opens.
     func subtitleStyleChanged() { reopenPreservingPosition() }
-
-    func togglePictureInPicture() {}
 }

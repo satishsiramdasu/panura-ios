@@ -6,7 +6,9 @@ name: iOS Build
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    # vlckit4: the VLCKit 4 migration builds from its branch too. Drop it from
+    # this list when the branch merges.
+    branches: [main, vlckit4]
     paths-ignore:
       - '**/*.md'
       - '.gitignore'
@@ -23,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # VLCKit is a ~200 MB binary xcframework. Without this it is re-resolved
+      # VLCKit is a ~900 MB binary archive (every Apple platform). Without this it is re-resolved
       # and re-downloaded on every run, at 10x.
       - name: Cache Swift packages
         uses: actions/cache@v4
@@ -31,7 +33,7 @@ jobs:
           path: |
             ~/Library/Caches/org.swift.swiftpm
             ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('project.yml') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Packages/**/Package.swift') }}
           restore-keys: spm-${{ runner.os }}-
 
       # The manifest names no domains; it hashes them with this salt. The app
@@ -90,7 +92,7 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      # VLCKit's binary xcframework (~200 MB) sometimes times out; retry.
+      # VLCKit's binary archive (~900 MB) sometimes times out; retry.
       - name: Resolve Swift packages
         run: |
           n=0
