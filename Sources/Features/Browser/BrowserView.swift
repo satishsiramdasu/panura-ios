@@ -145,6 +145,9 @@ struct BrowserView: View {
 
     /// Load whatever Home handed over, then clear it.
     private func consumePending() {
+        #if DEBUG
+        ScreenshotMode.prime(model)
+        #endif
         guard let address = pendingAddress, !address.isEmpty else { return }
         pendingAddress = nil
         model.load(address)

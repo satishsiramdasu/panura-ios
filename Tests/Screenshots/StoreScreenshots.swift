@@ -45,10 +45,21 @@ final class StoreScreenshots: XCTestCase {
         capture("01-home")
 
         go("Web")
+        // The page has to commit and the found-bar fixture has to survive the
+        // navigation that clears detections — see ScreenshotMode.prime.
+        Thread.sleep(forTimeInterval: 8)
         capture("02-browser")
 
         go("Videos")
         capture("03-videos")
+
+        // A dump of the tree, so the next pass can address elements by name
+        // instead of guessing at them. Cheap, and it is the only way to see
+        // inside a SwiftUI hierarchy from here.
+        let tree = XCTAttachment(string: app.debugDescription)
+        tree.name = "99-element-tree"
+        tree.lifetime = .keepAlways
+        add(tree)
     }
 
     // MARK: driving the app

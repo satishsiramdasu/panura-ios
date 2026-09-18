@@ -28,6 +28,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        #if DEBUG
+        // Before anything reads UserDefaults: BrowsingStore loads its lists in
+        // `init`, so state seeded after the first touch of it is invisible until
+        // the next launch. No-op unless the screenshot run launched us.
+        ScreenshotMode.seedDefaults()
+        #endif
         // First, so a crash anywhere later in launch is still reported.
         startFirebase()
         // Ads start themselves, after the ATT prompt: the SDK must not be

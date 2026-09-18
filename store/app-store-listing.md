@@ -242,6 +242,10 @@ playback engines handled it, never an address.
 To try the app: open it, type any site with video into the address bar, and press
 play on that site's player. A bar appears at the bottom of the browser naming the
 stream that was found; tapping it plays. No account or sign-in is needed.
+
+A public-domain page that demonstrates it end to end, if you would like one:
+archive.org/details/BigBuckBunny_124 — press play on the page's own player, then
+tap the bar that appears at the bottom of the screen.
 ```
 
 ---
