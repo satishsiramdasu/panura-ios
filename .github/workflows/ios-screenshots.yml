@@ -1,0 +1,175 @@
+name: App Store Screenshots
+
+# Captures the screenshots App Store Connect requires, in the simulator, so they
+# do not depend on owning one of every device Apple asks for. Manual only: the
+# output is a submission asset, not something a push should spend macOS minutes
+# regenerating.
+#
+# Apple wants exact pixel sizes and will not scale a screenshot up:
+#
+#   6.9-inch iPhone   1320 × 2868   iPhone 16 Pro Max
+#   13-inch iPad      2064 × 2752   iPad Pro 13-inch (M4)
+#
+# Both are required while TARGETED_DEVICE_FAMILY is 1,2. The job verifies the
+# dimensions before uploading, because a wrong size is only discovered at the
+# App Store Connect upload otherwise — after the run has been thrown away.
+
+on:
+  # The capture branch, so the harness itself can be iterated on without
+  # spending a dispatch on every attempt. Nothing on main triggers this.
+  push:
+    branches: [screenshots]
+    paths:
+      - '.github/workflows/ios-screenshots.yml'
+      - 'Tests/**'
+      - 'project.yml'
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 'Which sizes to capture'
+        type: choice
+        options: [both, iphone, ipad]
+        default: both
+
+concurrency:
+  group: ios-screenshots
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Packages/**/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Same retry as the build workflow: VLCKit's binary archive is large
+      # enough that a single timeout is normal.
+      - name: Resolve Swift packages
+        run: |
+          n=0
+          until [ $n -ge 3 ]; do
+            xcodebuild -resolvePackageDependencies -project PanuraPlayer.xcodeproj && exit 0
+            n=$((n+1))
+            echo "resolve failed, retry $n"
+            sleep 15
+          done
+          exit 1
+
+      - name: Capture
+        run: |
+          set -o pipefail
+          mkdir -p build screenshots
+
+          shoot () {
+            name="$1"; device="$2"
+            echo "::group::$name — $device"
+            # -resultBundlePath is how the screenshots come back: every capture
+            # is an attachment inside it.
+            if ! xcodebuild \
+              -project PanuraPlayer.xcodeproj \
+              -scheme PanuraPlayer \
+              -configuration Debug \
+              -destination "platform=iOS Simulator,name=$device" \
+              -resultBundlePath "build/$name.xcresult" \
+              -only-testing:PanuraScreenshots \
+              test > "build/$name.log" 2>&1
+            then
+              echo "::endgroup::"
+              echo "::error::$name capture failed — full log in the screenshot-logs artifact"
+              grep -E "error:|Assertion Failure|Failing tests" "build/$name.log" | head -20
+              tail -40 "build/$name.log"
+              exit 1
+            fi
+            grep -E "Test Case .*(passed|failed)" "build/$name.log" || true
+            echo "::endgroup::"
+
+            out="screenshots/$name"
+            mkdir -p "$out"
+            xcrun xcresulttool export attachments \
+              --path "build/$name.xcresult" \
+              --output-path "$out"
+          }
+
+          case "${{ inputs.device }}" in
+            iphone) shoot iphone-6.9 "iPhone 16 Pro Max" ;;
+            ipad)   shoot ipad-13 "iPad Pro 13-inch (M4)" ;;
+            *)      shoot iphone-6.9 "iPhone 16 Pro Max"
+                    shoot ipad-13 "iPad Pro 13-inch (M4)" ;;
+          esac
+
+      # `export attachments` writes the files under their attachment names plus a
+      # manifest, but names them per-test with a suffix. Flatten to the numbered
+      # names the test used, so the upload order in App Store Connect is the
+      # order they were captured in.
+      - name: Name and check the files
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, shutil, struct, sys
+
+          def png_size(path):
+              with open(path, 'rb') as f:
+                  head = f.read(24)
+              if head[:8] != b'\x89PNG\r\n\x1a\n':
+                  return None
+              return struct.unpack('>II', head[16:24])
+
+          EXPECTED = {'iphone-6.9': (1320, 2868), 'ipad-13': (2064, 2752)}
+          bad = []
+          for folder in sorted(pathlib.Path('screenshots').iterdir()):
+              if not folder.is_dir():
+                  continue
+              manifest = folder / 'manifest.json'
+              if manifest.exists():
+                  for entry in json.loads(manifest.read_text()):
+                      for att in entry.get('attachments', []):
+                          src = folder / att['exportedFileName']
+                          dst = folder / (att.get('suggestedHumanReadableName') or att['exportedFileName'])
+                          if src.exists() and src != dst:
+                              shutil.move(src, dst)
+                  manifest.unlink()
+              shots = sorted(p for p in folder.iterdir() if p.suffix.lower() == '.png')
+              if not shots:
+                  bad.append(f'{folder.name}: no screenshots came out of the run')
+              want = EXPECTED.get(folder.name)
+              for shot in shots:
+                  size = png_size(shot)
+                  print(f'{folder.name}/{shot.name}: {size[0]}x{size[1]}' if size else f'{shot}: not a PNG')
+                  if want and size and size != want:
+                      bad.append(f'{folder.name}/{shot.name} is {size[0]}x{size[1]}, App Store Connect wants {want[0]}x{want[1]}')
+          if bad:
+              for line in bad:
+                  print(f'::error::{line}')
+              sys.exit(1)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-store-screenshots
+          path: screenshots/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: screenshot-logs
+          path: build/*.log

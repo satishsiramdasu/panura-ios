@@ -173,3 +173,26 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         # Crashlytics turns a crash into file and line only with dSYMs.
         DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+    # Without an explicit scheme the test target is autocreated into one of its
+    # own, and `xcodebuild test -scheme PanuraPlayer` then finds nothing to run.
+    scheme:
+      testTargets:
+        - PanuraScreenshots
+
+  # App Store screenshots, captured in the simulator — see
+  # Tests/Screenshots/StoreScreenshots.swift. Not a test suite: nothing here
+  # asserts behaviour, and no other workflow runs it.
+  PanuraScreenshots:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Tests/Screenshots
+    dependencies:
+      - target: PanuraPlayer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: panura.web.videoplayer.screenshots
+        TEST_TARGET_NAME: PanuraPlayer
+        # A UI test bundle is signed and installed like an app. Nothing here
+        # ever leaves a simulator, so it wants no team and no entitlements.
+        CODE_SIGNING_ALLOWED: NO
