@@ -46,7 +46,13 @@ let adaptor = AVAssetWriterInputPixelBufferAdaptor(
     ]
 )
 writer.add(input)
-writer.startWriting()
+// Checked, because the failure mode of not checking is a hang, not an error:
+// a writer that refused to start never reports `isReadyForMoreMediaData`, and
+// anything waiting on that waits forever.
+guard writer.startWriting() else {
+    FileHandle.standardError.write(Data("startWriting failed: \(writer.error?.localizedDescription ?? "unknown")\n".utf8))
+    exit(1)
+}
 writer.startSession(atSourceTime: .zero)
 
 let space = CGColorSpaceCreateDeviceRGB()
@@ -105,14 +111,27 @@ func draw(_ context: CGContext, t: Double) {
 }
 
 let totalFrames = Int(seconds * Double(fps))
+// A wall-clock deadline, because every way this loop can go wrong goes wrong by
+// not ending: a writer that stops accepting frames, a pool that stops vending
+// them. A CI step that fails in two minutes is worth far more than one that
+// holds a macOS runner for an hour and is killed by the job timeout.
+let deadline = Date().addingTimeInterval(180)
 var frame = 0
 while frame < totalFrames {
+    guard Date() < deadline else {
+        FileHandle.standardError.write(Data("gave up after \(frame)/\(totalFrames) frames\n".utf8))
+        exit(1)
+    }
     guard input.isReadyForMoreMediaData else {
         usleep(5_000)
         continue
     }
+    guard let pool = adaptor.pixelBufferPool else {
+        FileHandle.standardError.write(Data("no pixel buffer pool\n".utf8))
+        exit(1)
+    }
     var maybeBuffer: CVPixelBuffer?
-    CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &maybeBuffer)
+    CVPixelBufferPoolCreatePixelBuffer(nil, pool, &maybeBuffer)
     guard let buffer = maybeBuffer else { break }
 
     CVPixelBufferLockBaseAddress(buffer, [])
@@ -135,7 +154,10 @@ while frame < totalFrames {
 input.markAsFinished()
 let done = DispatchSemaphore(value: 0)
 writer.finishWriting { done.signal() }
-done.wait()
+guard done.wait(timeout: .now() + 120) == .success else {
+    FileHandle.standardError.write(Data("finishWriting never called back\n".utf8))
+    exit(1)
+}
 
 if writer.status == .completed {
     print("wrote \(outURL.path) — \(totalFrames) frames at \(fps)fps")

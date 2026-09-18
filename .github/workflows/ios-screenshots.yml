@@ -38,7 +38,9 @@ concurrency:
 jobs:
   capture:
     runs-on: macos-15
-    timeout-minutes: 60
+    # 35, not 60: a good run is ~16 minutes, and macOS bills at 10x. The first
+    # hang here held a runner for the full hour before anyone could see why.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
 
@@ -75,13 +77,20 @@ jobs:
           exit 1
 
       - name: Capture
+        timeout-minutes: 25
         run: |
           set -o pipefail
           mkdir -p build screenshots
 
+          # Phase markers as notices, not echoes: a run's log needs a token to
+          # read and its annotations do not, so when this step hangs these are
+          # the only way to see how far it got.
+          mark () { echo "::notice title=phase::$1"; }
+
           # The footage the player shots are taken over. Drawn, not downloaded —
           # see Tools/make-demo-clip.swift for why.
           swift Tools/make-demo-clip.swift build/coastline-drive.mp4 14
+          mark "clip rendered ($(du -h build/coastline-drive.mp4 | cut -f1))"
 
           shoot () {
             name="$1"; device="$2"
@@ -100,7 +109,9 @@ jobs:
             fi
             xcrun simctl boot "$udid" || true
             xcrun simctl bootstatus "$udid" -b
+            mark "$name booted"
             xcrun simctl addmedia "$udid" build/coastline-drive.mp4
+            mark "$name has the clip"
             # Photos, pre-granted: the alternative is driving a springboard alert
             # from the test, which is the flakiest thing a UI test can do.
             xcrun simctl privacy "$udid" grant photos panura.web.videoplayer || true
@@ -122,6 +133,7 @@ jobs:
               exit 1
             fi
             grep -E "Test Case .*(passed|failed)" "build/$name.log" || true
+            mark "$name captured"
             echo "::endgroup::"
 
             out="screenshots/$name"

@@ -103,17 +103,27 @@ enum ScreenshotMode {
     /// covers a cold web view on a CI runner and then stops.
     @MainActor
     static func prime(_ model: BrowserModel) {
-        guard isActive, model.currentURL == nil else { return }
-        model.load(page)
+        guard isActive else { return }
 
         let videos = demoVideos()
         let started = Date()
+        // Both halves are retried, for the same reason: this runs from
+        // BrowserView's `onAppear`, and `BrowserModel.load` is
+        // `webView?.load(…)` — optional. At launch the web view may not exist
+        // yet, and that load then silently does nothing, which is exactly how
+        // the browser screenshot came out blank. Detections need the retry too,
+        // because every navigation clears them.
         Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { timer in
             Task { @MainActor in
-                if Date().timeIntervalSince(started) > 10 {
+                if Date().timeIntervalSince(started) > 20 {
                     timer.invalidate()
                     return
                 }
+                // `isLoading` keeps the retry from restarting a load already in
+                // flight: `currentURL` is only set once the page commits, so
+                // without it a slow page would be cancelled and re-requested
+                // every second and never arrive.
+                if model.currentURL == nil, !model.isLoading { model.load(page) }
                 if model.foundVideos.isEmpty { model.foundVideos = videos }
             }
         }

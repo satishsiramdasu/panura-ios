@@ -46,9 +46,12 @@ final class StoreScreenshots: XCTestCase {
 
         go("Web")
         // The page has to commit and the found-bar fixture has to survive the
-        // navigation that clears detections — see ScreenshotMode.prime.
-        Thread.sleep(forTimeInterval: 8)
+        // navigation that clears detections — see ScreenshotMode.prime. Long,
+        // because a cold web view on a runner is slow and a blank page is the
+        // one failure this shot can have.
+        Thread.sleep(forTimeInterval: 14)
         capture("02-browser")
+        dumpTree("97-tree-browser")
 
         go("Videos")
         // The clip the workflow put in the library has to be scanned before the
