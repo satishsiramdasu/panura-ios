@@ -23,6 +23,12 @@ on:
       - '.github/workflows/ios-screenshots.yml'
       - 'Tests/**'
       - 'project.yml'
+      # Half the harness lives in the app: ScreenshotMode seeds the state, and
+      # the screens themselves decide what a shot contains. Without this a fix
+      # to either pushes and silently never builds — which is exactly what
+      # happened to the round that fixed the blank browser shot.
+      - 'Sources/**'
+      - 'Tools/**'
   workflow_dispatch:
     inputs:
       device:
