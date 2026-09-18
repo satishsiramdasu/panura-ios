@@ -75,7 +75,10 @@ struct PlayerView<Model: PlayerEngine>: View {
     @State private var hudClear: Task<Void, Never>?
 
     // Sheets
-    @State private var sheet: PlayerSheet?
+    @State private var panel: PlayerSheet?
+    /// Folded state of the subtitle panel's appearance group, kept across
+    /// openings: someone who went looking for it once will go looking again.
+    @State private var subtitleAppearanceOpen = false
 
     @AppStorage("subtitle_size") private var subtitleSize = 24
     @AppStorage("subtitle_color") private var subtitleColor = 0xFFFFFF
@@ -106,7 +109,11 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// second pinch inside that moment would measure from a stale base.
     @State private var pinching = false
 
-    enum PlayerSheet: Int, Identifiable { case audio, subtitles; var id: Int { rawValue } }
+    enum PlayerSheet: Int, Identifiable {
+        case audio, subtitles
+        var id: Int { rawValue }
+        var title: String { self == .audio ? "Audio" : "Subtitles" }
+    }
 
 
     var body: some View {
@@ -147,16 +154,20 @@ struct PlayerView<Model: PlayerEngine>: View {
                 controlsOverlay.transition(.opacity)
             }
 
+            // Above the controls, below the HUD. Not a `.sheet`: see
+            // PlayerOptionsPanel for why one covered the video in landscape.
+            if let panel, !locked {
+                PlayerOptionsPanel(title: panel.title, onClose: { closePanel() }) {
+                    panelContent(panel)
+                }
+                .transition(.opacity)
+            }
+
             // Above the controls so gesture feedback overlaps the middle buttons.
             hudLayer.allowsHitTesting(false)
         }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
-        .sheet(item: $sheet) { s in
-            sheetContent(s)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
         .onAppear {
             index = playlist?.startIndex ?? 0
             OrientationManager.allowAll()
@@ -577,8 +588,8 @@ struct PlayerView<Model: PlayerEngine>: View {
         HStack(spacing: 0) {
             // Bottom-left group
             HStack(spacing: QuickMetrics.buttonGap) {
-                quickAction("waveform", "Audio") { sheet = .audio }
-                quickAction("captions.bubble", "Subtitles") { sheet = .subtitles }
+                quickAction("waveform", "Audio") { openPanel(.audio) }
+                quickAction("captions.bubble", "Subtitles") { openPanel(.subtitles) }
                 if !model.qualities.isEmpty { qualityQuick }
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
@@ -766,94 +777,122 @@ struct PlayerView<Model: PlayerEngine>: View {
         .padding(24)
     }
 
-    // MARK: sheets
+    // MARK: option panels
 
     @ViewBuilder
-    private func sheetContent(_ s: PlayerSheet) -> some View {
+    private func panelContent(_ s: PlayerSheet) -> some View {
         switch s {
-        case .audio:     audioSheet
-        case .subtitles: subtitleSheet
+        case .audio:     audioPanel
+        case .subtitles: subtitlePanel
         }
     }
 
-    private var audioSheet: some View {
-        NavigationStack {
-            List {
-                Section("Track") {
-                    if model.audioTracks.isEmpty {
-                        Text("No audio tracks").foregroundStyle(.secondary)
-                    }
-                    ForEach(model.audioTracks) { t in
-                        trackRow(t.name, selected: model.currentAudioId == t.id) { model.selectAudio(t.id) }
-                    }
-                }
-                if model.supportsAudioDelay {
-                    Section("Audio delay") {
-                        delayStepper(model.audioDelayMs) { model.adjustAudioDelay($0) }
-                    }
-                }
-                Section {
-                    languagePicker(selection: $preferredAudioLang)
-                } header: {
-                    Text("Preferred language")
-                } footer: {
-                    Text("Auto-selects a matching audio track on every video. Remembered.")
-                }
-                if model.supportsAudioBoost {
-                    Section {
-                        boostRow
-                    } header: {
-                        Text("Volume boost")
-                    } footer: {
-                        Text("Above 100%. Resets when you close the player.")
-                    }
+    private func openPanel(_ which: PlayerSheet) {
+        withAnimation(.easeOut(duration: 0.18)) { panel = which }
+    }
+
+    /// Closes the panel and restarts the controls' hide clock, which was held
+    /// open for as long as one was up.
+    private func closePanel() {
+        withAnimation(.easeOut(duration: 0.18)) { panel = nil }
+        scheduleHide()
+    }
+
+    private var audioPanel: some View {
+        Group {
+            PanelHeader("Track")
+            if model.audioTracks.isEmpty {
+                Text("No audio tracks")
+                    .font(.callout)
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.vertical, 9)
+            }
+            ForEach(model.audioTracks) { t in
+                PanelChoiceRow(title: t.name, selected: model.currentAudioId == t.id) {
+                    model.selectAudio(t.id)
                 }
             }
-            .navigationTitle("Audio").navigationBarTitleDisplayMode(.inline)
+
+            if model.supportsAudioDelay {
+                PanelDivider()
+                PanelStepperRow(
+                    title: "Delay",
+                    value: "\(model.audioDelayMs) ms"
+                ) { model.adjustAudioDelay($0) }
+            }
+
+            PanelDivider()
+            HStack {
+                Text("Preferred language").font(.callout).foregroundStyle(.white)
+                Spacer(minLength: 8)
+                languagePicker(selection: $preferredAudioLang)
+            }
+            .padding(.vertical, 5)
+
+            if model.supportsAudioBoost {
+                PanelDivider()
+                PanelHeader("Volume boost")
+                boostRow
+            }
         }
     }
 
-    private var subtitleSheet: some View {
-        NavigationStack {
-            List {
-                Section("Track") {
-                    trackRow("Off", selected: model.currentSubtitleId < 0) { model.selectSubtitle(-1) }
-                    ForEach(model.subtitleTracks) { t in
-                        trackRow(t.name, selected: model.currentSubtitleId == t.id) { model.selectSubtitle(t.id) }
-                    }
-                }
-                if model.supportsSubtitleDelay {
-                    Section("Subtitle delay") {
-                        delayStepper(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
-                    }
-                }
-                Section {
-                    languagePicker(selection: $preferredSubtitleLang)
-                } header: {
-                    Text("Preferred language")
-                } footer: {
-                    Text("Auto-selects a matching subtitle track on every video. Remembered.")
-                }
-                Section("Size") {
-                    Picker("Size", selection: $subtitleSize) {
-                        Text("Small").tag(16); Text("Medium").tag(24); Text("Large").tag(34)
-                    }.pickerStyle(.segmented)
-                }
-                Section("Colour") {
-                    Picker("Colour", selection: $subtitleColor) {
-                        Text("White").tag(0xFFFFFF); Text("Yellow").tag(0xFFFF00)
-                    }.pickerStyle(.segmented)
-                }
-                Section {
-                    Toggle("Bold", isOn: $subtitleBold)
-                    Toggle("Background", isOn: $subtitleBackground)
-                } footer: {
-                    Text("Font, outline and text encoding are in Settings → Subtitles.")
+    private var subtitlePanel: some View {
+        Group {
+            PanelHeader("Track")
+            PanelChoiceRow(title: "Off", selected: model.currentSubtitleId < 0) {
+                model.selectSubtitle(-1)
+            }
+            ForEach(model.subtitleTracks) { t in
+                PanelChoiceRow(title: t.name, selected: model.currentSubtitleId == t.id) {
+                    model.selectSubtitle(t.id)
                 }
             }
-            .navigationTitle("Subtitles").navigationBarTitleDisplayMode(.inline)
+
+            if model.supportsSubtitleDelay {
+                PanelDivider()
+                PanelStepperRow(
+                    title: "Delay",
+                    value: "\(model.subtitleDelayMs) ms"
+                ) { model.adjustSubtitleDelay($0) }
+            }
+
+            PanelDivider()
+            HStack {
+                Text("Preferred language").font(.callout).foregroundStyle(.white)
+                Spacer(minLength: 8)
+                languagePicker(selection: $preferredSubtitleLang)
+            }
+            .padding(.vertical, 5)
+
+            PanelDivider()
+            // Folded: picking a track is why this panel gets opened, and that
+            // list was underneath a screenful of appearance controls someone
+            // sets once a year.
+            PanelDisclosure(title: "Appearance", open: $subtitleAppearanceOpen) {
+                PanelHeader("Size")
+                Picker("Size", selection: $subtitleSize) {
+                    Text("Small").tag(16); Text("Medium").tag(24); Text("Large").tag(34)
+                }
+                .pickerStyle(.segmented)
+
+                PanelHeader("Colour")
+                Picker("Colour", selection: $subtitleColor) {
+                    Text("White").tag(0xFFFFFF); Text("Yellow").tag(0xFFFF00)
+                }
+                .pickerStyle(.segmented)
+
+                PanelToggleRow(title: "Bold", isOn: $subtitleBold)
+                PanelToggleRow(title: "Background", isOn: $subtitleBackground)
+
+                Text("Font, outline and text encoding are in Settings \u{2192} Subtitles.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.45))
+                    .padding(.top, 6)
+            }
         }
     }
+
 
     private func languagePicker(selection: Binding<String>) -> some View {
         Picker("Language", selection: selection) {
@@ -875,30 +914,6 @@ struct PlayerView<Model: PlayerEngine>: View {
             .tint(PanuraTheme.accent)
             Text("\(model.audioBoost)%").monospacedDigit().frame(width: 48, alignment: .trailing)
         }
-    }
-
-    private func trackRow(_ title: String, selected: Bool, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(title).foregroundStyle(.primary)
-                Spacer()
-                if selected { Image(systemName: "checkmark").foregroundStyle(PanuraTheme.accent) }
-            }
-        }
-    }
-
-    private func delayStepper(_ value: Int, _ change: @escaping (Int) -> Void) -> some View {
-        HStack {
-            Button { change(-50) } label: { Image(systemName: "minus.circle.fill") }
-                .buttonStyle(.borderless)
-            Spacer()
-            Text("\(value) ms").monospacedDigit()
-            Spacer()
-            Button { change(50) } label: { Image(systemName: "plus.circle.fill") }
-                .buttonStyle(.borderless)
-        }
-        .font(.title3)
-        .tint(PanuraTheme.accent)
     }
 
     // MARK: actions
@@ -955,7 +970,7 @@ struct PlayerView<Model: PlayerEngine>: View {
     }
 
     /// Push the controls' disappearance out. Called by everything the user can
-    /// touch, and by the ticker itself while a scrub or a sheet holds them open.
+    /// touch, and by the ticker itself while a scrub or a panel holds them open.
     private func scheduleHide() { hideAt = Date().addingTimeInterval(PlayerTiming.autoHide) }
 
     private func scheduleHideLock() { lockHideAt = Date().addingTimeInterval(PlayerTiming.autoHideLock) }
@@ -970,9 +985,9 @@ struct PlayerView<Model: PlayerEngine>: View {
             while !Task.isCancelled {
                 do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
                 let now = Date()
-                // A sheet is the user reading a track list, not idling; and the
+                // An open panel is the user reading a track list, not idling; and the
                 // controls must still be there when it closes.
-                if sheet != nil { scheduleHide(); continue }
+                if panel != nil { scheduleHide(); continue }
                 if let m = lastScrubMove, now.timeIntervalSince(m) < 3 { scheduleHide(); continue }
                 if locked {
                     if lockRevealed, let d = lockHideAt, now >= d {
