@@ -51,13 +51,37 @@ final class StoreScreenshots: XCTestCase {
         capture("02-browser")
 
         go("Videos")
+        // The clip the workflow put in the library has to be scanned before the
+        // grid can draw it.
+        Thread.sleep(forTimeInterval: 4)
         capture("03-videos")
+        dumpTree("98-tree-videos")
 
-        // A dump of the tree, so the next pass can address elements by name
-        // instead of guessing at them. Cheap, and it is the only way to see
-        // inside a SwiftUI hierarchy from here.
+        // Best effort, and deliberately not an assertion: which query finds a
+        // grid item depends on how SwiftUI exposed it, and a missing player shot
+        // is worth less than losing the three above it to a failed run. The
+        // element dump below says what was actually there.
+        for candidate in [app.cells.firstMatch, app.images.firstMatch, app.otherElements.buttons.firstMatch] {
+            guard candidate.waitForExistence(timeout: 5), candidate.isHittable else { continue }
+            candidate.tap()
+            Thread.sleep(forTimeInterval: 6)
+            capture("04-player")
+            // Controls fade on their own; a tap in the middle brings them back.
+            app.tap()
+            Thread.sleep(forTimeInterval: 1.5)
+            capture("05-player-controls")
+            break
+        }
+
+        dumpTree("99-tree-end")
+    }
+
+    /// The element hierarchy as XCUITest sees it. The only way to find out what
+    /// a SwiftUI screen actually exposes without a Mac in front of you, so the
+    /// next pass can address things by name instead of guessing.
+    private func dumpTree(_ name: String) {
         let tree = XCTAttachment(string: app.debugDescription)
-        tree.name = "99-element-tree"
+        tree.name = name
         tree.lifetime = .keepAlways
         add(tree)
     }

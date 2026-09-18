@@ -79,16 +79,38 @@ jobs:
           set -o pipefail
           mkdir -p build screenshots
 
+          # The footage the player shots are taken over. Drawn, not downloaded —
+          # see Tools/make-demo-clip.swift for why.
+          swift Tools/make-demo-clip.swift build/coastline-drive.mp4 14
+
           shoot () {
             name="$1"; device="$2"
             echo "::group::$name — $device"
+
+            # Boot by UDID so the clip lands in the same simulator the test then
+            # runs on: `simctl addmedia booted` picks whichever device happens to
+            # be booted, which on a runner with two of them is a coin toss.
+            udid=$(xcrun simctl list devices available \
+              | grep -m1 -F "$device (" \
+              | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')
+            if [ -z "$udid" ]; then
+              echo "::error::no simulator named $device on this runner"
+              xcrun simctl list devices available | head -40
+              exit 1
+            fi
+            xcrun simctl boot "$udid" || true
+            xcrun simctl bootstatus "$udid" -b
+            xcrun simctl addmedia "$udid" build/coastline-drive.mp4
+            # Photos, pre-granted: the alternative is driving a springboard alert
+            # from the test, which is the flakiest thing a UI test can do.
+            xcrun simctl privacy "$udid" grant photos panura.web.videoplayer || true
             # -resultBundlePath is how the screenshots come back: every capture
             # is an attachment inside it.
             if ! xcodebuild \
               -project PanuraPlayer.xcodeproj \
               -scheme PanuraPlayer \
               -configuration Debug \
-              -destination "platform=iOS Simulator,name=$device" \
+              -destination "id=$udid" \
               -resultBundlePath "build/$name.xcresult" \
               -only-testing:PanuraScreenshots \
               test > "build/$name.log" 2>&1
@@ -159,6 +181,44 @@ jobs:
               for line in bad:
                   print(f'::error::{line}')
               sys.exit(1)
+          PY
+
+      # Artifacts need a token to fetch; annotations do not. A thumbnail of each
+      # shot therefore goes out as a notice, so whoever is iterating on the
+      # harness can see what came out without downloading the run. Tiny on
+      # purpose — annotation messages are truncated, and this only has to answer
+      # "is the screen full, and is the bar there".
+      - name: Preview
+        if: always()
+        run: |
+          for f in screenshots/*/*.png; do
+            sips -Z 128 "$f" --out /tmp/preview.png >/dev/null 2>&1 || continue
+            sips -s format jpeg -s formatOptions 30 /tmp/preview.png --out /tmp/preview.jpg >/dev/null 2>&1 || continue
+            echo "::notice title=shot ${f#screenshots/}::$(base64 -i /tmp/preview.jpg | tr -d '\n')"
+          done
+
+      # Same reason as the previews: the element dump the test attaches is how
+      # the next pass learns what to tap, and it is inside an artifact nobody
+      # iterating from outside the runner can fetch.
+      - name: Element tree
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          for txt in sorted(pathlib.Path('screenshots').glob('*/*.txt')):
+              lines = [l.strip() for l in txt.read_text(errors='replace').splitlines()]
+              # Only the addressable things — a full SwiftUI dump is mostly
+              # geometry, and an annotation is not the place for it.
+              keep = [l for l in lines if any(k in l for k in ('Button,', 'Cell,', 'StaticText,', 'Image,', 'Slider,'))]
+              chunk, size = [], 0
+              for line in keep[:120]:
+                  if size + len(line) > 2500:
+                      print(f'::notice title=tree {txt.parent.name}::' + '%0A'.join(chunk))
+                      chunk, size = [], 0
+                  chunk.append(line)
+                  size += len(line)
+              if chunk:
+                  print(f'::notice title=tree {txt.parent.name}::' + '%0A'.join(chunk))
           PY
 
       - uses: actions/upload-artifact@v4
