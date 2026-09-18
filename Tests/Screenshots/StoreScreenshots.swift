@@ -45,7 +45,11 @@ final class StoreScreenshots: XCTestCase {
     func testCaptureStoreScreenshots() throws {
         shoot("01-home", screen: "home", settle: Settle.plain)
         shoot("02-browser", screen: "web", settle: Settle.web)
-        shoot("03-videos", screen: "videos", settle: Settle.plain)
+        // Settings rather than the Videos tab: the library needs the photo
+        // library permission, and granting it to the simulator is what hung
+        // three runs. Settings is the better shot anyway — it is where the
+        // subtitle and playback control the listing sells actually lives.
+        shoot("03-settings", screen: "settings", settle: Settle.plain)
         // No tree for the player: `debugDescription` takes an accessibility
         // snapshot, and asking a screen that is decoding video for one is the
         // same bet that cost two runs.

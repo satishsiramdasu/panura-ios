@@ -92,32 +92,26 @@ jobs:
 
           # The footage the player shots are taken over. Drawn, not downloaded —
           # see Tools/make-demo-clip.swift for why.
-          swift Tools/make-demo-clip.swift build/coastline-drive.mp4 14
-          mark "clip rendered ($(du -h build/coastline-drive.mp4 | cut -f1))"
+          # Into Resources/, where a post-build script copies it into the app
+          # bundle if it is there — the same pattern GoogleService-Info.plist
+          # uses, and for the same reason: a file that only exists on some runs
+          # cannot be a source entry.
+          swift Tools/make-demo-clip.swift Resources/screenshot-demo.mp4 14
+          mark "clip rendered ($(du -h Resources/screenshot-demo.mp4 | cut -f1))"
 
           shoot () {
             name="$1"; device="$2"
             echo "::group::$name — $device"
 
-            # Boot by UDID so the clip lands in the same simulator the test then
-            # runs on: `simctl addmedia booted` picks whichever device happens to
-            # be booted, which on a runner with two of them is a coin toss.
-            udid=$(xcrun simctl list devices available \
-              | grep -m1 -F "$device (" \
-              | sed -E 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/')
-            if [ -z "$udid" ]; then
-              echo "::error::no simulator named $device on this runner"
-              xcrun simctl list devices available | head -40
-              exit 1
-            fi
-            xcrun simctl boot "$udid" || true
-            xcrun simctl bootstatus "$udid" -b
-            mark "$name booted"
-            xcrun simctl addmedia "$udid" build/coastline-drive.mp4
-            mark "$name has the clip"
-            # Photos, pre-granted: the alternative is driving a springboard alert
-            # from the test, which is the flakiest thing a UI test can do.
-            xcrun simctl privacy "$udid" grant photos panura.web.videoplayer || true
+            # No simctl boot, addmedia or privacy here, deliberately. Putting the
+            # clip in the simulator's photo library needed Photos pre-granted,
+            # and `simctl privacy grant` hangs: every run carrying it timed out
+            # in this step, the phase markers stopping right after addmedia,
+            # while the run before it — plain `-destination name=…`, no simctl —
+            # passed in 16 minutes. The clip is bundled into the app instead
+            # (see project.yml), so the player shot needs no photo library and
+            # no permission at all.
+            #
             # -resultBundlePath is how the screenshots come back: every capture
             # is an attachment inside it.
             ok=0
@@ -125,7 +119,7 @@ jobs:
               -project PanuraPlayer.xcodeproj \
               -scheme PanuraPlayer \
               -configuration Debug \
-              -destination "id=$udid" \
+              -destination "platform=iOS Simulator,name=$device" \
               -resultBundlePath "build/$name.xcresult" \
               -only-testing:PanuraScreenshots \
               test > "build/$name.log" 2>&1 || ok=1

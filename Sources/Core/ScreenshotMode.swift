@@ -37,8 +37,18 @@ enum ScreenshotMode {
         return arguments[i + 1]
     }
 
-    /// The library opens its first video by itself on this launch.
+    /// The player opens by itself on this launch, over the bundled clip.
     static var wantsPlayer: Bool { isActive && screen == "player" }
+
+    /// The clip the player shot is taken over, bundled by the post-build script
+    /// in project.yml. Nil in any build the screenshot workflow did not render
+    /// it for, which is every build but that one.
+    static var demoItem: MediaItem? {
+        guard let url = Bundle.main.url(forResource: "screenshot-demo", withExtension: "mp4") else {
+            return nil
+        }
+        return MediaItem(title: "Coastline drive", url: url, isLocal: true)
+    }
 
     /// The page the browser shot is taken on: our own, so no other company's
     /// branding ends up in a screenshot on the App Store.

@@ -144,6 +144,15 @@ targets:
           else
             echo "warning: no GoogleService-Info.plist; this build runs without Firebase"
           fi
+          # The screenshot run's demo clip, on exactly the same terms: rendered
+          # onto the runner by .github/workflows/ios-screenshots.yml just before
+          # the build, absent everywhere else, and never in a release — the
+          # only thing that reads it is ScreenshotMode, which is #if DEBUG.
+          CLIP="${SRCROOT}/Resources/screenshot-demo.mp4"
+          if [ -f "$CLIP" ]; then
+            cp "$CLIP" "$DEST/screenshot-demo.mp4"
+            echo "Bundled screenshot-demo.mp4"
+          fi
     dependencies:
       - package: GoogleCast
         product: GoogleCast
