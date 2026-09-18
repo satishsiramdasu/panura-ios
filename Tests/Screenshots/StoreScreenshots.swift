@@ -28,7 +28,10 @@ final class StoreScreenshots: XCTestCase {
     private let appear: TimeInterval = 30
 
     override func setUpWithError() throws {
-        continueAfterFailure = false
+        // True, unusually for a UI test: this run exists to produce images, and
+        // a failed tap half way through should not throw away the shots already
+        // taken before it.
+        continueAfterFailure = true
         app = XCUIApplication()
         app.launchArguments += ["-panura-screenshots"]
         app.launch()

@@ -86,6 +86,9 @@ jobs:
           # read and its annotations do not, so when this step hangs these are
           # the only way to see how far it got.
           mark () { echo "::notice title=phase::$1"; }
+          # Collected rather than exited on, so one device failing still lets the
+          # other be captured and uploaded.
+          failed=""
 
           # The footage the player shots are taken over. Drawn, not downloaded —
           # see Tools/make-demo-clip.swift for why.
@@ -117,30 +120,40 @@ jobs:
             xcrun simctl privacy "$udid" grant photos panura.web.videoplayer || true
             # -resultBundlePath is how the screenshots come back: every capture
             # is an attachment inside it.
-            if ! xcodebuild \
+            ok=0
+            xcodebuild \
               -project PanuraPlayer.xcodeproj \
               -scheme PanuraPlayer \
               -configuration Debug \
               -destination "id=$udid" \
               -resultBundlePath "build/$name.xcresult" \
               -only-testing:PanuraScreenshots \
-              test > "build/$name.log" 2>&1
-            then
-              echo "::endgroup::"
-              echo "::error::$name capture failed — full log in the screenshot-logs artifact"
-              grep -E "error:|Assertion Failure|Failing tests" "build/$name.log" | head -20
-              tail -40 "build/$name.log"
-              exit 1
-            fi
-            grep -E "Test Case .*(passed|failed)" "build/$name.log" || true
-            mark "$name captured"
+              test > "build/$name.log" 2>&1 || ok=1
             echo "::endgroup::"
 
+            # Export before deciding anything: a test that failed half way still
+            # attached every screenshot it took before that, and those are the
+            # whole point of the run.
             out="screenshots/$name"
             mkdir -p "$out"
             xcrun xcresulttool export attachments \
               --path "build/$name.xcresult" \
-              --output-path "$out"
+              --output-path "$out" || echo "::warning::$name: nothing to export"
+
+            if [ "$ok" = "1" ]; then
+              echo "::error::$name capture failed"
+              # As annotations, because the log itself needs a token to read and
+              # the last failure here was invisible for exactly that reason.
+              grep -E "error:|Assertion Failure|Failing tests|Testing failed|could not be launched|Restarting after unexpected exit" \
+                "build/$name.log" | sort -u | head -6 \
+                | while IFS= read -r line; do echo "::error title=$name::${line}"; done
+              tail -12 "build/$name.log" \
+                | while IFS= read -r line; do echo "::notice title=$name tail::${line}"; done
+              failed="$failed $name"
+            else
+              grep -E "Test Case .*(passed|failed)" "build/$name.log" || true
+              mark "$name captured"
+            fi
           }
 
           case "${{ inputs.device }}" in
@@ -150,11 +163,17 @@ jobs:
                     shoot ipad-13 "iPad Pro 13-inch (M4)" ;;
           esac
 
+          if [ -n "$failed" ]; then
+            echo "::error::capture failed for:$failed — whatever was taken before the failure is still in the artifact"
+            exit 1
+          fi
+
       # `export attachments` writes the files under their attachment names plus a
       # manifest, but names them per-test with a suffix. Flatten to the numbered
       # names the test used, so the upload order in App Store Connect is the
       # order they were captured in.
       - name: Name and check the files
+        if: always()
         run: |
           python3 - <<'PY'
           import json, pathlib, shutil, struct, sys
