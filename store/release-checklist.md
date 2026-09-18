@@ -85,29 +85,32 @@ wrong order.
 5. **Fill the listing** from `app-store-listing.md` — the copy, the five privacy
    answers, age rating, content rights, review notes.
 6. **Submit for review.**
-**Where the salt rotation goes.** Before step 2, not after step 6 — the salt is
-baked into the binary at build time, so the build that ships must already carry
-the new one. Rotating after the release would leave every installed copy hashing
-with a salt the deployed manifest no longer uses, and no rule would match again
-until the next update. The order is: new salt into the `MANIFEST_SALT` secret →
-run the release workflow → deploy the re-hashed manifest from the `panura` repo
-when that build reaches testers. The only casualty is a TestFlight build older
-than the rotation, which falls back to the generic sniffer (rules refine, they
-never gate) until it updates. Full steps below.
+**No salt rotation in this release** — decided 2026-09-18, for the Android
+reason in the section below. 1.0 ships on the current salt.
 
-## Rotate the salt (deferred — first release ships on the current one)
+## Rotate the salt (not in 1.0 — decided 2026-09-18)
 
 The manifest salt is committed in this public repo and is in its history
 permanently, so today the hashing buys nothing: anyone can hash candidate
-domains and read the deployed manifest. Rotation was deferred deliberately —
-changing it mid-test breaks every rule match — and the first public release is
-the natural moment.
+domains and read the deployed manifest.
 
-The four steps are in the header of `Sources/Core/ManifestSalt.swift`: new salt
-into `.manifest-src/salt.txt` in the `panura` repo, the same value into the
-`MANIFEST_SALT` secret here, blank the committed literal, rebuild the manifest
-and deploy. The salt in `.manifest-src/salt.txt` and the CI secret must match
-exactly or every site rule stops matching.
+**It is still not worth rotating for this release, because Android reads the
+manifest too.** That was the deciding fact and the repo docs had it wrong: the
+Android app fetches `manifest.json` and hashes hosts with its own baked-in
+`BuildConfig.MANIFEST_SALT` (`core/extractor/build.gradle.kts`) — the old
+`CDN_EXTRACTORS_ENABLED = false` gate only ever disabled the retired per-host
+scripts. Deploying a re-hashed manifest would therefore stop every site rule
+matching on **every installed Android build** as well, until a Play release
+carrying the new salt reached users. Rotation is a coordinated two-platform
+release, not a CDN change, and it buys nothing that shipping 1.0 does not.
+
+Do it when Android and iOS next ship together — or when the panura-ios repo goes
+private, which removes the exposure without touching anyone's install. Order,
+once: new salt into `.manifest-src/salt.txt` (`panura`), the same value into the
+`MANIFEST_SALT` secret here **and** into the Android build's `local.properties` /
+CI secret, blank the literal in `Sources/Core/ManifestSalt.swift`, ship both
+apps, then rebuild and deploy the manifest. Four copies, all byte-identical, or
+no rule matches anywhere.
 
 ## Decide before submitting
 
