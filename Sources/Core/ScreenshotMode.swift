@@ -52,7 +52,12 @@ enum ScreenshotMode {
 
     /// The page the browser shot is taken on: our own, so no other company's
     /// branding ends up in a screenshot on the App Store.
-    static let page = "https://panura.app"
+    ///
+    /// `/support`, not the site root. The root carries a Google Play badge, and
+    /// App Review guideline 2.3.10 rejects metadata naming or showing another
+    /// mobile platform — screenshots are metadata. The support page mentions no
+    /// platform at all.
+    static let page = "https://panura.app/support"
 
     /// Written before `BrowsingStore.shared` is first touched — it loads its
     /// lists in `init`, so anything set afterwards would not be read until the
