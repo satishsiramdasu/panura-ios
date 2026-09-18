@@ -149,11 +149,17 @@ enum ScreenshotMode {
                     timer.invalidate()
                     return
                 }
+                // Not "is the URL nil": the browser lands on its own start page
+                // (WebViewContainer.startPage — google.com), so it never is, the
+                // fixture load never fired, and the first browser shot was of a
+                // Google results page. Retry until the page asked for is the one
+                // showing.
+                //
                 // `isLoading` keeps the retry from restarting a load already in
-                // flight: `currentURL` is only set once the page commits, so
-                // without it a slow page would be cancelled and re-requested
-                // every second and never arrive.
-                if model.currentURL == nil, !model.isLoading { model.load(page) }
+                // flight: without it a slow page would be cancelled and
+                // re-requested every second and never arrive.
+                let onTarget = model.currentURL?.host?.contains("panura.app") ?? false
+                if !onTarget, !model.isLoading { model.load(page) }
                 if model.foundVideos.isEmpty { model.foundVideos = videos }
             }
         }
