@@ -45,12 +45,15 @@ App Store Connect access, which arrived on 2026-09-15.
    - **`GOOGLE_SERVICE_INFO_PLIST` secret** — the iOS app's Firebase config,
      pasted whole. The release workflow refuses to run without it, and checks
      the plist is for `panura.web.videoplayer` rather than some other app.
-5. **Screenshots**: taken on the real iPhone and iPad once the build is in
+5. ~~VLCKit 4~~ Merged to `main` 2026-09-18 (`cf6a8ee`): VLCKit 4.0.0a24,
+   Picture in Picture on the VLC path, and the streaming relay that fixed gated
+   MKV. The `vlckit4` branch is merged and no longer builds on push.
+6. **Screenshots**: taken on the real iPhone and iPad once the build is in
    TestFlight. App Store Connect wants exact pixel sizes — 6.9" iPhone
    (1320 × 2868 / 1290 × 2796) or 6.5" (1284 × 2778 / 1242 × 2688), and 13"
    iPad (2064 × 2752 / 2048 × 2732). A smaller device's screenshots are
    rejected at upload rather than scaled up.
-6. ~~Run the release workflow~~ Done 2026-09-14: build **1.0 (3)** uploaded
+7. ~~Run the release workflow~~ Done 2026-09-14: build **1.0 (3)** uploaded
    (build number = workflow run number) — **never reached App Store Connect**:
    altool printed "UPLOAD FAILED" (framework signatures, iPad orientations) and
    still exited 0. Build **1.0 (4)** is the first real upload: 2026-09-14, with
@@ -58,7 +61,39 @@ App Store Connect access, which arrived on 2026-09-15.
    now fails on altool errors and prints the Delivery UUID when one lands. It
    validates before it uploads, so a rejection costs a minute rather than a
    build number.
-7. **Fill the listing** from `app-store-listing.md`, attach the build, submit.
+8. **Fill the listing** from `app-store-listing.md`, attach the build, submit.
+
+## Submission day, in order
+
+Each step depends on the one before it, and two of them are easy to do in the
+wrong order.
+
+1. **Device pass** on the TestFlight build — the list at the bottom of this file.
+2. **Run `iOS Release (TestFlight)`** from `main`. Leave the version input blank
+   to ship `1.0`. Note the build number it prints: it is the workflow's run
+   number, and it is what `CFBundleVersion` becomes.
+3. **`version.json` in the `panura` repo**: set `ios.versionCode` to that build
+   number before the release goes live. The in-app update banner compares
+   `ios.versionCode` against `CFBundleVersion`, so a version.json still saying
+   `1` while the shipped build is `24` means the app can never see an update —
+   and the first number that *is* larger would have to be a build number, not a
+   version. Bump it with every release, from now on, to the uploaded build
+   number. Edit `.manifest-src/manifest.source.json`, run `node
+   .manifest-src/build.mjs`, commit both generated files.
+4. **Screenshots** from that same build (sizes below), uploaded to App Store
+   Connect.
+5. **Fill the listing** from `app-store-listing.md` — the copy, the five privacy
+   answers, age rating, content rights, review notes.
+6. **Submit for review.**
+**Where the salt rotation goes.** Before step 2, not after step 6 — the salt is
+baked into the binary at build time, so the build that ships must already carry
+the new one. Rotating after the release would leave every installed copy hashing
+with a salt the deployed manifest no longer uses, and no rule would match again
+until the next update. The order is: new salt into the `MANIFEST_SALT` secret →
+run the release workflow → deploy the re-hashed manifest from the `panura` repo
+when that build reaches testers. The only casualty is a TestFlight build older
+than the rotation, which falls back to the generic sniffer (rules refine, they
+never gate) until it updates. Full steps below.
 
 ## Rotate the salt (deferred — first release ships on the current one)
 
@@ -96,5 +131,15 @@ Reviewers use real hardware, and the simulator does not exercise most of this:
   clip (both take the `PHAssetResourceManager` path).
 - Subtitles: size, colour, outline, and `:freetype-font`, which may need a
   PostScript name rather than a family name on device.
-- Pinch zoom, sleep timer, background audio, resume.
+- Pinch zoom (it now goes below 100%), sleep timer, background audio, resume.
 - The offline error page, and private-mode theming.
+- **Engine hand-over**: a stream the Apple player cannot decode — HEVC in
+  MPEG-TS, an MKV — starts in VLC on its own, with no error shown and no VLC
+  branding. Settings → Playback is on **Auto**; forcing Apple there should make
+  the same stream show the unsupported message instead of loading forever.
+- **A gated stream from the browser** (one whose site rule asks for `origin` or
+  a cookie): it goes through the relay, and must start in seconds and seek.
+- **Picture in Picture** on both engines: swipe up mid-video, the picture
+  follows, and tapping it returns to the player rather than the browser.
+- Controls at phone width with quality options showing — nothing clipped, close
+  button reachable.

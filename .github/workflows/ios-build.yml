@@ -6,9 +6,7 @@ name: iOS Build
 on:
   workflow_dispatch:
   push:
-    # vlckit4: the VLCKit 4 migration builds from its branch too. Drop it from
-    # this list when the branch merges.
-    branches: [main, vlckit4]
+    branches: [main]
     paths-ignore:
       - '**/*.md'
       - '.gitignore'

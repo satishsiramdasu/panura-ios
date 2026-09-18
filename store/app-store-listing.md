@@ -76,6 +76,7 @@ THE PLAYER
 • Subtitle control that goes past on and off: size, font, colour, outline,
   background, and the character encoding that fixes garbled non-English files
 • Audio and subtitle track switching, with sidecar subtitles found on the page
+• Picture in Picture, so the video follows you out of the app
 • Background audio, resume where you left off, and a sleep timer
 
 PLAY ON TV
@@ -103,10 +104,10 @@ nothing, and only ever opens the pages you ask it to.
 First iOS release.
 
 • In-app browser with automatic stream detection
-• VLC-powered player: HLS, MP4, MKV and more
+• Two playback engines, chosen for you: HLS, MP4, MKV, AVI and more
 • Subtitle control down to font, colour, outline and encoding
 • Gestures, pinch zoom, background audio, sleep timer, resume
-• Cast to Chromecast or to Panura on Android TV
+• Picture in Picture, and Cast to Chromecast or Panura on Android TV
 • Ad and pop-up blocking
 • Your library, in a grid or a list
 ```
@@ -135,8 +136,12 @@ What each one is:
 
 - **Crash Data, Other Diagnostic Data** — Crashlytics: stack traces, device
   model, OS version, memory and disk state at the moment of a crash.
-- **Product Interaction** — Analytics' automatic events: first open, sessions,
-  screens viewed. No custom events are logged.
+- **Product Interaction** — Analytics' automatic events (first open, sessions,
+  screens viewed) plus three playback events from
+  `Sources/Core/PlayerAnalytics.swift`, which record only the format played
+  (`hls`, `mkv`, …), which engine played it, whether the source was the web or
+  the device, and whether the app had to switch engines. No URL, host, page
+  title or file name is ever a parameter.
 - **Device ID** — Firebase's app instance id. Not the advertising identifier:
   `FirebaseAnalytics` without the identity-support module never reads IDFA, and
   the ATT prompt is never shown.
@@ -230,7 +235,9 @@ no ad is requested, and the App Tracking Transparency prompt is never shown.
 Firebase Crashlytics and Analytics are used for crash reports and aggregate
 usage statistics. Neither is linked to an identity (there are no accounts) or
 used for tracking, as declared in the privacy label. Browsing history and the
-pages a user visits are never sent anywhere.
+pages a user visits are never sent anywhere; the only playback events we log
+record the format (for example "hls" or "mkv") and which of the app's two
+playback engines handled it, never an address.
 
 To try the app: open it, type any site with video into the address bar, and press
 play on that site's player. A bar appears at the bottom of the browser naming the
