@@ -217,8 +217,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             // is not in Apple's public headers, but it is the only way to give
             // AVURLAsset request headers without routing the whole stream
             // through the local relay, and iOS has honoured it for a decade.
-            // The relay would work too, but it buffers each response in full,
-            // which is fine for a 4 MB segment and ruinous for a 2 GB MP4.
+            // The relay streams, so it would serve a file too — but a local
+            // socket in the path buys nothing when the asset can send the
+            // headers itself.
             options["AVURLAssetHTTPHeaderFieldsKey"] = item.headers
         }
         let asset = AVURLAsset(url: playURL, options: options)
@@ -243,13 +244,11 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     /// Re-opens through the relay after a direct attempt failed. False when
     /// there is nothing left to try, which is the caller's cue to report it.
     ///
-    /// Never for a progressive file: the relay reads each response whole
-    /// before answering, so a feature-length MP4 would have to download
-    /// completely before a single frame played.
+    /// A whole file is fine here: the relay streams it and passes Range
+    /// through, so playback starts at once and seeking still works.
     @discardableResult
     private func retryThroughRelay() -> Bool {
-        guard let item, !item.isLocal, !relayRetryUsed, !playedThroughRelay,
-              !Self.isProgressive(item) else { return false }
+        guard let item, !item.isLocal, !relayRetryUsed, !playedThroughRelay else { return false }
         relayRetryUsed = true
         forceRelay = true
         buffering = true
@@ -258,12 +257,6 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         resumeApplied = false
         buildAndPlay()
         return true
-    }
-
-    private static func isProgressive(_ item: MediaItem) -> Bool {
-        if item.contentType?.lowercased() == "mp4" { return true }
-        let path = item.url.path.lowercased()
-        return [".mp4", ".m4v", ".mov", ".mkv", ".webm"].contains { path.hasSuffix($0) }
     }
 
     func stop() {

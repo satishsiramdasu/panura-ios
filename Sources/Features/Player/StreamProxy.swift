@@ -13,11 +13,19 @@ import Swifter
 ///    `application/vnd.apple.mpegurl` (with a `.m3u8` hint on the proxy URL)
 ///    is what makes such a stream playable at all.
 ///
-/// Playlists are rewritten either way, including `URI="…"` attributes
-/// (EXT-X-KEY, EXT-X-MEDIA renditions): their URIs are relative to a document
-/// that now lives on 127.0.0.1, so they must at minimum be absolutised. They
-/// are pointed back at the relay only when reason 1 applies — otherwise VLC
-/// fetches segments directly rather than through a local socket.
+/// Media is **streamed**, not buffered: bytes are written out as they arrive,
+/// with a few megabytes in hand at most, and `Range` is passed through so
+/// seeking still works. It used to read each response whole before answering —
+/// fine for a playlist or a segment, fatal for a file: a gated 1 GB MKV
+/// detected in the browser sat on the loading spinner for ever, while the same
+/// URL pasted into Network stream (no headers, so no relay) played at once.
+///
+/// Playlists are still read whole, because they are rewritten, including
+/// `URI="…"` attributes (EXT-X-KEY, EXT-X-MEDIA renditions): their URIs are
+/// relative to a document that now lives on 127.0.0.1, so they must at minimum
+/// be absolutised. They are pointed back at the relay only when reason 1
+/// applies — otherwise the player fetches segments directly rather than through
+/// a local socket.
 final class StreamProxy {
     static let shared = StreamProxy()
 
@@ -118,60 +126,43 @@ final class StreamProxy {
 
             // Pass the client's Range through so seeking works on progressive files.
             let range = request.headers["range"]
-            guard let result = self.fetch(target, headers: headers, range: range) else {
+            let upstream = UpstreamStream(url: target, headers: headers, range: range)
+            guard upstream.waitForResponse() else {
+                upstream.cancel()
                 return .internalServerError
             }
 
-            if self.isPlaylist(target: target, mime: result.mime, body: result.body) {
-                let rewritten = self.rewritePlaylist(result.body, base: target, session: session)
+            // Enough to recognise a playlist, and to see a decoy image header.
+            let prefix = upstream.read(atLeast: 64 * 1024)
+
+            if self.isPlaylist(target: target, mime: upstream.mime, body: prefix) {
+                let body = prefix + upstream.readToEnd()
+                upstream.cancel()
+                let rewritten = self.rewritePlaylist(body, base: target, session: session)
                 return .ok(.data(rewritten, contentType: "application/vnd.apple.mpegurl"))
             }
 
             // Only safe on a whole-body response: stripping bytes would
             // invalidate the offsets a ranged request was answered with.
-            let body = range == nil ? Self.stripDecoyHeader(result.body) : result.body
+            let head = range == nil ? Self.stripDecoyHeader(prefix) : prefix
 
-            var out = ["Content-Type": result.mime ?? "application/octet-stream"]
-            result.contentRange.map { out["Content-Range"] = $0 }
+            var out = ["Content-Type": upstream.mime ?? "application/octet-stream"]
             out["Accept-Ranges"] = "bytes"
-            return .raw(result.status, result.status == 206 ? "Partial Content" : "OK", out) { writer in
-                try writer.write(body)
+            upstream.contentRange.map { out["Content-Range"] = $0 }
+            // A stripped decoy makes the body shorter than upstream said.
+            if let length = upstream.contentLength {
+                out["Content-Length"] = String(max(0, length - (prefix.count - head.count)))
+            }
+            return .raw(upstream.status, upstream.status == 206 ? "Partial Content" : "OK", out) { writer in
+                // The player closing the connection throws here, which is how a
+                // seek or a stop ends the transfer rather than downloading on.
+                defer { upstream.cancel() }
+                try writer.write(head)
+                while let chunk = upstream.next() {
+                    try writer.write(chunk)
+                }
             }
         }
-    }
-
-    // MARK: upstream fetch
-
-    private struct Result {
-        let body: Data
-        let mime: String?
-        let status: Int
-        let contentRange: String?
-    }
-
-    /// Synchronous by design — Swifter serves each request on its own thread.
-    private func fetch(_ url: URL, headers: [String: String], range: String?) -> Result? {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 30
-        // Replay every captured header verbatim (Referer, Origin, UA, Cookie…).
-        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
-        if let range { request.setValue(range, forHTTPHeaderField: "Range") }
-
-        var result: Result?
-        let done = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: request) { data, response, _ in
-            defer { done.signal() }
-            guard let data else { return }
-            let http = response as? HTTPURLResponse
-            result = Result(
-                body: data,
-                mime: http?.value(forHTTPHeaderField: "Content-Type") ?? response?.mimeType,
-                status: http?.statusCode ?? 200,
-                contentRange: http?.value(forHTTPHeaderField: "Content-Range")
-            )
-        }.resume()
-        _ = done.wait(timeout: .now() + 35)
-        return result
     }
 
     // MARK: decoy headers
@@ -252,5 +243,145 @@ final class StreamProxy {
         guard let abs = URL(string: uri, relativeTo: base)?.absoluteURL,
               let proxied = proxyURL(for: abs, session: session) else { return line }
         return line.replacingOccurrences(of: "URI=\"\(uri)\"", with: "URI=\"\(proxied.absoluteString)\"")
+    }
+}
+
+/// One upstream response, pulled chunk by chunk.
+///
+/// Swifter serves each request on its own thread and writes the body from a
+/// closure, so the relay needs to *pull* bytes; URLSession pushes them. This
+/// bridges the two with a bounded buffer: the delegate blocks once `highWater`
+/// bytes are waiting, which is what stops a fast CDN filling memory with a film
+/// the player has not reached yet.
+private final class UpstreamStream: NSObject, URLSessionDataDelegate {
+    private static let highWater = 4 << 20
+
+    private let condition = NSCondition()
+    private var buffer = Data()
+    private var finished = false
+    private var failed = false
+    private var responded = false
+    private var cancelled = false
+
+    private(set) var status = 200
+    private(set) var mime: String?
+    private(set) var contentRange: String?
+    private(set) var contentLength: Int?
+
+    private var session: URLSession!
+    private var task: URLSessionDataTask?
+
+    init(url: URL, headers: [String: String], range: String?) {
+        super.init()
+        var request = URLRequest(url: url)
+        // No overall timeout: this is a whole film, not a request. The wait for
+        // the first response is bounded in `waitForResponse` instead.
+        request.timeoutInterval = 30
+        // Replay every captured header verbatim (Referer, Origin, UA, Cookie…).
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        if let range { request.setValue(range, forHTTPHeaderField: "Range") }
+
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 1   // ours to block for backpressure
+        session = URLSession(configuration: .default, delegate: self, delegateQueue: queue)
+        task = session.dataTask(with: request)
+        task?.resume()
+    }
+
+    /// Blocks until the upstream headers arrive. False when it failed or refused.
+    func waitForResponse(timeout: TimeInterval = 30) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        condition.lock()
+        while !responded, !finished, !failed {
+            if !condition.wait(until: deadline) { break }
+        }
+        let ok = responded && (200..<300).contains(status)
+        condition.unlock()
+        return ok
+    }
+
+    /// The next bytes to write, or nil at the end of the body.
+    func next() -> Data? {
+        condition.lock()
+        defer { condition.unlock() }
+        while buffer.isEmpty, !finished, !failed, !cancelled {
+            condition.wait()
+        }
+        guard !buffer.isEmpty else { return nil }
+        let chunk = buffer
+        buffer.removeAll(keepingCapacity: true)
+        condition.broadcast()   // room again: let the delegate carry on
+        return chunk
+    }
+
+    /// At least `count` bytes, or fewer if the body ends first.
+    func read(atLeast count: Int) -> Data {
+        var data = Data()
+        while data.count < count, let chunk = next() {
+            data.append(chunk)
+        }
+        return data
+    }
+
+    /// The rest of the body. Only for playlists, which are small by nature.
+    func readToEnd() -> Data {
+        var data = Data()
+        while let chunk = next() {
+            data.append(chunk)
+            if data.count > 8 << 20 { break }   // a playlist is never this big
+        }
+        return data
+    }
+
+    func cancel() {
+        condition.lock()
+        cancelled = true
+        finished = true
+        buffer.removeAll()
+        condition.broadcast()
+        condition.unlock()
+        task?.cancel()
+        session?.invalidateAndCancel()
+    }
+
+    // MARK: URLSessionDataDelegate
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        let http = response as? HTTPURLResponse
+        condition.lock()
+        status = http?.statusCode ?? 200
+        mime = http?.value(forHTTPHeaderField: "Content-Type") ?? response.mimeType
+        contentRange = http?.value(forHTTPHeaderField: "Content-Range")
+        let declared = response.expectedContentLength
+        contentLength = declared > 0 ? Int(declared) : nil
+        responded = true
+        condition.broadcast()
+        condition.unlock()
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        condition.lock()
+        buffer.append(data)
+        condition.broadcast()
+        // Backpressure: hold the delegate queue until the writer has caught up.
+        while buffer.count >= Self.highWater, !cancelled {
+            condition.wait()
+        }
+        condition.unlock()
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        condition.lock()
+        finished = true
+        if error != nil, !cancelled { failed = true }
+        condition.broadcast()
+        condition.unlock()
+        session.finishTasksAndInvalidate()
     }
 }
