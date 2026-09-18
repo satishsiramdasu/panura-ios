@@ -15,10 +15,33 @@ Character limits are Apple's and are noted where they bind.
 | Bundle ID | `panura.web.videoplayer` |
 | SKU | `panura-ios-1` |
 | Primary language | English (U.S.) |
-| Name (≤30) | `Panura Web Video Player & Cast` (30 — at the limit; no room for a colon) |
+| Name (≤30) | `Panura Cast: Web Video Player` (29) |
 | Subtitle (≤30) | `Browser, subtitles & TV` (23) |
 | Primary category | Photo & Video |
 | Secondary category | Utilities |
+
+**Why the name is shaped that way.** The app has three strengths — detection,
+casting, and a player that opens almost anything — and thirty characters. They do
+not fit, so each is placed where it works rather than crammed into the title:
+
+- **Detection is not a search term.** Nobody types "video detection" into the App
+  Store. It is why people keep the app, not how they find it, so it is sold in
+  the promotional text and the first screenshot, where conversion happens.
+- **The player is identity, not the phrase to compete on.** "Video player" is
+  VLC, Infuse and nPlayer territory — free, entrenched, unrankable for a new app.
+  The title carries `web video player` because that is what the app *is*.
+- **Casting is the winnable search**, so it takes the brand slot, where it is
+  read first. `Panura Web Video Player & Cast` had "Cast" trailing at the end,
+  reading as an afterthought, and never mentioned a TV at all.
+
+Accepted cost: `cast to tv` is no longer adjacent — "cast" is in the name, "TV"
+in the subtitle. Both stay indexed, so the search still matches; only the
+phrase-adjacency bonus is lost. `Panura: Web Video Cast to TV` (28) is the
+alternative that buys that phrase back by giving up `web video player`.
+
+Do not borrow a competitor's name. "Web Video Caster" is InstantBits' app;
+echoing it — "Caster" in that arrangement included — risks rejection for
+impersonation. The generic words web, video, player and cast are fine.
 
 ⚠️ **Creating this record is what produces the App Store ID.** Paste it into
 `VersionStore.appStoreID` (`Sources/Core/VersionStore.swift`) — it is the one
@@ -38,14 +61,29 @@ served from the `panura` repo (`public/_redirects`).
 ## Keywords (≤100 characters, comma-separated, no spaces)
 
 ```
-m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,casting
+m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,captions
 ```
 
-87 characters. Apple indexes name, subtitle and keywords together and counts a
-word once, so nothing from the name (panura, video, player, web, cast) or the
-subtitle (browser, subtitles, tv) is repeated here. No third-party trademarks — a brand name in the
-keyword field is a rejection on its own. No `iptv` or `movies` either: both are
-words reviewers read as a piracy app, whatever the app actually does.
+88 characters. Apple indexes name, subtitle and keywords together and counts a
+word once, so nothing from the name (panura, cast, web, video, player) or the
+subtitle (browser, subtitles, tv) is repeated here.
+
+`casting` was replaced by `captions` when "Cast" moved into the name: Apple does
+not reliably match `casting` to a search for *cast*, so the keyword was buying
+almost nothing, while `captions` is a term the app genuinely competes on and had
+nowhere else to live.
+
+No third-party trademarks — a brand name in the keyword field is a rejection on
+its own. No `iptv` or `movies` either: both are words reviewers read as a piracy
+app, whatever the app actually does.
+
+The whole indexed set, which should contain no word twice:
+
+```
+panura cast web video player browser subtitles tv
+m3u8 hls dash stream streaming live media srt mkv mp4 webm avi hd
+adblock popup captions
+```
 
 ## Promotional text (≤170, editable without a new build)
 
@@ -256,10 +294,20 @@ for:
   `1,2`. Dropping iPad to `1` would remove this requirement and shrink the test
   surface; that is a product decision, not a technical one.
 
-Up to 10 each; 3–5 is plenty. Worth showing, in order: the browser with the
-found-stream bar visible, the player with its controls up, the subtitle options,
+Up to 10 each; 3–5 is plenty.
+
+**The first one must be the browser with the found-stream bar visible**, and that
+is not a preference. Detection is the app's strongest feature and the one no
+search term reaches — nobody types "video detection" — so the name cannot sell
+it and the keywords cannot either. The first screenshot is the only place it gets
+sold, and it is what the App Store shows in search results.
+
+After that, in order: the player with its controls up, the subtitle options,
 "Play on TV" with a device listed, and the Videos tab.
 
 They can be captured in the iOS Simulator on the macOS CI runner without a
-device. Ask if you want that automated — it needs a small XCUITest target, and
-it is only worth writing if you cannot borrow a Mac for twenty minutes.
+device — `.github/workflows/ios-screenshots.yml` does exactly that, driven by
+`Tests/Screenshots/StoreScreenshots.swift`, and checks the pixel sizes before
+uploading them. An iPhone 14 Pro Max shoots 1290 × 2796 by hand and is accepted
+as-is; a 10.2" iPad shoots 1620 × 2160, which is the same 3:4 as the required
+2064 × 2752 and so upscales without distortion.
