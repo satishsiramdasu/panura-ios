@@ -18,7 +18,22 @@ import SwiftUI
 /// ships the code — so the bar has no Downloads seat to trade Videos for, as
 /// Android's does inside the browser.
 struct RootTabView: View {
-    @State private var selection: AppDestination = .home
+    @State private var selection: AppDestination = {
+        #if DEBUG
+        // The screenshot run opens each screen by launching into it rather than
+        // by tapping its way there — see ScreenshotMode.screen.
+        if ScreenshotMode.isActive {
+            switch ScreenshotMode.screen {
+            case "web": return .web
+            case "videos", "player": return .videos
+            case "stream": return .stream
+            case "settings": return .settings
+            default: return .home
+            }
+        }
+        #endif
+        return .home
+    }()
     @State private var showMenu = false
     /// Address typed on Home, waiting for the Browser to pick it up. The browser
     /// owns its WebView across switches, so the hand-off has to be state here

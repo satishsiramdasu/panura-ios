@@ -53,6 +53,13 @@ struct LocalVideosView: View {
         .task {
             lastPlayedID = LocalVideosModel.lastPlayedID
             await model.load()
+            #if DEBUG
+            // The player screenshot, opened without a tap: XCUITest cannot tap a
+            // screen that never goes idle, and a playing video never does.
+            if ScreenshotMode.wantsPlayer, let first = model.visible.first {
+                play(first, at: 0)
+            }
+            #endif
         }
         .fullScreenCover(item: $playItem) { PlayerScreen(item: $0, playlist: localPlaylist()) }
         .sheet(item: $infoItem) { infoSheet($0) }

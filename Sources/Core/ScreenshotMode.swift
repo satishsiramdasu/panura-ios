@@ -20,6 +20,26 @@ enum ScreenshotMode {
         ProcessInfo.processInfo.arguments.contains("-panura-screenshots")
     }
 
+    /// Which screen this launch is for, from `-panura-screen <name>`.
+    ///
+    /// The run takes one screenshot per launch and never taps anything, which is
+    /// not fussiness — it is the only thing that works here. XCUITest waits for
+    /// the app to be idle before every interaction, and this app is never idle
+    /// where the screenshots are: a page with CSS animation, a video playing, a
+    /// timer refreshing fixtures. Every `tap()` then waits out its full
+    /// quiescence timeout, which is how a 16-minute run became a 25-minute
+    /// timeout twice. A screenshot needs no idle app; a tap does.
+    static var screen: String {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let i = arguments.firstIndex(of: "-panura-screen"), i + 1 < arguments.count else {
+            return "home"
+        }
+        return arguments[i + 1]
+    }
+
+    /// The library opens its first video by itself on this launch.
+    static var wantsPlayer: Bool { isActive && screen == "player" }
+
     /// The page the browser shot is taken on: our own, so no other company's
     /// branding ends up in a screenshot on the App Store.
     static let page = "https://panura.app"
