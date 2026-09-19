@@ -39,14 +39,6 @@ final class PlaybackSession: ObservableObject {
     /// background. Drives the bar, and is what tapping it brings back.
     @Published private(set) var minimized: Playing?
 
-    /// True from the moment PiP is asked for until the player screen has gone.
-    ///
-    /// The screen's `onDisappear` cannot tell a dismissal that means "stop this
-    /// video" from one that means "the picture moved to the PiP window", and
-    /// getting that wrong either kills PiP instantly or leaves an engine
-    /// playing into nothing. This flag is the difference.
-    @Published private(set) var handingOffToPiP = false
-
     /// The live engine, kept here so it survives the screen. Exactly one is
     /// non-nil while something is playing.
     ///
@@ -65,6 +57,17 @@ final class PlaybackSession: ObservableObject {
     /// old. VLCKit holds its PiP controller *weakly* from the drawable, so
     /// losing this view ends PiP outright.
     private(set) var videoView: UIView?
+
+    /// Where the surface waits while PiP has the picture: a view in the app's
+    /// own window, not in any SwiftUI hierarchy.
+    ///
+    /// It was a SwiftUI overlay, and that is what broke PiP. Re-parenting could
+    /// then only happen inside `updateUIView`, which SwiftUI runs *after* the
+    /// cover has finished animating away — so the surface spent the whole
+    /// dismissal with no window, and a layer with no window is a layer AVKit
+    /// can drop. Parking is now a plain `addSubview` we can do in the same
+    /// turn of the run loop that takes the screen down.
+    private var parking: UIView?
 
     private init() {}
 
@@ -89,40 +92,75 @@ final class PlaybackSession: ObservableObject {
         vlc?.stop()
         apple = nil
         vlc = nil
+        videoView?.removeFromSuperview()
         videoView = nil
+        parking?.removeFromSuperview()
+        parking = nil
         minimized = nil
         presented = nil
-        handingOffToPiP = false
     }
 
     /// Bring the full-screen player back — the bar tapped, or PiP asking to
     /// restore.
     func restore() {
         guard let minimized else { return }
-        handingOffToPiP = false
         self.minimized = nil
         presented = minimized
     }
 
     // MARK: PiP hand-off
 
-    /// PiP is starting: the screen should come down and playback should not.
+    /// Picture in Picture has the picture: get the screen out of the way.
+    ///
+    /// **Call this on *did* start, never on *will*.** AVKit animates the PiP
+    /// window out of the source layer's on-screen frame, so pulling that layer
+    /// out of the window while the animation is still running aborts the start
+    /// — PiP closes the instant it opens, which is exactly what shipped.
+    ///
+    /// The order inside matters as much: park the surface first, *then* take
+    /// the cover down. The surface never stops having a window, so there is no
+    /// window for AVKit to find missing.
     func beginPictureInPicture() {
-        guard presented != nil else { return }
-        handingOffToPiP = true
+        guard let playing = presented else { return }
+        park()
+        minimized = playing
+        presented = nil
     }
 
-    /// Called by the player screen as it disappears. Returns true when the
-    /// engine must be left alone.
-    func screenDismissed() -> Bool {
-        guard handingOffToPiP, let presented else {
-            stop()
-            return false
-        }
-        minimized = presented
-        self.presented = nil
-        handingOffToPiP = false
-        return true
+    /// Moves the video surface into the window, out of the screen that is
+    /// about to be destroyed.
+    private func park() {
+        guard let surface = videoView, let host = parkingView() else { return }
+        surface.removeFromSuperview()
+        surface.translatesAutoresizingMaskIntoConstraints = true
+        surface.frame = host.bounds
+        surface.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.addSubview(surface)
+    }
+
+    /// A small view at the very back of the app's window. Behind every other
+    /// view, so it is never seen, and in the window, so its layer is real.
+    private func parkingView() -> UIView? {
+        if let parking, parking.window != nil { return parking }
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let windows = scenes.filter { $0.activationState != .background }.flatMap(\.windows)
+        guard let window = windows.first(where: \.isKeyWindow) ?? windows.first else { return nil }
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 160, height: 90))
+        host.isUserInteractionEnabled = false
+        window.addSubview(host)
+        window.sendSubviewToBack(host)
+        parking = host
+        return host
+    }
+
+    /// Called by the player screen as it disappears.
+    ///
+    /// By the time this runs a PiP hand-off has already moved the video into
+    /// the background — `minimized` is how it says so. Anything else is a real
+    /// dismissal and ends playback.
+    func screenDismissed() {
+        guard minimized == nil else { return }
+        stop()
     }
 
     // MARK: engines

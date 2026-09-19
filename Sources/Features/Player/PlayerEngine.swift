@@ -286,11 +286,17 @@ struct EngineVideoView<Model: PlayerEngine>: UIViewRepresentable {
     }
 
     func updateUIView(_ container: UIView, context: Context) {
+        // Not while the screen is on its way out. SwiftUI keeps updating a view
+        // that is being dismissed, and adopting the surface back into a dying
+        // container is how a PiP hand-off undoes itself one frame after making
+        // it.
+        guard PlaybackSession.shared.presented != nil else { return }
         let surface = PlaybackSession.shared.surface(
             { model.makeVideoView() },
             start: { model.start(item: item, into: $0) }
         )
         guard surface.superview !== container else { return }
+        surface.removeFromSuperview()
         // Adding it removes it from wherever it was, which is exactly the
         // hand-off: offscreen host to player, or player back to host.
         container.addSubview(surface)
@@ -300,34 +306,6 @@ struct EngineVideoView<Model: PlayerEngine>: UIViewRepresentable {
             surface.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             surface.topAnchor.constraint(equalTo: container.topAnchor),
             surface.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-    }
-}
-
-/// Where the engine's video surface lives while the player screen is down and
-/// Picture in Picture has the picture.
-///
-/// One point, off the bottom of the screen rather than hidden: a view with no
-/// window can have its layer dropped, and the layer is what PiP is showing.
-struct PlaybackSurfaceHost: UIViewRepresentable {
-    /// Re-parenting only happens in `updateUIView`, so the host has to be asked
-    /// to update when the player goes away. This changing is what asks.
-    let minimizedID: UUID?
-
-    func makeUIView(context: Context) -> UIView { UIView() }
-
-    func updateUIView(_ container: UIView, context: Context) {
-        guard minimizedID != nil,
-              let surface = PlaybackSession.shared.videoView,
-              surface.superview !== container
-        else { return }
-        container.addSubview(surface)
-        surface.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            surface.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            surface.topAnchor.constraint(equalTo: container.topAnchor),
-            surface.widthAnchor.constraint(equalToConstant: 160),
-            surface.heightAnchor.constraint(equalToConstant: 90),
         ])
     }
 }

@@ -54,17 +54,19 @@ struct RootTabView: View {
                 // Above the app bar, below everything else: what is still
                 // playing after the player screen came down.
                 if let minimized = playback.minimized {
-                    NowPlayingBar(
-                        title: minimized.item.title,
-                        where_: "Picture in Picture",
-                        isPlaying: playback.apple?.isPlaying ?? playback.vlc?.isPlaying ?? false,
-                        onTap: { playback.restore() },
-                        onPlayPause: {
-                            playback.apple?.togglePlay()
-                            playback.vlc?.togglePlay()
-                        },
-                        onClose: { playback.stop() }
-                    )
+                    // Through a view that observes the engine, not by reading
+                    // `playback.apple?.isPlaying` here: the session publishes
+                    // *which* engine is live, never what it is doing, so a bar
+                    // built from this view's own observation would show
+                    // whatever the engine happened to be doing when PiP started
+                    // and never change again.
+                    Group {
+                        if let apple = playback.apple {
+                            EngineNowPlayingBar(model: apple, title: minimized.item.title)
+                        } else if let vlc = playback.vlc {
+                            EngineNowPlayingBar(model: vlc, title: minimized.item.title)
+                        }
+                    }
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
@@ -110,15 +112,6 @@ struct RootTabView: View {
         // what the bar has to do.
         .fullScreenCover(item: $playback.presented) { playing in
             PlayerScreen(item: playing.item, playlist: playing.playlist)
-        }
-        // Where the video surface waits while PiP has the picture. One point,
-        // off the bottom edge: a surface with no window can lose its layer, and
-        // that layer is what PiP is showing.
-        .overlay(alignment: .bottom) {
-            PlaybackSurfaceHost(minimizedID: playback.minimized?.id)
-                .frame(width: 1, height: 1)
-                .offset(y: 200)
-                .allowsHitTesting(false)
         }
         // Nothing in release builds — see the modifier below.
         .screenshotPlayer()
@@ -189,6 +182,29 @@ struct RootTabView: View {
             AppMenuPanel.Item(icon: "link", label: "Network Stream") { select(.stream) },
             AppMenuPanel.Item(icon: "gearshape.fill", label: "Settings") { select(.settings) },
         ]
+    }
+}
+
+/// The bar, bound to whichever engine is playing.
+///
+/// Generic for the same reason `PlayerView` is: two concrete models, one
+/// protocol, and no type-eraser that would have to forward every published
+/// property to hand an existential to `@ObservedObject`.
+private struct EngineNowPlayingBar<Model: PlayerEngine>: View {
+    @ObservedObject var model: Model
+    let title: String
+
+    var body: some View {
+        NowPlayingBar(
+            title: title,
+            // Background audio is not Picture in Picture, and saying so when
+            // there is no picture would be a lie the user can see.
+            where_: model.isPictureInPictureActive ? "Picture in Picture" : "Playing in background",
+            isPlaying: model.isPlaying,
+            onTap: { PlaybackSession.shared.restore() },
+            onPlayPause: { model.togglePlay() },
+            onClose: { PlaybackSession.shared.stop() }
+        )
     }
 }
 

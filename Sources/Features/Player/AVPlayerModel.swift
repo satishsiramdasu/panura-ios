@@ -1051,6 +1051,31 @@ extension AVPlayerModel: AVPictureInPictureControllerDelegate {
         Task { @MainActor in self.isPictureInPictureActive = true }
     }
 
+    /// Only now is it safe to take the player screen down.
+    ///
+    /// The hand-off used to run off `willStart`, and PiP closed the instant it
+    /// opened: AVKit animates its window out of the source layer's frame, and
+    /// dismissing the screen mid-animation takes that layer out of the window
+    /// underneath it. By `didStart` the PiP window owns the picture and the
+    /// source layer is free to go anywhere — which is the offscreen park in
+    /// `PlaybackSession`.
+    nonisolated func pictureInPictureControllerDidStartPictureInPicture(
+        _ controller: AVPictureInPictureController
+    ) {
+        Task { @MainActor in PlaybackSession.shared.beginPictureInPicture() }
+    }
+
+    /// A start that never happened. Without this the flag set in `willStart`
+    /// stays true for good, and everything that asks "is PiP running?" — the
+    /// button's icon, the background handler that leaves the layer attached —
+    /// answers wrongly for the rest of the video.
+    nonisolated func pictureInPictureController(
+        _ controller: AVPictureInPictureController,
+        failedToStartPictureInPictureWithError error: Error
+    ) {
+        Task { @MainActor in self.isPictureInPictureActive = false }
+    }
+
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(
         _ controller: AVPictureInPictureController
     ) {

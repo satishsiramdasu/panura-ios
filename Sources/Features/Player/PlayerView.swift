@@ -158,19 +158,15 @@ struct PlayerView<Model: PlayerEngine>: View {
             ticker?.cancel()
             OrientationManager.reset()
             // The session decides whether this dismissal ends the video. It
-            // does not when Picture in Picture has just taken the picture: the
-            // engine and its surface stay alive, and the bar above the app bar
-            // becomes the way back. `stop()` happens in there, not here.
-            _ = PlaybackSession.shared.screenDismissed()
+            // does not when Picture in Picture has just taken the picture —
+            // that hand-off already moved playback to the background, and the
+            // bar above the app bar is the way back. `stop()` lives in there.
+            PlaybackSession.shared.screenDismissed()
         }
-        // PiP starting is the cue to get out of the way — the whole point of it
-        // is to use the app while the video plays, and a full-screen player
-        // saying "this is in Picture in Picture" is the opposite of that.
-        .onChange(of: model.isPictureInPictureActive) { active in
-            guard active else { return }
-            PlaybackSession.shared.beginPictureInPicture()
-            dismiss()
-        }
+        // Getting out of the way when PiP starts is the engine's call, not a
+        // view's: it has to happen on *did* start, and only the engine's
+        // delegate knows when that is. Watching `isPictureInPictureActive` from
+        // here fired on *will* start instead, and killed PiP on the way in.
         .onChange(of: subtitleSize) { _ in model.subtitleStyleChanged() }
         .onChange(of: subtitleColor) { _ in model.subtitleStyleChanged() }
         .onChange(of: subtitleBackground) { _ in model.subtitleStyleChanged() }
@@ -920,7 +916,10 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     // MARK: actions
 
-    private func close() { model.stop(); dismiss() }
+    /// The X. Through the session, so the engine, its surface and the parking
+    /// view all go together — `model.stop()` alone left the session holding a
+    /// dead engine.
+    private func close() { PlaybackSession.shared.stop(); dismiss() }
 
     private var engineName: String { Model.self == VLCPlayerModel.self ? "vlc" : "av" }
 

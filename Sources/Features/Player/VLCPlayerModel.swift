@@ -135,7 +135,14 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             Task { @MainActor in self?.pictureInPictureReady(controller) }
         }
         drawable.onPictureInPictureChanged = { [weak self] started in
-            Task { @MainActor in self?.isPictureInPictureActive = started }
+            Task { @MainActor in
+                self?.isPictureInPictureActive = started
+                // VLCKit reports this after PiP has started, not before, so
+                // the screen can come down here — see the note on
+                // `beginPictureInPicture`, which the Apple player learnt the
+                // hard way.
+                if started { PlaybackSession.shared.beginPictureInPicture() }
+            }
         }
         videoDrawable = drawable
         // Before the first play(): the video output checks the drawable for PiP
