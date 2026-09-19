@@ -421,3 +421,93 @@ struct CastDevicesView: View {
         }
     }
 }
+
+/// The cast card on Home.
+///
+/// Casting was reachable only from the mark in a header — a 23-point glyph that
+/// says nothing about what it does until you already know. It is one of the two
+/// things this app is for, so Home states it: what it is, which television is
+/// connected, and a button that starts the search.
+///
+/// One card for both paths on purpose. Which of Panura Cast and Chromecast is
+/// in use is a detail of how the video gets there, and `CastDevicesView` is
+/// where that choice is made and explained. Here there is only a television.
+struct CastHomeCard: View {
+    @ObservedObject private var cast = CastManager.shared
+    @ObservedObject private var panura = PanuraCastManager.shared
+    @State private var showPicker = false
+    @State private var showControls = false
+
+    private var connected: Bool { cast.isConnected || panura.isTVConnected }
+    private var casting: Bool { cast.isCasting || panura.isCasting }
+
+    private var deviceName: String? {
+        if panura.isTVConnected, !panura.connectedTVName.isEmpty { return panura.connectedTVName }
+        return cast.connectedDeviceName
+    }
+
+    private var title: String {
+        guard connected else { return "Cast to TV" }
+        return deviceName ?? "Connected"
+    }
+
+    private var subtitle: String {
+        if casting {
+            let playing = panura.isCasting ? panura.streamTitle : (cast.castingTitle ?? "")
+            return playing.isEmpty ? "Playing" : playing
+        }
+        if connected { return "Connected — play a video to send it over" }
+        // Named, because the difference decides what will actually play, and
+        // the picker is where it is explained properly.
+        return "Panura on Android TV, or any Chromecast"
+    }
+
+    /// Controls once something is on the TV; otherwise the picker, which is
+    /// also where a connected-but-idle session is switched or dropped.
+    private var action: String { casting ? "Controls" : (connected ? "Change" : "Find device") }
+
+    var body: some View {
+        Button {
+            if casting { showControls = true } else { showPicker = true }
+        } label: {
+            HStack(spacing: 12) {
+                CastMark(connected: connected)
+                    .frame(width: 22, height: 22)
+                    .foregroundStyle(connected ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
+                    .frame(width: 42, height: 42)
+                    .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(action)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(PanuraTheme.onAccent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(PanuraTheme.accent, in: Capsule())
+            }
+            .padding(12)
+            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(connected ? "Casting to \(title)" : "Cast to TV")
+        .sheet(isPresented: $showPicker) {
+            NavigationStack { CastDevicesView() }
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showControls) {
+            PanuraCastControlView().presentationDragIndicator(.visible)
+        }
+    }
+}
