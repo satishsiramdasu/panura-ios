@@ -15,8 +15,8 @@ Character limits are Apple's and are noted where they bind.
 | Bundle ID | `panura.web.videoplayer` |
 | SKU | `panura-ios-1` |
 | Primary language | English (U.S.) |
-| Name (≤30) | `Panura Video Browser & Caster` (29) |
-| Subtitle (≤30) | `Web player, subtitles & TV` (26) |
+| Name (≤30) | `Panura: Video Browser, TV Cast` (30) |
+| Subtitle (≤30) | `Web player with subtitles` (25) |
 | Primary category | Photo & Video |
 | Secondary category | Utilities |
 
@@ -36,15 +36,24 @@ do not fit, so each is placed where it works rather than crammed into the title:
 - **The player is identity, not the phrase to compete on.** "Video player" is
   VLC, Infuse and nPlayer territory — free, entrenched, unrankable for a new
   app. It moves to the subtitle, which still carries `web player`.
-- **`Caster` over `Cast`** for grammar: "Browser & Caster" is two agent nouns
-  and reads as a pair, where "Browser & Cast" is a noun beside a verb. It costs
-  two characters and one search token, which the keyword field buys back below.
+- **`TV Cast`, not `Caster` or `Cast TV`.** All three were tried. `Caster` is
+  the wrong token — people search `cast`, and the two do not reliably match, so
+  it rented a keyword slot to cover itself. `Cast TV` is not idiomatic: you
+  cast *to* a TV, and `Browse & Cast TV` parses as "browse TV and cast TV".
+  `TV Cast` is how the store itself phrases it, and it puts `tv` and `cast`
+  next to each other.
 
 Accepted cost: `web` is no longer in the title, so `web video` is not adjacent —
 `web` is in the subtitle and `video` in the name. Both stay indexed and the
-search still matches; only the phrase-adjacency bonus is lost. The alternative,
-`Panura Web Video Browser, Cast` (30), buys it back and spends the comma and
-every spare character to do it.
+search still matches; only the phrase-adjacency bonus is lost. `video browser`
+and `tv cast` are both adjacent, which is where the adjacency is worth more.
+
+Minor, and judged acceptable: `TV Cast` is also the name of an existing app, as
+`Caster` is a word in several. Neither is a borrowed brand — the phrase is
+generic and used descriptively across the category — and a name led by
+`Panura:` is not confusable with an app called `TV Cast`. The line to stay
+behind is copying a competitor's whole distinctive name, which is why "Web
+Video Caster" (InstantBits) stays out of every field.
 
 `Caster` is a generic word, not a borrowed brand: Chromecast TV Caster and
 Castify: WebCaster are both live on the store. The thing to avoid is the whole
@@ -70,17 +79,16 @@ served from the `panura` repo (`public/_redirects`).
 ## Keywords (≤100 characters, comma-separated, no spaces)
 
 ```
-m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,captions,cast
+m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,captions,flv,mov
 ```
 
-93 characters. Apple indexes name, subtitle and keywords together and counts a
-word once, so nothing from the name (panura, video, browser, caster) or the
-subtitle (web, player, subtitles, tv) is repeated here.
+96 characters. Apple indexes name, subtitle and keywords together and counts a
+word once, so nothing from the name (panura, video, browser, tv, cast) or the
+subtitle (web, player, subtitles) is repeated here.
 
-`cast` is here because the name carries `Caster`, and Apple does not reliably
-match one to a search for the other. Five characters for the exact form of the
-app's second-biggest term is the cheapest thing in this field. `captions` stays:
-it is a term the app genuinely competes on and has nowhere else to live.
+`cast` used to live here, bought by a name that said `Caster`. The name says
+`Cast` now, so the slot went to `flv` and `mov` — two containers the app really
+does play, and formats are something people search by name.
 
 No third-party trademarks — a brand name in the keyword field is a rejection on
 its own. No `iptv` or `movies` either: both are words reviewers read as a piracy
@@ -89,9 +97,9 @@ app, whatever the app actually does.
 The whole indexed set, which should contain no word twice:
 
 ```
-panura video browser caster web player subtitles tv
+panura video browser tv cast web player subtitles
 m3u8 hls dash stream streaming live media srt mkv mp4 webm avi hd
-adblock popup captions cast
+adblock popup captions flv mov
 ```
 
 ## Promotional text (≤170, editable without a new build)
