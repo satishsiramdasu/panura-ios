@@ -27,7 +27,10 @@ final class PlayerLayerView: UIView {
 /// `SubtitleOverlay`, where outline, font and the delay control all apply.
 @MainActor
 final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
-    static func makeEngine() -> AVPlayerModel { AVPlayerModel() }
+    /// Through the session, so a player screen rebuilt after Picture in
+    /// Picture adopts the engine already playing instead of starting a second
+    /// one over the top of it.
+    static func makeEngine() -> AVPlayerModel { PlaybackSession.shared.appleEngine() }
 
     @Published var isPlaying = false
     @Published var position: Float = 0
@@ -1054,12 +1057,16 @@ extension AVPlayerModel: AVPictureInPictureControllerDelegate {
         Task { @MainActor in self.isPictureInPictureActive = false }
     }
 
-    /// The player screen is still presented underneath, so there is nothing to
-    /// rebuild: returning from PiP lands back on it.
+    /// The restore button on the PiP window. The player screen is no longer
+    /// underneath — it came down when PiP started, which is the point — so the
+    /// session puts it back before the handler reports success.
     nonisolated func pictureInPictureController(
         _ controller: AVPictureInPictureController,
         restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void
     ) {
-        completionHandler(true)
+        Task { @MainActor in
+            PlaybackSession.shared.restore()
+            completionHandler(true)
+        }
     }
 }

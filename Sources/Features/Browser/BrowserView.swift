@@ -15,8 +15,8 @@ struct BrowserView: View {
     @ObservedObject private var panuraCast = PanuraCastManager.shared
     /// Private mode lives here, not on the model: Home's pill toggles it too.
     @ObservedObject private var session = BrowserSession.shared
+    @ObservedObject private var playback = PlaybackSession.shared
     @EnvironmentObject private var cast: CastManager
-    @State private var playItem: MediaItem?
     @State private var showFoundSheet = false
     @State private var showPanuraControls = false
     /// The cast picker, opened by a Cast tap with no TV connected. The video
@@ -73,8 +73,12 @@ struct BrowserView: View {
             }
         }
         .overlay(alignment: .bottom) { toastView }
-        .fullScreenCover(item: $playItem) { PlayerScreen(item: $0) }
-        .onChange(of: playItem != nil) { playing in model.suspendPageMedia(playing) }
+        // The page must go quiet while its video plays in ours, and start
+        // again when the player closes — including a close that happens from
+        // the Now Playing bar, long after this screen stopped presenting it.
+        .onChange(of: playback.isPlayingSomething) { playing in
+            model.suspendPageMedia(playing)
+        }
         .fullScreenCover(isPresented: $showAddress) {
             AddressScreen(
                 currentURL: model.currentURL?.absoluteString ?? "",
@@ -130,6 +134,13 @@ struct BrowserView: View {
         }
         .onChange(of: pendingAddress) { _ in consumePending() }
         .onAppear { consumePending() }
+    }
+
+    /// Hands a detected video to the session, which owns presentation now —
+    /// so the player can be dismissed into Picture in Picture and brought back
+    /// from the bar without this screen being involved.
+    private func play(_ video: ExtractedVideo) {
+        PlaybackSession.shared.play(model.playable(video))
     }
 
     /// A cast that had to wait for a TV. Sending it on dismissal rather than
@@ -546,7 +557,7 @@ struct BrowserView: View {
     private func actionRow(_ video: ExtractedVideo) -> some View {
         HStack(spacing: 8) {
             Button {
-                playItem = model.playable(video)
+                play(video)
             } label: {
                 streamActionLabel("Play", icon: "play.fill", filled: true)
             }
@@ -654,7 +665,7 @@ struct BrowserView: View {
                         HStack(spacing: 8) {
                             Button {
                                 showFoundSheet = false
-                                playItem = model.playable(video)
+                                play(video)
                             } label: {
                                 streamActionLabel("Play", icon: "play.fill", filled: true)
                             }

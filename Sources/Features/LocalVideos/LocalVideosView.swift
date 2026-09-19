@@ -11,7 +11,6 @@ import AVFoundation
 /// show — an asset has an identifier, not a location.
 struct LocalVideosView: View {
     @StateObject private var model = LocalVideosModel()
-    @State private var playItem: MediaItem?
     @State private var playIndex = 0
     @State private var selecting = false
     @State private var selection: Set<String> = []
@@ -54,7 +53,6 @@ struct LocalVideosView: View {
             lastPlayedID = LocalVideosModel.lastPlayedID
             await model.load()
         }
-        .fullScreenCover(item: $playItem) { PlayerScreen(item: $0, playlist: localPlaylist()) }
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
         .sheet(isPresented: $showAlbums) { albumsSheet }
@@ -479,7 +477,10 @@ struct LocalVideosView: View {
                 LocalVideosModel.lastPlayedID = asset.id
                 lastPlayedID = asset.id
                 playIndex = index
-                playItem = MediaItem(title: asset.title, url: url, isLocal: true)
+PlaybackSession.shared.play(
+                    MediaItem(title: asset.title, url: url, isLocal: true),
+                    playlist: localPlaylist()
+                )
             }
         }
     }

@@ -178,7 +178,19 @@ struct PlayerView<Model: PlayerEngine>: View {
         .onDisappear {
             ticker?.cancel()
             OrientationManager.reset()
-            model.stop()
+            // The session decides whether this dismissal ends the video. It
+            // does not when Picture in Picture has just taken the picture: the
+            // engine and its surface stay alive, and the bar above the app bar
+            // becomes the way back. `stop()` happens in there, not here.
+            _ = PlaybackSession.shared.screenDismissed()
+        }
+        // PiP starting is the cue to get out of the way — the whole point of it
+        // is to use the app while the video plays, and a full-screen player
+        // saying "this is in Picture in Picture" is the opposite of that.
+        .onChange(of: model.isPictureInPictureActive) { active in
+            guard active else { return }
+            PlaybackSession.shared.beginPictureInPicture()
+            dismiss()
         }
         .onChange(of: subtitleSize) { _ in model.subtitleStyleChanged() }
         .onChange(of: subtitleColor) { _ in model.subtitleStyleChanged() }

@@ -1030,7 +1030,8 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
 // MARK: - PlayerEngine
 
 extension VLCPlayerModel: PlayerEngine {
-    static func makeEngine() -> VLCPlayerModel { VLCPlayerModel() }
+    /// Through the session — see AVPlayerModel.makeEngine.
+    static func makeEngine() -> VLCPlayerModel { PlaybackSession.shared.vlcEngine() }
 
     var supportsAudioDelay: Bool { true }
     var supportsAudioBoost: Bool { true }

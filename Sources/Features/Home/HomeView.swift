@@ -15,7 +15,6 @@ struct HomeView: View {
     @State private var showAddress = false
     @State private var showShortcutsSheet = false
     @State private var editingShortcut: SiteEntry?
-    @State private var playItem: MediaItem?
     @State private var confirmClearHistory = false
     @State private var showReport = false
     /// URL of the resume card being checked, so it can show it is working.
@@ -68,7 +67,6 @@ struct HomeView: View {
                 onDismiss: { showAddress = false }
             )
         }
-        .fullScreenCover(item: $playItem) { PlayerScreen(item: $0) }
         .sheet(isPresented: $showShortcutsSheet) { shortcutsSheet }
         .sheet(item: $editingShortcut) { ShortcutEditor(entry: $0) }
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
@@ -321,7 +319,7 @@ struct HomeView: View {
             let alive = await BrowsingStore.isAlive(entry)
             checkingResume = nil
             if alive {
-                playItem = entry.mediaItem
+                PlaybackSession.shared.play(entry.mediaItem)
             } else {
                 store.removeWatching(url: entry.url)
                 resumeToast = "That link has expired — open the page again."

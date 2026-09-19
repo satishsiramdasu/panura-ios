@@ -40,6 +40,7 @@ struct RootTabView: View {
     /// rather than a fresh `BrowserView(url:)`.
     @State private var pendingAddress: String?
     @ObservedObject private var session = BrowserSession.shared
+    @ObservedObject private var playback = PlaybackSession.shared
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -50,6 +51,23 @@ struct RootTabView: View {
                 // that can reach its own end. The height animates away in place
                 // rather than the bar sliding over the content, so nothing it
                 // covers can end up unreachable.
+                // Above the app bar, below everything else: what is still
+                // playing after the player screen came down.
+                if let minimized = playback.minimized {
+                    NowPlayingBar(
+                        title: minimized.item.title,
+                        where_: "Picture in Picture",
+                        isPlaying: playback.apple?.isPlaying ?? playback.vlc?.isPlaying ?? false,
+                        onTap: { playback.restore() },
+                        onPlayPause: {
+                            playback.apple?.togglePlay()
+                            playback.vlc?.togglePlay()
+                        },
+                        onClose: { playback.stop() }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
                 if barVisible {
                     AppBarRow(
                         selection: selection,
@@ -86,6 +104,22 @@ struct RootTabView: View {
         // measured against different bottoms, which is exactly how the panel
         // came to float an indicator's height above the bar.
         .ignoresSafeArea(.container, edges: .bottom)
+        // The one player presenter in the app. It used to be five — every
+        // screen that could start a video owned its own cover — and none of
+        // them could reopen it once the user had walked away, which is exactly
+        // what the bar has to do.
+        .fullScreenCover(item: $playback.presented) { playing in
+            PlayerScreen(item: playing.item, playlist: playing.playlist)
+        }
+        // Where the video surface waits while PiP has the picture. One point,
+        // off the bottom edge: a surface with no window can lose its layer, and
+        // that layer is what PiP is showing.
+        .overlay(alignment: .bottom) {
+            PlaybackSurfaceHost(minimizedID: playback.minimized?.id)
+                .frame(width: 1, height: 1)
+                .offset(y: 200)
+                .allowsHitTesting(false)
+        }
         // Nothing in release builds — see the modifier below.
         .screenshotPlayer()
     }
@@ -165,14 +199,14 @@ struct RootTabView: View {
 /// way needs the photo library — and pre-granting Photos to the simulator with
 /// `simctl privacy grant` is what hung three capture runs in a row.
 private struct ScreenshotPlayerPresenter: ViewModifier {
-    @State private var item: MediaItem?
-
     func body(content: Content) -> some View {
         content
-            .fullScreenCover(item: $item) { PlayerScreen(item: $0, playlist: nil) }
+            // Through the session, like every other way of starting a video:
+            // two fullScreenCovers on one view means only one of them ever
+            // presents, and the session owns that one.
             .task {
-                guard ScreenshotMode.wantsPlayer else { return }
-                item = ScreenshotMode.demoItem
+                guard ScreenshotMode.wantsPlayer, let item = ScreenshotMode.demoItem else { return }
+                PlaybackSession.shared.play(item)
             }
     }
 }

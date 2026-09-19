@@ -10,7 +10,6 @@ struct StreamView: View {
     @State private var referer = ""
     @State private var userAgent = ""
     @State private var showAdvanced = false
-    @State private var playItem: MediaItem?
     @State private var playIndex = 0
     /// Playlist search and group filter.
     @State private var query = ""
@@ -26,7 +25,6 @@ struct StreamView: View {
             .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Network Stream") }
             .navigationBarHidden(true)
         }
-        .fullScreenCover(item: $playItem) { PlayerScreen(item: $0, playlist: channelPlaylist()) }
     }
 
     // MARK: entry
@@ -338,13 +336,19 @@ struct StreamView: View {
                 return
             }
             model.remember(trimmed)
-            playItem = MediaItem(title: url.lastPathComponent, url: url, headers: headers)
+            PlaybackSession.shared.play(
+                MediaItem(title: url.lastPathComponent, url: url, headers: headers),
+                playlist: channelPlaylist()
+            )
         }
     }
 
     private func playChannel(_ channel: M3UChannel, at index: Int) {
         playIndex = index
-        playItem = MediaItem(title: channel.name, url: channel.url, headers: headers)
+        PlaybackSession.shared.play(
+            MediaItem(title: channel.name, url: channel.url, headers: headers),
+            playlist: channelPlaylist()
+        )
     }
 
     /// Next/previous walks the channel list as filtered on screen, so the order

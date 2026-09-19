@@ -272,13 +272,64 @@ struct EngineVideoView<Model: PlayerEngine>: UIViewRepresentable {
     @ObservedObject var model: Model
     let item: MediaItem
 
+    /// A container, with the engine's own view inside it.
+    ///
+    /// The engine's view belongs to `PlaybackSession` and outlives this screen —
+    /// PiP dies with it, for both engines — so it cannot be what SwiftUI
+    /// creates and destroys here. This container is; the surface is only
+    /// borrowed into it, and re-parented back to the offscreen host when the
+    /// player is dismissed with PiP still running.
     func makeUIView(context: Context) -> UIView {
-        let view = model.makeVideoView()
-        model.start(item: item, into: view)
-        return view
+        let container = UIView()
+        container.backgroundColor = .black
+        return container
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ container: UIView, context: Context) {
+        let surface = PlaybackSession.shared.surface(
+            { model.makeVideoView() },
+            start: { model.start(item: item, into: $0) }
+        )
+        guard surface.superview !== container else { return }
+        // Adding it removes it from wherever it was, which is exactly the
+        // hand-off: offscreen host to player, or player back to host.
+        container.addSubview(surface)
+        surface.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            surface.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            surface.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            surface.topAnchor.constraint(equalTo: container.topAnchor),
+            surface.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+    }
+}
+
+/// Where the engine's video surface lives while the player screen is down and
+/// Picture in Picture has the picture.
+///
+/// One point, off the bottom of the screen rather than hidden: a view with no
+/// window can have its layer dropped, and the layer is what PiP is showing.
+struct PlaybackSurfaceHost: UIViewRepresentable {
+    /// Re-parenting only happens in `updateUIView`, so the host has to be asked
+    /// to update when the player goes away. This changing is what asks.
+    let minimizedID: UUID?
+
+    func makeUIView(context: Context) -> UIView { UIView() }
+
+    func updateUIView(_ container: UIView, context: Context) {
+        guard minimizedID != nil,
+              let surface = PlaybackSession.shared.videoView,
+              surface.superview !== container
+        else { return }
+        container.addSubview(surface)
+        surface.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            surface.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            surface.topAnchor.constraint(equalTo: container.topAnchor),
+            surface.widthAnchor.constraint(equalToConstant: 160),
+            surface.heightAnchor.constraint(equalToConstant: 90),
+        ])
+    }
 }
 
 /// The system AirPlay picker, in the player's own colours. A system control
