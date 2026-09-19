@@ -1,20 +1,24 @@
 import SwiftUI
 
-/// The strip above the app bar naming what is still playing after the player
-/// screen has gone — Picture in Picture, or a TV.
+/// The strip above the app bar naming the television that has the video.
 ///
-/// It exists because leaving the player used to mean losing the video. PiP now
-/// takes the picture and the screen comes down, so something has to say where
-/// the video went and offer the way back; the same is true of a cast, which
-/// until now was only visible from the screen that started it.
+/// It exists because casting is invisible. The video is on a TV, the phone
+/// shows nothing at all, and walking away from the screen that started the cast
+/// left no way to pause it or even to see that it was running.
 ///
-/// Deliberately not a mini *player*: no second video surface, no scrubber. The
-/// picture is already somewhere — floating, or on the TV — and drawing it twice
-/// costs a decoder and buys nothing. Title, state, play/pause, close.
+/// It briefly covered Picture in Picture too, and should not have: iOS floats
+/// its own window whenever PiP runs, with pause, close and restore on the
+/// window itself, so the bar could never appear except underneath a control
+/// that was already better placed. Written generically anyway — the icon and
+/// every label are parameters — because the next thing that plays somewhere
+/// else will want the same strip.
+///
+/// Deliberately not a mini *player*: no video surface, no scrubber. The picture
+/// is already on the TV, and drawing it twice costs a decoder and buys nothing.
+/// Title, where, time left, play/pause, close.
 struct NowPlayingBar: View {
-    /// The glyph that says where the video went. PiP has its own; a TV gets
-    /// the cast mark, which is the one the header already uses.
-    var icon: String = "pip.fill"
+    /// The glyph that says where the video went.
+    var icon: String = "tv.fill"
     let title: String
     /// "Picture in Picture", or the TV's name.
     let where_: String

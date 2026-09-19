@@ -55,28 +55,19 @@ struct RootTabView: View {
                 // that can reach its own end. The height animates away in place
                 // rather than the bar sliding over the content, so nothing it
                 // covers can end up unreachable.
-                // Above the app bar, below everything else: what is still
-                // playing after the player screen came down.
-                // A TV outranks Picture in Picture: if both are somehow true,
-                // the television is the more surprising place for the video to
-                // be, and the one the user is further from.
+                // Above the app bar, below everything else: the television
+                // that has the video.
+                //
+                // Only a television. Picture in Picture had a bar here too, and
+                // it was redundant every single time it appeared: `minimized`
+                // is set by exactly one thing, the PiP hand-off, so the bar
+                // could never be on screen without iOS already floating the
+                // video above it — with pause, close and restore on the window
+                // itself, closer to hand than a strip at the bottom. Casting is
+                // the opposite. Nothing on the phone shows it at all, which is
+                // what earns a permanent strip.
                 if isCasting {
                     castBar.transition(.move(edge: .bottom).combined(with: .opacity))
-                } else if let minimized = playback.minimized {
-                    // Through a view that observes the engine, not by reading
-                    // `playback.apple?.isPlaying` here: the session publishes
-                    // *which* engine is live, never what it is doing, so a bar
-                    // built from this view's own observation would show
-                    // whatever the engine happened to be doing when PiP started
-                    // and never change again.
-                    Group {
-                        if let apple = playback.apple {
-                            EngineNowPlayingBar(model: apple, title: minimized.item.title)
-                        } else if let vlc = playback.vlc {
-                            EngineNowPlayingBar(model: vlc, title: minimized.item.title)
-                        }
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 if barVisible {
@@ -246,38 +237,6 @@ struct RootTabView: View {
             AppMenuPanel.Item(icon: "link", label: "Network Stream") { select(.stream) },
             AppMenuPanel.Item(icon: "gearshape.fill", label: "Settings") { select(.settings) },
         ]
-    }
-}
-
-/// The bar, bound to whichever engine is playing.
-///
-/// Generic for the same reason `PlayerView` is: two concrete models, one
-/// protocol, and no type-eraser that would have to forward every published
-/// property to hand an existential to `@ObservedObject`.
-private struct EngineNowPlayingBar<Model: PlayerEngine>: View {
-    @ObservedObject var model: Model
-    let title: String
-
-    var body: some View {
-        NowPlayingBar(
-            title: title,
-            // Background audio is not Picture in Picture, and saying so when
-            // there is no picture would be a lie the user can see.
-            where_: model.isPictureInPictureActive ? "Picture in Picture" : "Playing in background",
-            // `remaining` is already formatted, and empty on a live stream.
-            timeLeft: model.remaining.isEmpty ? "" : model.remaining + " left",
-            isPlaying: model.isPlaying,
-            // Tapping the bar means "bring the video back here", so the
-            // floating window has to go — leaving it running would put the
-            // same video on screen twice, decoded once and drawn in two
-            // places, with the PiP window on top of the player.
-            onTap: {
-                if model.isPictureInPictureActive { model.togglePictureInPicture() }
-                PlaybackSession.shared.restore()
-            },
-            onPlayPause: { model.togglePlay() },
-            onClose: { PlaybackSession.shared.stop() }
-        )
     }
 }
 
