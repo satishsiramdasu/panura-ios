@@ -51,9 +51,10 @@ App Store Connect access, which arrived on 2026-09-15.
 6. **Screenshots**: taken by hand on the real devices once the build is in
    TestFlight — decided 2026-09-19, after the simulator harness cost nine CI
    rounds to produce what a person with the device does in ten minutes. The
-   harness still works and is parked on the unmerged `screenshots` branch; see
-   the Screenshots section of `app-store-listing.md` for when it is worth
-   reaching for.
+   harness still works and sits on `main`, dormant: **Actions → "App Store
+   Screenshots" → Run workflow**, manual trigger only, device choice of
+   both/iphone/ipad. Run it right before publishing if the UI has moved since
+   the hand-captured set, or for a size nobody owns.
    - iPhone 14 Pro Max shoots **1290 × 2796** — accepted for the 6.9" slot as-is.
    - iPad 9th gen shoots **1620 × 2160**, which Apple rejects — but it is exactly
      3:4, as is the required **2064 × 2752**, so it upscales by 1.274× without

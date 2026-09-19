@@ -325,20 +325,32 @@ On the real devices, from the TestFlight build:
       Image.open(p).resize((2064, 2752), Image.LANCZOS).save(f"out/{p.name}")
   ```
 
-**The simulator route was tried and abandoned.** It lives, working, on the
-unmerged `screenshots` branch — `.github/workflows/ios-screenshots.yml` driving
-`Tests/Screenshots/StoreScreenshots.swift`, with `Sources/Core/ScreenshotMode.swift`
-seeding the app and a generated clip for the player shot. It produces all four
-screens at both exact sizes and verifies the pixel dimensions before uploading.
+### The simulator harness, on demand
 
-It took nine runs to get there, and the lesson is worth more than the harness:
-each round costs ~16 minutes of macOS runner time billed at 10×, and almost
-every failure was environmental rather than a bug — `simctl privacy grant photos`
-hanging until the job timed out, a path filter that silently queued no run at
-all, the browser landing on its own start page so the fixture never loaded,
-controls timing out mid-settle. A person with the device in their hand does this
-in ten minutes. Reach for the branch only if there is ever a device size nobody
-on the team owns.
+**Actions → "App Store Screenshots" → Run workflow**, with a device choice of
+both / iphone / ipad. It is manual-trigger only and never runs on a push to
+`main`, so it costs nothing until asked for. Run it right before publishing, when
+the screens are final.
+
+It produces all four shots at both exact sizes, checks the pixel dimensions
+before uploading, and posts a thumbnail of each as a notice annotation — readable
+without a token, unlike the artifact itself. The pieces:
+`.github/workflows/ios-screenshots.yml`, `Tests/Screenshots/StoreScreenshots.swift`,
+`Sources/Core/ScreenshotMode.swift` (seeds the app, `#if DEBUG`), and
+`Tools/make-demo-clip.swift` (draws the footage behind the player shot, so no
+third party's CDN or content is involved).
+
+Two things about it worth knowing before relying on it. **It takes no taps** —
+it launches straight into each screen via `-panura-screen`, because XCUITest
+waits for the app to go idle before every interaction and these screens never do
+(animating page, playing video, fixture timer). And **it touches no photo
+library** — the clip is bundled into the build instead, because
+`simctl privacy grant photos` hangs until the job times out.
+
+It took nine rounds to get right, at ~16 minutes of macOS runner time each,
+billed at 10×. A person with the device in hand does it in ten minutes. So hand
+capture is the default; this is for a size nobody owns, or a re-shoot when the UI
+changes and nobody wants to redo five screens twice.
 
 One trap it did catch, which applies however the shots are taken: **the browser
 screenshot must not show panura.app's home page**, which carries a Google Play
