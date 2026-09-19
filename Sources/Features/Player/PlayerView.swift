@@ -74,12 +74,6 @@ struct PlayerView<Model: PlayerEngine>: View {
     @State private var flashZone: PlayerZone?
     @State private var hudClear: Task<Void, Never>?
 
-    // Sheets
-    @State private var panel: PlayerSheet?
-    /// Folded state of the subtitle panel's appearance group, kept across
-    /// openings: someone who went looking for it once will go looking again.
-    @State private var subtitleAppearanceOpen = false
-
     @AppStorage("subtitle_size") private var subtitleSize = 24
     @AppStorage("subtitle_color") private var subtitleColor = 0xFFFFFF
     @AppStorage("subtitle_background") private var subtitleBackground = false
@@ -108,13 +102,6 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// stand in for this: it lingers for a moment after the gesture, and a
     /// second pinch inside that moment would measure from a stale base.
     @State private var pinching = false
-
-    enum PlayerSheet: Int, Identifiable {
-        case audio, subtitles
-        var id: Int { rawValue }
-        var title: String { self == .audio ? "Audio" : "Subtitles" }
-    }
-
 
     var body: some View {
         ZStack {
@@ -154,14 +141,6 @@ struct PlayerView<Model: PlayerEngine>: View {
                 controlsOverlay.transition(.opacity)
             }
 
-            // Above the controls, below the HUD. Not a `.sheet`: see
-            // PlayerOptionsPanel for why one covered the video in landscape.
-            if let panel, !locked {
-                PlayerOptionsPanel(title: panel.title, onClose: { closePanel() }) {
-                    panelContent(panel)
-                }
-                .transition(.opacity)
-            }
 
             // Above the controls so gesture feedback overlaps the middle buttons.
             hudLayer.allowsHitTesting(false)
@@ -600,8 +579,8 @@ struct PlayerView<Model: PlayerEngine>: View {
         HStack(spacing: 0) {
             // Bottom-left group
             HStack(spacing: QuickMetrics.buttonGap) {
-                quickAction("waveform", "Audio") { openPanel(.audio) }
-                quickAction("captions.bubble", "Subtitles") { openPanel(.subtitles) }
+                audioQuick
+                subtitleQuick
                 if !model.qualities.isEmpty { qualityQuick }
             }
             .padding(.horizontal, 8).padding(.vertical, 6)
@@ -789,144 +768,155 @@ struct PlayerView<Model: PlayerEngine>: View {
         .padding(24)
     }
 
-    // MARK: option panels
+    // MARK: audio and subtitle menus
 
-    @ViewBuilder
-    private func panelContent(_ s: PlayerSheet) -> some View {
-        switch s {
-        case .audio:     audioPanel
-        case .subtitles: subtitlePanel
-        }
-    }
-
-    private func openPanel(_ which: PlayerSheet) {
-        withAnimation(.easeOut(duration: 0.18)) { panel = which }
-    }
-
-    /// Closes the panel and restarts the controls' hide clock, which was held
-    /// open for as long as one was up.
-    private func closePanel() {
-        withAnimation(.easeOut(duration: 0.18)) { panel = nil }
-        scheduleHide()
-    }
-
-    private var audioPanel: some View {
-        Group {
-            PanelHeader("Track")
+    /// Audio as a menu quick action, the same shape as speed, sleep and quality.
+    ///
+    /// It was a panel — a card of rows with steppers and a slider — and that was
+    /// the mistake: every other control on this row is a `Menu` that opens at
+    /// the button it belongs to, so one card floating in a corner read as a
+    /// different app. Consistency here is worth more than a slider, and every
+    /// value these controls set is one of a short list anyway.
+    private var audioQuick: some View {
+        Menu {
             if model.audioTracks.isEmpty {
                 Text("No audio tracks")
-                    .font(.callout)
-                    .foregroundStyle(.white.opacity(0.5))
-                    .padding(.vertical, 9)
             }
             ForEach(model.audioTracks) { t in
-                PanelChoiceRow(title: t.name, selected: model.currentAudioId == t.id) {
-                    model.selectAudio(t.id)
+                Button {
+                    model.selectAudio(t.id); scheduleHide()
+                } label: {
+                    Label(t.name, systemImage: model.currentAudioId == t.id ? "checkmark" : "")
                 }
             }
 
             if model.supportsAudioDelay {
-                PanelDivider()
-                PanelStepperRow(
-                    title: "Delay",
-                    value: "\(model.audioDelayMs) ms"
-                ) { model.adjustAudioDelay($0) }
+                Menu("Delay  ·  \(model.audioDelayMs) ms") {
+                    delayButtons(model.audioDelayMs) { model.adjustAudioDelay($0) }
+                }
             }
-
-            PanelDivider()
-            HStack {
-                Text("Preferred language").font(.callout).foregroundStyle(.white)
-                Spacer(minLength: 8)
-                languagePicker(selection: $preferredAudioLang)
-            }
-            .padding(.vertical, 5)
-
             if model.supportsAudioBoost {
-                PanelDivider()
-                PanelHeader("Volume boost")
-                boostRow
+                Menu("Volume boost  ·  \(model.audioBoost)%") {
+                    ForEach([100, 125, 150, 175, 200], id: \.self) { percent in
+                        Button {
+                            model.setAudioBoost(percent); scheduleHide()
+                        } label: {
+                            Label(
+                                percent == 100 ? "Normal" : "\(percent)%",
+                                systemImage: model.audioBoost == percent ? "checkmark" : ""
+                            )
+                        }
+                    }
+                }
             }
+            languageMenu(selection: $preferredAudioLang)
+        } label: {
+            quickActionLabel("waveform", "Audio")
         }
+        .foregroundStyle(.white)
     }
 
-    private var subtitlePanel: some View {
-        Group {
-            PanelHeader("Track")
-            PanelChoiceRow(title: "Off", selected: model.currentSubtitleId < 0) {
-                model.selectSubtitle(-1)
+    /// Subtitles, same idiom. Appearance is a submenu rather than a fold: the
+    /// track is what the menu is opened for, and size, colour and background are
+    /// set once and then left alone for months.
+    private var subtitleQuick: some View {
+        Menu {
+            Button {
+                model.selectSubtitle(-1); scheduleHide()
+            } label: {
+                Label("Off", systemImage: model.currentSubtitleId < 0 ? "checkmark" : "")
             }
             ForEach(model.subtitleTracks) { t in
-                PanelChoiceRow(title: t.name, selected: model.currentSubtitleId == t.id) {
-                    model.selectSubtitle(t.id)
+                Button {
+                    model.selectSubtitle(t.id); scheduleHide()
+                } label: {
+                    Label(t.name, systemImage: model.currentSubtitleId == t.id ? "checkmark" : "")
                 }
             }
 
             if model.supportsSubtitleDelay {
-                PanelDivider()
-                PanelStepperRow(
-                    title: "Delay",
-                    value: "\(model.subtitleDelayMs) ms"
-                ) { model.adjustSubtitleDelay($0) }
-            }
-
-            PanelDivider()
-            HStack {
-                Text("Preferred language").font(.callout).foregroundStyle(.white)
-                Spacer(minLength: 8)
-                languagePicker(selection: $preferredSubtitleLang)
-            }
-            .padding(.vertical, 5)
-
-            PanelDivider()
-            // Folded: picking a track is why this panel gets opened, and that
-            // list was underneath a screenful of appearance controls someone
-            // sets once a year.
-            PanelDisclosure(title: "Appearance", open: $subtitleAppearanceOpen) {
-                PanelHeader("Size")
-                Picker("Size", selection: $subtitleSize) {
-                    Text("Small").tag(16); Text("Medium").tag(24); Text("Large").tag(34)
+                Menu("Delay  ·  \(model.subtitleDelayMs) ms") {
+                    delayButtons(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
                 }
-                .pickerStyle(.segmented)
-
-                PanelHeader("Colour")
-                Picker("Colour", selection: $subtitleColor) {
-                    Text("White").tag(0xFFFFFF); Text("Yellow").tag(0xFFFF00)
+            }
+            Menu("Appearance") {
+                Menu("Size") {
+                    ForEach([(16, "Small"), (24, "Medium"), (34, "Large")], id: \.0) { size, name in
+                        Button {
+                            subtitleSize = size
+                        } label: {
+                            Label(name, systemImage: subtitleSize == size ? "checkmark" : "")
+                        }
+                    }
                 }
-                .pickerStyle(.segmented)
+                Menu("Colour") {
+                    ForEach([(0xFFFFFF, "White"), (0xFFFF00, "Yellow")], id: \.0) { value, name in
+                        Button {
+                            subtitleColor = value
+                        } label: {
+                            Label(name, systemImage: subtitleColor == value ? "checkmark" : "")
+                        }
+                    }
+                }
+                Button {
+                    subtitleBold.toggle()
+                } label: {
+                    Label("Bold", systemImage: subtitleBold ? "checkmark" : "")
+                }
+                Button {
+                    subtitleBackground.toggle()
+                } label: {
+                    Label("Background", systemImage: subtitleBackground ? "checkmark" : "")
+                }
+            }
+            languageMenu(selection: $preferredSubtitleLang)
+        } label: {
+            quickActionLabel("captions.bubble", "Subtitles")
+        }
+        .foregroundStyle(.white)
+    }
 
-                PanelToggleRow(title: "Bold", isOn: $subtitleBold)
-                PanelToggleRow(title: "Background", isOn: $subtitleBackground)
-
-                Text("Font, outline and text encoding are in Settings \u{2192} Subtitles.")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.45))
-                    .padding(.top, 6)
+    /// A-V sync as jumps rather than a stepper.
+    ///
+    /// A menu row closes the menu when it is tapped, so ±50 ms would mean
+    /// reopening it for every nudge. These are the sizes a sync problem
+    /// actually comes in, and "Reset" is the one people want most.
+    @ViewBuilder
+    private func delayButtons(_ current: Int, _ change: @escaping (Int) -> Void) -> some View {
+        ForEach([-500, -250, -100, 100, 250, 500], id: \.self) { step in
+            Button {
+                change(step); scheduleHide()
+            } label: {
+                Text(step > 0 ? "+\(step) ms" : "\(step) ms")
+            }
+        }
+        if current != 0 {
+            Button(role: .destructive) {
+                change(-current); scheduleHide()
+            } label: {
+                Label("Reset", systemImage: "arrow.counterclockwise")
             }
         }
     }
 
-
-    private func languagePicker(selection: Binding<String>) -> some View {
-        Picker("Language", selection: selection) {
-            Text("Off").tag("")
-            ForEach(PlayerLanguages.common, id: \.self) { Text($0).tag($0) }
-        }
-        .pickerStyle(.menu)
-        .tint(PanuraTheme.accent)
-    }
-
-    private var boostRow: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
-            Slider(
-                value: Binding(get: { Double(model.audioBoost) },
-                               set: { model.setAudioBoost(Int($0)) }),
-                in: 100...200, step: 10
-            )
-            .tint(PanuraTheme.accent)
-            Text("\(model.audioBoost)%").monospacedDigit().frame(width: 48, alignment: .trailing)
+    /// The language a matching track is picked by on every video, remembered.
+    private func languageMenu(selection: Binding<String>) -> some View {
+        Menu(selection.wrappedValue.isEmpty ? "Preferred language" : "Language  ·  \(selection.wrappedValue)") {
+            Button {
+                selection.wrappedValue = ""
+            } label: {
+                Label("Off", systemImage: selection.wrappedValue.isEmpty ? "checkmark" : "")
+            }
+            ForEach(PlayerLanguages.common, id: \.self) { language in
+                Button {
+                    selection.wrappedValue = language
+                } label: {
+                    Label(language, systemImage: selection.wrappedValue == language ? "checkmark" : "")
+                }
+            }
         }
     }
+
 
     // MARK: actions
 
@@ -982,7 +972,7 @@ struct PlayerView<Model: PlayerEngine>: View {
     }
 
     /// Push the controls' disappearance out. Called by everything the user can
-    /// touch, and by the ticker itself while a scrub or a panel holds them open.
+    /// touch, and by the ticker itself while a scrub holds them open.
     private func scheduleHide() {
         #if DEBUG
         // The screenshot run photographs the player, and a player whose controls
@@ -1004,9 +994,6 @@ struct PlayerView<Model: PlayerEngine>: View {
             while !Task.isCancelled {
                 do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
                 let now = Date()
-                // An open panel is the user reading a track list, not idling; and the
-                // controls must still be there when it closes.
-                if panel != nil { scheduleHide(); continue }
                 if let m = lastScrubMove, now.timeIntervalSince(m) < 3 { scheduleHide(); continue }
                 if locked {
                     if lockRevealed, let d = lockHideAt, now >= d {
