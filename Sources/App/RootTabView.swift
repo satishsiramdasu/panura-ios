@@ -18,7 +18,22 @@ import SwiftUI
 /// ships the code — so the bar has no Downloads seat to trade Videos for, as
 /// Android's does inside the browser.
 struct RootTabView: View {
-    @State private var selection: AppDestination = .home
+    @State private var selection: AppDestination = {
+        #if DEBUG
+        // The screenshot run opens each screen by launching into it rather than
+        // by tapping its way there — see ScreenshotMode.screen.
+        if ScreenshotMode.isActive {
+            switch ScreenshotMode.screen {
+            case "web": return .web
+            case "videos", "player": return .videos
+            case "stream": return .stream
+            case "settings": return .settings
+            default: return .home
+            }
+        }
+        #endif
+        return .home
+    }()
     @State private var showMenu = false
     /// Address typed on Home, waiting for the Browser to pick it up. The browser
     /// owns its WebView across switches, so the hand-off has to be state here
@@ -71,6 +86,8 @@ struct RootTabView: View {
         // measured against different bottoms, which is exactly how the panel
         // came to float an indicator's height above the bar.
         .ignoresSafeArea(.container, edges: .bottom)
+        // Nothing in release builds — see the modifier below.
+        .screenshotPlayer()
     }
 
     /// All five, always composed. The outgoing one keeps the higher `zIndex`
@@ -138,5 +155,39 @@ struct RootTabView: View {
             AppMenuPanel.Item(icon: "link", label: "Network Stream") { select(.stream) },
             AppMenuPanel.Item(icon: "gearshape.fill", label: "Settings") { select(.settings) },
         ]
+    }
+}
+
+#if DEBUG
+/// Opens the player over the clip bundled into a screenshot build.
+///
+/// From the root rather than through the Videos tab, because reaching it that
+/// way needs the photo library — and pre-granting Photos to the simulator with
+/// `simctl privacy grant` is what hung three capture runs in a row.
+private struct ScreenshotPlayerPresenter: ViewModifier {
+    @State private var item: MediaItem?
+
+    func body(content: Content) -> some View {
+        content
+            .fullScreenCover(item: $item) { PlayerScreen(item: $0, playlist: nil) }
+            .task {
+                guard ScreenshotMode.wantsPlayer else { return }
+                item = ScreenshotMode.demoItem
+            }
+    }
+}
+#endif
+
+private extension View {
+    /// Itself in release builds. Written as a modifier rather than an `#if`
+    /// inside the body's modifier chain, which is legal only on new enough
+    /// compilers and not worth finding out about on a 16-minute CI cycle.
+    @ViewBuilder
+    func screenshotPlayer() -> some View {
+        #if DEBUG
+        modifier(ScreenshotPlayerPresenter())
+        #else
+        self
+        #endif
     }
 }

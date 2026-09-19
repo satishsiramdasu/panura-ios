@@ -1,0 +1,266 @@
+name: App Store Screenshots
+
+# Captures the screenshots App Store Connect requires, in the simulator, so they
+# do not depend on owning one of every device Apple asks for. Manual only: the
+# output is a submission asset, not something a push should spend macOS minutes
+# regenerating.
+#
+# Apple wants exact pixel sizes and will not scale a screenshot up:
+#
+#   6.9-inch iPhone   1320 × 2868   iPhone 16 Pro Max
+#   13-inch iPad      2064 × 2752   iPad Pro 13-inch (M4)
+#
+# Both are required while TARGETED_DEVICE_FAMILY is 1,2. The job verifies the
+# dimensions before uploading, because a wrong size is only discovered at the
+# App Store Connect upload otherwise — after the run has been thrown away.
+
+on:
+  # The capture branch, so the harness itself can be iterated on without
+  # spending a dispatch on every attempt. Nothing on main triggers this.
+  push:
+    branches: [screenshots]
+    paths:
+      - '.github/workflows/ios-screenshots.yml'
+      - 'Tests/**'
+      - 'project.yml'
+      # Half the harness lives in the app: ScreenshotMode seeds the state, and
+      # the screens themselves decide what a shot contains. Without this a fix
+      # to either pushes and silently never builds — which is exactly what
+      # happened to the round that fixed the blank browser shot.
+      - 'Sources/**'
+      - 'Tools/**'
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 'Which sizes to capture'
+        type: choice
+        options: [both, iphone, ipad]
+        default: both
+
+concurrency:
+  group: ios-screenshots
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: macos-15
+    # 35, not 60: a good run is ~16 minutes, and macOS bills at 10x. The first
+    # hang here held a runner for the full hour before anyone could see why.
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('project.yml', 'Packages/**/Package.swift') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # Same retry as the build workflow: VLCKit's binary archive is large
+      # enough that a single timeout is normal.
+      - name: Resolve Swift packages
+        run: |
+          n=0
+          until [ $n -ge 3 ]; do
+            xcodebuild -resolvePackageDependencies -project PanuraPlayer.xcodeproj && exit 0
+            n=$((n+1))
+            echo "resolve failed, retry $n"
+            sleep 15
+          done
+          exit 1
+
+      - name: Capture
+        timeout-minutes: 25
+        run: |
+          set -o pipefail
+          mkdir -p build screenshots
+
+          # Phase markers as notices, not echoes: a run's log needs a token to
+          # read and its annotations do not, so when this step hangs these are
+          # the only way to see how far it got.
+          mark () { echo "::notice title=phase::$1"; }
+          # Collected rather than exited on, so one device failing still lets the
+          # other be captured and uploaded.
+          failed=""
+
+          # The footage the player shots are taken over. Drawn, not downloaded —
+          # see Tools/make-demo-clip.swift for why.
+          # Into Resources/, where a post-build script copies it into the app
+          # bundle if it is there — the same pattern GoogleService-Info.plist
+          # uses, and for the same reason: a file that only exists on some runs
+          # cannot be a source entry.
+          swift Tools/make-demo-clip.swift Resources/screenshot-demo.mp4 14
+          mark "clip rendered ($(du -h Resources/screenshot-demo.mp4 | cut -f1))"
+
+          shoot () {
+            name="$1"; device="$2"
+            echo "::group::$name — $device"
+
+            # No simctl boot, addmedia or privacy here, deliberately. Putting the
+            # clip in the simulator's photo library needed Photos pre-granted,
+            # and `simctl privacy grant` hangs: every run carrying it timed out
+            # in this step, the phase markers stopping right after addmedia,
+            # while the run before it — plain `-destination name=…`, no simctl —
+            # passed in 16 minutes. The clip is bundled into the app instead
+            # (see project.yml), so the player shot needs no photo library and
+            # no permission at all.
+            #
+            # -resultBundlePath is how the screenshots come back: every capture
+            # is an attachment inside it.
+            ok=0
+            xcodebuild \
+              -project PanuraPlayer.xcodeproj \
+              -scheme PanuraPlayer \
+              -configuration Debug \
+              -destination "platform=iOS Simulator,name=$device" \
+              -resultBundlePath "build/$name.xcresult" \
+              -only-testing:PanuraScreenshots \
+              test > "build/$name.log" 2>&1 || ok=1
+            echo "::endgroup::"
+
+            # Export before deciding anything: a test that failed half way still
+            # attached every screenshot it took before that, and those are the
+            # whole point of the run.
+            out="screenshots/$name"
+            mkdir -p "$out"
+            xcrun xcresulttool export attachments \
+              --path "build/$name.xcresult" \
+              --output-path "$out" || echo "::warning::$name: nothing to export"
+
+            if [ "$ok" = "1" ]; then
+              echo "::error::$name capture failed"
+              # As annotations, because the log itself needs a token to read and
+              # the last failure here was invisible for exactly that reason.
+              grep -E "error:|Assertion Failure|Failing tests|Testing failed|could not be launched|Restarting after unexpected exit" \
+                "build/$name.log" | sort -u | head -6 \
+                | while IFS= read -r line; do echo "::error title=$name::${line}"; done
+              tail -12 "build/$name.log" \
+                | while IFS= read -r line; do echo "::notice title=$name tail::${line}"; done
+              failed="$failed $name"
+            else
+              grep -E "Test Case .*(passed|failed)" "build/$name.log" || true
+              mark "$name captured"
+            fi
+          }
+
+          case "${{ inputs.device }}" in
+            iphone) shoot iphone-6.9 "iPhone 16 Pro Max" ;;
+            ipad)   shoot ipad-13 "iPad Pro 13-inch (M4)" ;;
+            *)      shoot iphone-6.9 "iPhone 16 Pro Max"
+                    shoot ipad-13 "iPad Pro 13-inch (M4)" ;;
+          esac
+
+          if [ -n "$failed" ]; then
+            echo "::error::capture failed for:$failed — whatever was taken before the failure is still in the artifact"
+            exit 1
+          fi
+
+      # `export attachments` writes the files under their attachment names plus a
+      # manifest, but names them per-test with a suffix. Flatten to the numbered
+      # names the test used, so the upload order in App Store Connect is the
+      # order they were captured in.
+      - name: Name and check the files
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, shutil, struct, sys
+
+          def png_size(path):
+              with open(path, 'rb') as f:
+                  head = f.read(24)
+              if head[:8] != b'\x89PNG\r\n\x1a\n':
+                  return None
+              return struct.unpack('>II', head[16:24])
+
+          EXPECTED = {'iphone-6.9': (1320, 2868), 'ipad-13': (2064, 2752)}
+          bad = []
+          for folder in sorted(pathlib.Path('screenshots').iterdir()):
+              if not folder.is_dir():
+                  continue
+              manifest = folder / 'manifest.json'
+              if manifest.exists():
+                  for entry in json.loads(manifest.read_text()):
+                      for att in entry.get('attachments', []):
+                          src = folder / att['exportedFileName']
+                          dst = folder / (att.get('suggestedHumanReadableName') or att['exportedFileName'])
+                          if src.exists() and src != dst:
+                              shutil.move(src, dst)
+                  manifest.unlink()
+              shots = sorted(p for p in folder.iterdir() if p.suffix.lower() == '.png')
+              if not shots:
+                  bad.append(f'{folder.name}: no screenshots came out of the run')
+              want = EXPECTED.get(folder.name)
+              for shot in shots:
+                  size = png_size(shot)
+                  print(f'{folder.name}/{shot.name}: {size[0]}x{size[1]}' if size else f'{shot}: not a PNG')
+                  if want and size and size != want:
+                      bad.append(f'{folder.name}/{shot.name} is {size[0]}x{size[1]}, App Store Connect wants {want[0]}x{want[1]}')
+          if bad:
+              for line in bad:
+                  print(f'::error::{line}')
+              sys.exit(1)
+          PY
+
+      # Artifacts need a token to fetch; annotations do not. A thumbnail of each
+      # shot therefore goes out as a notice, so whoever is iterating on the
+      # harness can see what came out without downloading the run. Tiny on
+      # purpose — annotation messages are truncated, and this only has to answer
+      # "is the screen full, and is the bar there".
+      - name: Preview
+        if: always()
+        run: |
+          for f in screenshots/*/*.png; do
+            sips -Z 128 "$f" --out /tmp/preview.png >/dev/null 2>&1 || continue
+            sips -s format jpeg -s formatOptions 30 /tmp/preview.png --out /tmp/preview.jpg >/dev/null 2>&1 || continue
+            echo "::notice title=shot ${f#screenshots/}::$(base64 -i /tmp/preview.jpg | tr -d '\n')"
+          done
+
+      # Same reason as the previews: the element dump the test attaches is how
+      # the next pass learns what to tap, and it is inside an artifact nobody
+      # iterating from outside the runner can fetch.
+      - name: Element tree
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          for txt in sorted(pathlib.Path('screenshots').glob('*/*.txt')):
+              lines = [l.strip() for l in txt.read_text(errors='replace').splitlines()]
+              # Only the addressable things — a full SwiftUI dump is mostly
+              # geometry, and an annotation is not the place for it.
+              keep = [l for l in lines if any(k in l for k in ('Button,', 'Cell,', 'StaticText,', 'Image,', 'Slider,'))]
+              chunk, size = [], 0
+              for line in keep[:120]:
+                  if size + len(line) > 2500:
+                      print(f'::notice title=tree {txt.parent.name}::' + '%0A'.join(chunk))
+                      chunk, size = [], 0
+                  chunk.append(line)
+                  size += len(line)
+              if chunk:
+                  print(f'::notice title=tree {txt.parent.name}::' + '%0A'.join(chunk))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: app-store-screenshots
+          path: screenshots/
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: screenshot-logs
+          path: build/*.log

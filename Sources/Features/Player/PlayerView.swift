@@ -971,7 +971,14 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     /// Push the controls' disappearance out. Called by everything the user can
     /// touch, and by the ticker itself while a scrub or a panel holds them open.
-    private func scheduleHide() { hideAt = Date().addingTimeInterval(PlayerTiming.autoHide) }
+    private func scheduleHide() {
+        #if DEBUG
+        // The screenshot run photographs the player, and a player whose controls
+        // have timed out is a screenshot of a video. nil means "no hide due".
+        if ScreenshotMode.isActive { hideAt = nil; return }
+        #endif
+        hideAt = Date().addingTimeInterval(PlayerTiming.autoHide)
+    }
 
     private func scheduleHideLock() { lockHideAt = Date().addingTimeInterval(PlayerTiming.autoHideLock) }
 
