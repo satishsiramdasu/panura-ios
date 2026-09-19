@@ -136,12 +136,17 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         }
         drawable.onPictureInPictureChanged = { [weak self] started in
             Task { @MainActor in
-                self?.isPictureInPictureActive = started
+                guard let self else { return }
+                self.isPictureInPictureActive = started
                 // VLCKit reports this after PiP has started, not before, so
                 // the screen can come down here — see the note on
                 // `beginPictureInPicture`, which the Apple player learnt the
                 // hard way.
-                if started { PlaybackSession.shared.beginPictureInPicture() }
+                if started {
+                    PlaybackSession.shared.beginPictureInPicture()
+                } else {
+                    self.pictureInPictureStopped()
+                }
             }
         }
         videoDrawable = drawable
@@ -933,6 +938,31 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     /// The PiP window shows its own play state and progress, and reads them
     /// again only when told something changed.
+    /// PiP has gone. Work out whether to put the player back up.
+    ///
+    /// The Apple player is told outright: AVKit calls
+    /// `restoreUserInterfaceForPictureInPictureStop` when the restore button is
+    /// the reason, and says nothing when the close button is. VLCKit's whole
+    /// PiP surface is `stateChangeEventHandler(BOOL isStarted)` — one bool,
+    /// the same for both buttons — so the reason has to be inferred, and the
+    /// difference that is left is playback itself: restore returns you to the
+    /// video still playing, close stops it.
+    ///
+    /// Hence the beat before deciding. The stop arrives before the pause that
+    /// comes with it, so reading `isPlaying` in this turn of the run loop
+    /// always says "playing" and would reopen the player on a close too.
+    ///
+    /// Known limit: pause the video inside the PiP window and then restore it,
+    /// and this reads as a close and leaves the player shut. The Now Playing
+    /// bar is still there, and tapping it is the way back.
+    private func pictureInPictureStopped() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard let self, !self.isPictureInPictureActive, self.isPlaying else { return }
+            PlaybackSession.shared.restore()
+        }
+    }
+
     fileprivate func invalidatePictureInPicture() {
         pipController?.invalidatePlaybackState()
     }
