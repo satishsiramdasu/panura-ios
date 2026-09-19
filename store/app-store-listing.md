@@ -15,33 +15,42 @@ Character limits are Apple's and are noted where they bind.
 | Bundle ID | `panura.web.videoplayer` |
 | SKU | `panura-ios-1` |
 | Primary language | English (U.S.) |
-| Name (≤30) | `Panura Cast: Web Video Player` (29) |
-| Subtitle (≤30) | `Browser, subtitles & TV` (23) |
+| Name (≤30) | `Panura Video Browser & Caster` (29) |
+| Subtitle (≤30) | `Web player, subtitles & TV` (26) |
 | Primary category | Photo & Video |
 | Secondary category | Utilities |
 
 **Why the name is shaped that way.** The app has three strengths — detection,
-casting, and a player that opens almost anything — and thirty characters. They do
-not fit, so each is placed where it works rather than crammed into the title:
+a player that opens almost anything, and casting — and thirty characters. They
+do not fit, so each is placed where it works rather than crammed into the title:
 
-- **Detection is not a search term.** Nobody types "video detection" into the App
-  Store. It is why people keep the app, not how they find it, so it is sold in
-  the promotional text and the first screenshot, where conversion happens.
+- **Browsing leads, because it is the main feature.** An earlier draft was
+  `Panura Cast: Web Video Player`, built on the argument that casting is the
+  winnable search — true, and beside the point. Casting is a side feature. A
+  name that opens with `Cast:` tells the store, and the user reading the
+  listing, that the app is a casting tool with a browser attached, which is
+  backwards. The title now says what the app is first.
+- **Detection is not a search term.** Nobody types "video detection" into the
+  App Store. It is why people keep the app, not how they find it, so it is sold
+  in the promotional text and the first screenshot, where conversion happens.
 - **The player is identity, not the phrase to compete on.** "Video player" is
-  VLC, Infuse and nPlayer territory — free, entrenched, unrankable for a new app.
-  The title carries `web video player` because that is what the app *is*.
-- **Casting is the winnable search**, so it takes the brand slot, where it is
-  read first. `Panura Web Video Player & Cast` had "Cast" trailing at the end,
-  reading as an afterthought, and never mentioned a TV at all.
+  VLC, Infuse and nPlayer territory — free, entrenched, unrankable for a new
+  app. It moves to the subtitle, which still carries `web player`.
+- **`Caster` over `Cast`** for grammar: "Browser & Caster" is two agent nouns
+  and reads as a pair, where "Browser & Cast" is a noun beside a verb. It costs
+  two characters and one search token, which the keyword field buys back below.
 
-Accepted cost: `cast to tv` is no longer adjacent — "cast" is in the name, "TV"
-in the subtitle. Both stay indexed, so the search still matches; only the
-phrase-adjacency bonus is lost. `Panura: Web Video Cast to TV` (28) is the
-alternative that buys that phrase back by giving up `web video player`.
+Accepted cost: `web` is no longer in the title, so `web video` is not adjacent —
+`web` is in the subtitle and `video` in the name. Both stay indexed and the
+search still matches; only the phrase-adjacency bonus is lost. The alternative,
+`Panura Web Video Browser, Cast` (30), buys it back and spends the comma and
+every spare character to do it.
 
-Do not borrow a competitor's name. "Web Video Caster" is InstantBits' app;
-echoing it — "Caster" in that arrangement included — risks rejection for
-impersonation. The generic words web, video, player and cast are fine.
+`Caster` is a generic word, not a borrowed brand: Chromecast TV Caster and
+Castify: WebCaster are both live on the store. The thing to avoid is the whole
+phrase **"Web Video Caster"**, which is InstantBits' app name — echoing that
+exactly risks rejection for impersonation. The generic words web, video,
+browser, player, cast and caster are all fine on their own.
 
 ⚠️ **Creating this record is what produces the App Store ID.** Paste it into
 `VersionStore.appStoreID` (`Sources/Core/VersionStore.swift`) — it is the one
@@ -61,17 +70,17 @@ served from the `panura` repo (`public/_redirects`).
 ## Keywords (≤100 characters, comma-separated, no spaces)
 
 ```
-m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,captions
+m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,captions,cast
 ```
 
-88 characters. Apple indexes name, subtitle and keywords together and counts a
-word once, so nothing from the name (panura, cast, web, video, player) or the
-subtitle (browser, subtitles, tv) is repeated here.
+93 characters. Apple indexes name, subtitle and keywords together and counts a
+word once, so nothing from the name (panura, video, browser, caster) or the
+subtitle (web, player, subtitles, tv) is repeated here.
 
-`casting` was replaced by `captions` when "Cast" moved into the name: Apple does
-not reliably match `casting` to a search for *cast*, so the keyword was buying
-almost nothing, while `captions` is a term the app genuinely competes on and had
-nowhere else to live.
+`cast` is here because the name carries `Caster`, and Apple does not reliably
+match one to a search for the other. Five characters for the exact form of the
+app's second-biggest term is the cheapest thing in this field. `captions` stays:
+it is a term the app genuinely competes on and has nowhere else to live.
 
 No third-party trademarks — a brand name in the keyword field is a rejection on
 its own. No `iptv` or `movies` either: both are words reviewers read as a piracy
@@ -80,9 +89,9 @@ app, whatever the app actually does.
 The whole indexed set, which should contain no word twice:
 
 ```
-panura cast web video player browser subtitles tv
+panura video browser caster web player subtitles tv
 m3u8 hls dash stream streaming live media srt mkv mp4 webm avi hd
-adblock popup captions
+adblock popup captions cast
 ```
 
 ## Promotional text (≤170, editable without a new build)
