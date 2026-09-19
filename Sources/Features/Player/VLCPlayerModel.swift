@@ -67,6 +67,8 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// worked out from. Both drive subtitle size.
     private var videoHeightPoints: CGFloat = 0
     private var videoAreaSize: CGSize = .zero
+    /// The open-time subtitle style the media playing now was opened with.
+    private var openedSubtitleStyle = ""
 
     /// VLCKit 4's PiP controller, once the video output can float. Held weakly,
     /// as VLC for iOS does: the video output owns it and ends it with itself.
@@ -264,7 +266,6 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     /// on start). Live changes re-open the media via `reopenPreservingPosition`.
     private func applySubtitleStyle(to media: VLCMedia) {
         let defaults = UserDefaults.standard
-        let size = defaults.object(forKey: "subtitle_size") as? Int ?? 24
         let color = defaults.object(forKey: "subtitle_color") as? Int ?? 0xFFFFFF
         let background = defaults.bool(forKey: "subtitle_background")   // default off
         let bold = defaults.bool(forKey: "subtitle_bold")               // default off
@@ -275,7 +276,14 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // carries it for a reason — positioning for signs, colours per speaker.
         let embedded = defaults.object(forKey: "subtitle_embedded_styles") as? Bool ?? true
 
-        media.addOption(":freetype-fontsize=\(size)")
+        // Relative, not absolute. `freetype-fontsize` is a pixel height in the
+        // rendered picture, so 16 or 24 of them meant something different for
+        // every source resolution — and on most of them, far too big. This is
+        // libVLC's own normal size (video height / 16), the same one VLC ships
+        // with, and the user's choice is applied on top of it live through
+        // `currentSubTitleFontScale`. Which also means changing the size no
+        // longer reopens the media.
+        media.addOption(":freetype-rel-fontsize=16")
         media.addOption(":freetype-color=\(color)")
         // A soft outline keeps white text legible over bright frames. At 0 the
         // renderer draws none, which is what "None" in Settings means.
@@ -297,6 +305,22 @@ final class VLCPlayerModel: NSObject, ObservableObject {
             media.addOption(":freetype-background-opacity=255")
             media.addOption(":freetype-background-color=0")
         }
+        openedSubtitleStyle = Self.subtitleStyleKey()
+    }
+
+    /// Everything about subtitles that libVLC can only read when media opens.
+    /// Size is deliberately absent — it is live now.
+    private static func subtitleStyleKey() -> String {
+        let d = UserDefaults.standard
+        return [
+            String(d.object(forKey: "subtitle_color") as? Int ?? 0xFFFFFF),
+            String(d.bool(forKey: "subtitle_background")),
+            String(d.bool(forKey: "subtitle_bold")),
+            String(d.object(forKey: "subtitle_outline") as? Int ?? 4),
+            d.string(forKey: "subtitle_font") ?? "",
+            d.string(forKey: "subtitle_encoding") ?? "",
+            String(d.object(forKey: "subtitle_embedded_styles") as? Bool ?? true),
+        ].joined(separator: "|")
     }
 
     /// Re-opens through the relay after a direct attempt failed. Returns false
@@ -477,6 +501,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     private func reapplySync() {
         player.currentVideoSubTitleDelay = subtitleDelayMs * usPerMs
         player.currentAudioPlaybackDelay = audioDelayMs * usPerMs
+        // The font scale is per-player state too, and a reopen builds a new
+        // one — without this, every reopen reverts to libVLC's normal size.
+        applySubtitleScale()
     }
 
     /// Once the real dimensions are known, publish the video's orientation so the
@@ -1116,9 +1143,35 @@ extension VLCPlayerModel: PlayerEngine {
         }
         guard height > 1, abs(height - videoHeightPoints) > 1 else { return }
         videoHeightPoints = height
-        player.currentSubTitleFontScale = Float(PlayerSubtitleScale.factor(videoHeight: height))
+        applySubtitleScale()
     }
 
-    /// libVLC's text renderer reads its style when media opens.
-    func subtitleStyleChanged() { reopenPreservingPosition() }
+    /// The only subtitle control libVLC applies live: one multiplier carrying
+    /// both the chosen size and the geometry correction.
+    ///
+    /// Medium (24) is 1x — libVLC's own normal size — so Small and Large are
+    /// that, scaled. `PlayerSubtitleScale` then keeps whichever of those the
+    /// same on screen when the picture is letterboxed.
+    private func applySubtitleScale() {
+        let size = UserDefaults.standard.object(forKey: "subtitle_size") as? Int ?? 24
+        let chosen = Double(size) / 24
+        player.currentSubTitleFontScale =
+            Float(chosen * PlayerSubtitleScale.factor(videoHeight: videoHeightPoints))
+    }
+
+    /// A subtitle setting changed.
+    ///
+    /// Size is applied live, so changing it no longer restarts the video —
+    /// which it used to do for every setting, including the one people move
+    /// most. The rest of libVLC's text style is read only when media opens, so
+    /// those still reopen, and only if they actually changed: the sheet writes
+    /// its defaults on every edit, and reopening for a value that is the same
+    /// as the one playing is a restart for nothing.
+    func subtitleStyleChanged() {
+        applySubtitleScale()
+        let key = Self.subtitleStyleKey()
+        guard key != openedSubtitleStyle else { return }
+        openedSubtitleStyle = key
+        reopenPreservingPosition()
+    }
 }

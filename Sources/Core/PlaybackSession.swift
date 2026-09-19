@@ -103,9 +103,18 @@ final class PlaybackSession: ObservableObject {
     /// Bring the full-screen player back — the bar tapped, or PiP asking to
     /// restore.
     func restore() {
-        guard let minimized else { return }
-        self.minimized = nil
-        presented = minimized
+        guard let playing = minimized else { return }
+        // Without animation, on purpose. Picture in Picture is already
+        // animating its window back into the parked surface, which fills the
+        // screen; a cover sliding up from the bottom on top of that is a
+        // second, contrary movement, and the two together are what made
+        // returning from PiP feel unlike every other iOS player.
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            minimized = nil
+            presented = playing
+        }
     }
 
     // MARK: PiP hand-off
@@ -145,7 +154,15 @@ final class PlaybackSession: ObservableObject {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
         let windows = scenes.filter { $0.activationState != .background }.flatMap(\.windows)
         guard let window = windows.first(where: \.isKeyWindow) ?? windows.first else { return nil }
-        let host = UIView(frame: CGRect(x: 0, y: 0, width: 160, height: 90))
+        // The size of the screen, not a thumbnail in the corner.
+        //
+        // AVKit animates the PiP window back to wherever its source layer is,
+        // so a 160x90 box at the origin meant the picture flew to the top-left
+        // corner and the player then slid up from the bottom. Full screen is
+        // where the video is about to be, so the animation ends where the
+        // player begins.
+        let host = UIView(frame: window.bounds)
+        host.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         host.isUserInteractionEnabled = false
         window.addSubview(host)
         window.sendSubviewToBack(host)
