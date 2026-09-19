@@ -27,6 +27,17 @@ name: iOS Release (TestFlight)
 # No certificate or provisioning profile secrets: `-allowProvisioningUpdates`
 # with that same API key lets Xcode create and download what it needs.
 #
+# ⚠️ That has one cost, and it is why the last step exists. A GitHub runner
+# starts with an empty keychain, so every run makes Xcode mint a BRAND NEW
+# Apple Development certificate — and Apple caps those per account. After a
+# couple of runs the archive fails with "Your account has reached the maximum
+# number of certificates" and "No profiles for 'panura.web.videoplayer' were
+# found". Distribution certificates are cloud-managed and reused, so only the
+# development ones pile up. The final step revokes the one this run created,
+# by serial number, so the count never grows. If the cap has already been hit,
+# revoke the stale ones by hand first: developer.apple.com → Certificates,
+# Identifiers & Profiles → Certificates → the Apple Development rows.
+#
 # It does need ONE registered device (Certificates, Identifiers & Profiles →
 # Devices): the archive is signed with a development profile before export
 # re-signs it for the App Store, and Apple issues no development profile to a
@@ -270,6 +281,83 @@ jobs:
             exit 0
           fi
           "$TOOL" -gsp Resources/GoogleService-Info.plist -p ios build/PanuraPlayer.xcarchive/dSYMs
+
+      # Hands back the Apple Development certificate this run was issued.
+      #
+      # Every run is a fresh machine with an empty keychain, so
+      # `-allowProvisioningUpdates` mints a new development certificate to
+      # archive with, and Apple caps how many an account may hold. Left alone
+      # this workflow bricks itself after a couple of runs — which is exactly
+      # what happened. So the run cleans up after itself.
+      #
+      # Only certificates found in THIS runner's keychain are touched, matched
+      # by serial number, and only ones Apple reports as DEVELOPMENT. The
+      # machine is ephemeral, so anything in that keychain was put there by
+      # this run — a certificate on someone's Mac cannot be caught by it.
+      #
+      # `always()`, because a run that failed after signing still has one to
+      # give back, and non-fatal, because failing to tidy up must not turn a
+      # finished upload red.
+      - name: Revoke this run's development certificate
+        if: always()
+        continue-on-error: true
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          set -u
+          security find-certificate -a -c "Apple Development" -p > /tmp/devcerts.pem 2>/dev/null || true
+          if [ ! -s /tmp/devcerts.pem ]; then
+            echo "No development certificate in this runner's keychain; nothing to revoke."
+            exit 0
+          fi
+          # One PEM block per certificate; openssl reads them one at a time.
+          mkdir -p /tmp/certs && rm -f /tmp/certs/*
+          awk 'BEGIN{n=0} /BEGIN CERTIFICATE/{n++} {print > ("/tmp/certs/c" n ".pem")}' /tmp/devcerts.pem
+          SERIALS=""
+          for f in /tmp/certs/*.pem; do
+            S="$(openssl x509 -in "$f" -noout -serial 2>/dev/null | cut -d= -f2)" || continue
+            [ -n "$S" ] && SERIALS="$SERIALS $S"
+          done
+          echo "Serials held by this runner:$SERIALS"
+          python3 -m pip install --quiet --disable-pip-version-check pyjwt cryptography
+          SERIALS="$SERIALS" python3 - <<'PY'
+          import json, os, time, urllib.request, jwt
+
+          key_id, issuer = os.environ["KEY_ID"], os.environ["ISSUER_ID"]
+          wanted = {s.strip().lstrip("0").upper() for s in os.environ["SERIALS"].split() if s.strip()}
+          with open(os.path.expanduser(f"~/private_keys/AuthKey_{key_id}.p8")) as f:
+              private_key = f.read()
+
+          token = jwt.encode(
+              {"iss": issuer, "iat": int(time.time()), "exp": int(time.time()) + 600, "aud": "appstoreconnect-v1"},
+              private_key, algorithm="ES256", headers={"kid": key_id, "typ": "JWT"},
+          )
+          head = {"Authorization": f"Bearer {token}"}
+
+          def call(method, url):
+              req = urllib.request.Request(url, headers=head, method=method)
+              with urllib.request.urlopen(req) as r:
+                  return r.read()
+
+          listing = json.loads(call(
+              "GET",
+              "https://api.appstoreconnect.apple.com/v1/certificates"
+              "?filter[certificateType]=DEVELOPMENT&limit=200",
+          ))
+          revoked = 0
+          for cert in listing.get("data", []):
+              serial = (cert["attributes"].get("serialNumber") or "").lstrip("0").upper()
+              if serial not in wanted:
+                  continue
+              call("DELETE", f"https://api.appstoreconnect.apple.com/v1/certificates/{cert['id']}")
+              print(f"Revoked {cert['attributes'].get('name')} ({serial})")
+              revoked += 1
+          if revoked == 0:
+              print("::warning::This run's development certificate was not matched, so it stays on the "
+                    "account. Revoke Apple Development certificates by hand if archives start failing "
+                    "with 'maximum number of certificates'.")
+          PY
 
       # Kept because the archive holds the dSYMs: without them a crash report
       # from a tester is a list of hex addresses.
