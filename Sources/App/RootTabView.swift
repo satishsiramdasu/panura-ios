@@ -200,8 +200,17 @@ private struct EngineNowPlayingBar<Model: PlayerEngine>: View {
             // Background audio is not Picture in Picture, and saying so when
             // there is no picture would be a lie the user can see.
             where_: model.isPictureInPictureActive ? "Picture in Picture" : "Playing in background",
+            // `remaining` is already formatted, and empty on a live stream.
+            timeLeft: model.remaining.isEmpty ? "" : model.remaining + " left",
             isPlaying: model.isPlaying,
-            onTap: { PlaybackSession.shared.restore() },
+            // Tapping the bar means "bring the video back here", so the
+            // floating window has to go — leaving it running would put the
+            // same video on screen twice, decoded once and drawn in two
+            // places, with the PiP window on top of the player.
+            onTap: {
+                if model.isPictureInPictureActive { model.togglePictureInPicture() }
+                PlaybackSession.shared.restore()
+            },
             onPlayPause: { model.togglePlay() },
             onClose: { PlaybackSession.shared.stop() }
         )

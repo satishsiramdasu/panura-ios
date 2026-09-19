@@ -102,6 +102,9 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// stand in for this: it lingers for a moment after the gesture, and a
     /// second pinch inside that moment would measure from a stale base.
     @State private var pinching = false
+    /// Which options sheet is open, if any. Everything about audio or subtitles
+    /// that is not "which track" lives in there — see `PlayerOptionsSheet`.
+    @State private var options: PlayerOptionsSheet<Model>.Kind?
 
     var body: some View {
         ZStack {
@@ -137,8 +140,21 @@ struct PlayerView<Model: PlayerEngine>: View {
 
             if locked {
                 lockOverlay
-            } else if showControls {
-                controlsOverlay.transition(.opacity)
+            } else {
+                // Faded, never removed.
+                //
+                // A menu is presented *by* this overlay, so taking the overlay
+                // out of the hierarchy tears an open menu down with it — which
+                // is how a menu opened a moment before the auto-hide vanished a
+                // quarter-second later, looking for all the world like the tap
+                // had been ignored. Opacity keeps the presenter alive, so the
+                // controls can time out underneath an open menu without
+                // disturbing it.
+                controlsOverlay
+                    .opacity(showControls ? 1 : 0)
+                    .allowsHitTesting(showControls)
+                    .accessibilityHidden(!showControls)
+                    .animation(.easeInOut(duration: 0.2), value: showControls)
             }
 
 
@@ -167,6 +183,14 @@ struct PlayerView<Model: PlayerEngine>: View {
         // view's: it has to happen on *did* start, and only the engine's
         // delegate knows when that is. Watching `isPictureInPictureActive` from
         // here fired on *will* start instead, and killed PiP on the way in.
+        .sheet(item: $options) { kind in
+            PlayerOptionsSheet(model: model, kind: kind)
+        }
+        // A sheet covers the controls, so there is nothing to hide while it is
+        // up and nothing to keep timing out either.
+        .onChange(of: options != nil) { open in
+            if open { hideAt = nil } else { scheduleHide() }
+        }
         .onChange(of: subtitleSize) { _ in model.subtitleStyleChanged() }
         .onChange(of: subtitleColor) { _ in model.subtitleStyleChanged() }
         .onChange(of: subtitleBackground) { _ in model.subtitleStyleChanged() }
@@ -631,6 +655,7 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// anything. Each row also shows the rough size at that bitrate.
     private var qualityQuick: some View {
         Menu {
+            Section {
             ForEach(model.qualities) { q in
                 Button {
                     model.selectQuality(q); scheduleHide()
@@ -642,6 +667,9 @@ struct PlayerView<Model: PlayerEngine>: View {
                     let title: String = size.isEmpty ? q.label : q.label + "  ·  " + size
                     tick(title, model.currentQualityId == q.id)
                 }
+            }
+            } header: {
+                Label("Quality", systemImage: "rectangle.stack")
             }
         } label: {
             quickActionLabel("rectangle.stack", currentQualityLabel)
@@ -661,12 +689,16 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// Playback speed as a bottom-right quick action (menu on tap).
     private var speedQuick: some View {
         Menu {
+            Section {
             ForEach([0.5, 0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { r in
                 Button {
                     model.setRate(Float(r)); scheduleHide()
                 } label: {
                     tick(r == 1.0 ? "Normal" : Self.speedText(r), model.rate == Float(r))
                 }
+            }
+            } header: {
+                Label("Playback speed", systemImage: "speedometer")
             }
         } label: {
             quickActionLabel(
@@ -683,6 +715,7 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// not trust to be running at all.
     private var sleepQuick: some View {
         Menu {
+            Section {
             if model.sleepRemaining != nil {
                 Button(role: .destructive) {
                     model.cancelSleepTimer(); scheduleHide()
@@ -692,6 +725,9 @@ struct PlayerView<Model: PlayerEngine>: View {
                 Button {
                     model.startSleepTimer(minutes: minutes); scheduleHide()
                 } label: { Text("\(minutes) minutes") }
+            }
+            } header: {
+                Label("Sleep timer", systemImage: "moon")
             }
         } label: {
             quickActionLabel(
@@ -783,44 +819,38 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     // MARK: audio and subtitle menus
 
-    /// Audio as a menu quick action, the same shape as speed, sleep and quality.
+    /// Audio: the track list, and a way through to everything else.
     ///
-    /// It was a panel — a card of rows with steppers and a slider — and that was
-    /// the mistake: every other control on this row is a `Menu` that opens at
-    /// the button it belongs to, so one card floating in a corner read as a
-    /// different app. Consistency here is worth more than a slider, and every
-    /// value these controls set is one of a short list anyway.
+    /// Flat, deliberately. This menu used to carry submenus for delay, boost
+    /// and preferred language, and SwiftUI rebuilds a nested `Menu` whenever
+    /// the parent's body runs — which here is several times a second, because
+    /// the engine publishes a new position on every time observation. Two
+    /// platters ended up drawn over each other. A section header and a row that
+    /// opens a sheet cost nothing and cannot flicker.
     private var audioQuick: some View {
         Menu {
-            if model.audioTracks.isEmpty {
-                Text("No audio tracks")
-            }
-            ForEach(model.audioTracks) { t in
-                Button {
-                    model.selectAudio(t.id); scheduleHide()
-                } label: {
-                    tick(t.name, model.currentAudioId == t.id)
+            Section {
+                if model.audioTracks.isEmpty {
+                    Text("No audio tracks")
                 }
-            }
-
-            if model.supportsAudioDelay {
-                Menu("Delay  ·  \(model.audioDelayMs) ms") {
-                    delayButtons(model.audioDelayMs) { model.adjustAudioDelay($0) }
-                }
-                .staysOpenOnTap()
-            }
-            if model.supportsAudioBoost {
-                Menu("Volume boost  ·  \(model.audioBoost)%") {
-                    ForEach([100, 125, 150, 175, 200], id: \.self) { percent in
-                        Button {
-                            model.setAudioBoost(percent); scheduleHide()
-                        } label: {
-                            tick(percent == 100 ? "Normal" : "\(percent)%", model.audioBoost == percent)
-                        }
+                ForEach(model.audioTracks) { t in
+                    Button {
+                        model.selectAudio(t.id); scheduleHide()
+                    } label: {
+                        tick(t.name, model.currentAudioId == t.id)
                     }
                 }
+            } header: {
+                Label("Audio track", systemImage: "waveform")
             }
-            languageMenu(selection: $preferredAudioLang)
+
+            Section {
+                Button {
+                    options = .audio
+                } label: {
+                    Label("Audio settings", systemImage: "slider.horizontal.3")
+                }
+            }
         } label: {
             quickActionLabel("waveform", "Audio")
         }
@@ -828,109 +858,38 @@ struct PlayerView<Model: PlayerEngine>: View {
         .holdsControls(holdForMenu)
     }
 
-    /// Subtitles, same idiom. Appearance is a submenu rather than a fold: the
-    /// track is what the menu is opened for, and size, colour and background are
-    /// set once and then left alone for months.
+    /// Subtitles, same shape: the tracks, then the sheet.
     private var subtitleQuick: some View {
         Menu {
-            Button {
-                model.selectSubtitle(-1); scheduleHide()
-            } label: {
-                tick("Off", model.currentSubtitleId < 0)
-            }
-            ForEach(model.subtitleTracks) { t in
+            Section {
                 Button {
-                    model.selectSubtitle(t.id); scheduleHide()
+                    model.selectSubtitle(-1); scheduleHide()
                 } label: {
-                    tick(t.name, model.currentSubtitleId == t.id)
+                    tick("Off", model.currentSubtitleId < 0)
                 }
+                ForEach(model.subtitleTracks) { t in
+                    Button {
+                        model.selectSubtitle(t.id); scheduleHide()
+                    } label: {
+                        tick(t.name, model.currentSubtitleId == t.id)
+                    }
+                }
+            } header: {
+                Label("Subtitle track", systemImage: "captions.bubble")
             }
 
-            if model.supportsSubtitleDelay {
-                Menu("Delay  ·  \(model.subtitleDelayMs) ms") {
-                    delayButtons(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
-                }
-                .staysOpenOnTap()
-            }
-            Menu("Appearance") {
-                Menu("Size") {
-                    ForEach([(16, "Small"), (24, "Medium"), (34, "Large")], id: \.0) { size, name in
-                        Button {
-                            subtitleSize = size; holdForMenu()
-                        } label: {
-                            tick(name, subtitleSize == size)
-                        }
-                    }
-                }
-                Menu("Colour") {
-                    ForEach([(0xFFFFFF, "White"), (0xFFFF00, "Yellow")], id: \.0) { value, name in
-                        Button {
-                            subtitleColor = value; holdForMenu()
-                        } label: {
-                            tick(name, subtitleColor == value)
-                        }
-                    }
-                }
+            Section {
                 Button {
-                    subtitleBold.toggle(); holdForMenu()
+                    options = .subtitles
                 } label: {
-                    tick("Bold", subtitleBold)
-                }
-                Button {
-                    subtitleBackground.toggle(); holdForMenu()
-                } label: {
-                    tick("Background", subtitleBackground)
+                    Label("Subtitle settings", systemImage: "textformat")
                 }
             }
-            .staysOpenOnTap()
-            languageMenu(selection: $preferredSubtitleLang)
         } label: {
             quickActionLabel("captions.bubble", "Subtitles")
         }
         .foregroundStyle(.white)
         .holdsControls(holdForMenu)
-    }
-
-    /// A-V sync as jumps rather than a stepper.
-    ///
-    /// The menu stays open under these (`staysOpenOnTap`), so they can be
-    /// tapped repeatedly to walk the offset in — which is how sync is actually
-    /// found. `holdForMenu` rather than `scheduleHide`: the controls must not
-    /// time out underneath a menu that is deliberately still up.
-    @ViewBuilder
-    private func delayButtons(_ current: Int, _ change: @escaping (Int) -> Void) -> some View {
-        ForEach([-500, -250, -100, 100, 250, 500], id: \.self) { step in
-            Button {
-                change(step); holdForMenu()
-            } label: {
-                Text(step > 0 ? "+\(step) ms" : "\(step) ms")
-            }
-        }
-        if current != 0 {
-            Button(role: .destructive) {
-                change(-current); holdForMenu()
-            } label: {
-                Label("Reset", systemImage: "arrow.counterclockwise")
-            }
-        }
-    }
-
-    /// The language a matching track is picked by on every video, remembered.
-    private func languageMenu(selection: Binding<String>) -> some View {
-        Menu(selection.wrappedValue.isEmpty ? "Preferred language" : "Language  ·  \(selection.wrappedValue)") {
-            Button {
-                selection.wrappedValue = ""; scheduleHide()
-            } label: {
-                tick("Off", selection.wrappedValue.isEmpty)
-            }
-            ForEach(PlayerLanguages.common, id: \.self) { language in
-                Button {
-                    selection.wrappedValue = language; scheduleHide()
-                } label: {
-                    tick(language, selection.wrappedValue == language)
-                }
-            }
-        }
     }
 
 
@@ -1148,10 +1107,6 @@ private struct LoadingRing: View {
 // properties in a generic type or in anything nested inside one.
 
 /// Menu-related view helpers.
-///
-/// Both exist because SwiftUI's `Menu` tells nobody anything: there is no
-/// "opened" callback and no "dismissed" one, so the only moment the player can
-/// observe is the tap that opens it.
 private extension View {
     /// Pushes the controls' auto-hide out when this menu is opened.
     ///
@@ -1159,20 +1114,6 @@ private extension View {
     /// Menu still gets the tap and still opens, and this runs alongside it.
     func holdsControls(_ onOpen: @escaping () -> Void) -> some View {
         simultaneousGesture(TapGesture().onEnded { onOpen() })
-    }
-
-    /// Keeps this menu open when one of its rows is tapped.
-    ///
-    /// For the rows that are nudges rather than choices — ±250 ms of A-V sync,
-    /// subtitle size — where closing the menu after every tap means reopening
-    /// and re-drilling to tap again. iOS 16.4; below that it behaves as it did.
-    @ViewBuilder
-    func staysOpenOnTap() -> some View {
-        if #available(iOS 16.4, *) {
-            menuActionDismissBehavior(.disabled)
-        } else {
-            self
-        }
     }
 }
 
@@ -1195,7 +1136,7 @@ private enum PlayerTiming {
 
 /// Common languages offered for the preferred-audio/subtitle pickers. Matched
 /// (case-insensitively) against the engine's track names, so it's best-effort.
-private enum PlayerLanguages {
+enum PlayerLanguages {
     static let common = [
         "English", "Hindi", "Tamil", "Telugu", "Malayalam", "Kannada", "Marathi",
         "Bengali", "Spanish", "French", "German", "Italian", "Arabic", "Japanese",

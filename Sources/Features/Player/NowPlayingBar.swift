@@ -15,6 +15,10 @@ struct NowPlayingBar: View {
     let title: String
     /// "Picture in Picture", or the TV's name.
     let where_: String
+    /// "12:04 left" — what is left of the video, or empty when unknown (a live
+    /// stream has no end). Beside the state rather than under it: the bar is
+    /// one line tall and the two facts are read together.
+    let timeLeft: String
     let isPlaying: Bool
     let onTap: () -> Void
     let onPlayPause: () -> Void
@@ -33,10 +37,16 @@ struct NowPlayingBar: View {
                     .font(.footnote.weight(.medium))
                     .lineLimit(1)
                     .foregroundStyle(.primary)
-                Text(where_)
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                HStack(spacing: 5) {
+                    Text(where_)
+                    if !timeLeft.isEmpty {
+                        Text("·")
+                        Text(timeLeft).monospacedDigit()
+                    }
+                }
+                .font(.caption2)
+                .lineLimit(1)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
