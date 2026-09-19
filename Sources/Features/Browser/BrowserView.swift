@@ -37,6 +37,9 @@ struct BrowserView: View {
     /// Same reason: content-blocker lists are attached to a configuration, so
     /// turning the ad blocker on or off means a new web view.
     @AppStorage("ad_block") private var adBlock = true
+    /// Same reason again: the no-callout CSS is a user script, and
+    /// `allowsLinkPreview` is fixed on the web view when it is built.
+    @AppStorage("block_long_press") private var blockLongPress = true
 
     private var pageUsable: Bool {
         guard let url = model.currentURL?.absoluteString else { return false }
@@ -54,7 +57,7 @@ struct BrowserView: View {
                     // list and the cookie jar, which is exactly what switching
                     // modes means. The auto-click flag rides along for the same
                     // reason: user scripts are registered once, at creation.
-                    .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)")
+                    .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)-\(blockLongPress)")
             }
 
             if showMenu { menuPanel }

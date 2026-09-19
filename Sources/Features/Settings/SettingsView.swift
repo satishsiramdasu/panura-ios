@@ -114,6 +114,7 @@ struct SettingsView: View {
             "gesture_double_tap", "gesture_long_press", "gesture_sensitivity",
             "mark_last_played", "show_extension", "videos_layout", "player_engine_mode",
             "debug_detection", "auto_play_click", "block_page_fullscreen", "ad_block",
+            "block_long_press",
             "desktop_mode_default",
         ]
         for key in keys { UserDefaults.standard.removeObject(forKey: key) }
@@ -205,6 +206,7 @@ struct DetectionPreferencesView: View {
     @AppStorage("debug_detection") private var debugDetection = false
     @AppStorage("auto_play_click") private var autoPlayClick = true
     @AppStorage("block_page_fullscreen") private var blockPageFullscreen = true
+    @AppStorage("block_long_press") private var blockLongPress = true
     @State private var rulesRefreshed = false
 
     var body: some View {
@@ -237,6 +239,12 @@ struct DetectionPreferencesView: View {
                     description: "Pressing play keeps the video in the page; full screen only opens when you tap it. Reopen the Web tab to apply",
                     icon: "rectangle.inset.filled",
                     isOn: $blockPageFullscreen
+                )
+                PreferenceToggle(
+                    title: "Block long-press menu",
+                    description: "No text selection or Copy Link menu when you hold a page. Typing and pasting in a page's own boxes still work.",
+                    icon: "hand.tap",
+                    isOn: $blockLongPress
                 )
             }
 
