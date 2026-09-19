@@ -640,13 +640,14 @@ struct PlayerView<Model: PlayerEngine>: View {
                     // the size would render as a literal key.
                     let size = q.sizeEstimate(durationSeconds: model.totalSeconds)
                     let title: String = size.isEmpty ? q.label : q.label + "  ·  " + size
-                    Label(title, systemImage: model.currentQualityId == q.id ? "checkmark" : "")
+                    tick(title, model.currentQualityId == q.id)
                 }
             }
         } label: {
             quickActionLabel("rectangle.stack", currentQualityLabel)
         }
         .foregroundStyle(.white)
+        .holdsControls(holdForMenu)
     }
 
     /// "Quality" while on Auto, otherwise the chosen rendition ("1080p").
@@ -664,8 +665,7 @@ struct PlayerView<Model: PlayerEngine>: View {
                 Button {
                     model.setRate(Float(r)); scheduleHide()
                 } label: {
-                    Label(r == 1.0 ? "Normal" : Self.speedText(r),
-                          systemImage: model.rate == Float(r) ? "checkmark" : "")
+                    tick(r == 1.0 ? "Normal" : Self.speedText(r), model.rate == Float(r))
                 }
             }
         } label: {
@@ -675,6 +675,7 @@ struct PlayerView<Model: PlayerEngine>: View {
             )
         }
         .foregroundStyle(.white)
+        .holdsControls(holdForMenu)
     }
 
     /// Sleep timer, beside the speed control. Its label counts down while one
@@ -699,6 +700,7 @@ struct PlayerView<Model: PlayerEngine>: View {
             )
         }
         .foregroundStyle(model.sleepRemaining == nil ? .white : PanuraTheme.accent)
+        .holdsControls(holdForMenu)
     }
 
     /// "%g" trims trailing zeros: 1.5 → "1.5×", 2 → "2×", 0.75 → "0.75×".
@@ -764,6 +766,21 @@ struct PlayerView<Model: PlayerEngine>: View {
         .padding(24)
     }
 
+    /// A menu row that carries a tick when it is the current choice.
+    ///
+    /// Replaces `Label(title, systemImage: on ? "checkmark" : "")`. An empty
+    /// symbol name is not "draw no symbol" — it is a symbol that fails to
+    /// resolve, logged every time the menu is built, and it leaves the row's
+    /// text out of line with the ticked ones beside it.
+    @ViewBuilder
+    private func tick(_ title: String, _ on: Bool) -> some View {
+        if on {
+            Label(title, systemImage: "checkmark")
+        } else {
+            Text(title)
+        }
+    }
+
     // MARK: audio and subtitle menus
 
     /// Audio as a menu quick action, the same shape as speed, sleep and quality.
@@ -782,7 +799,7 @@ struct PlayerView<Model: PlayerEngine>: View {
                 Button {
                     model.selectAudio(t.id); scheduleHide()
                 } label: {
-                    Label(t.name, systemImage: model.currentAudioId == t.id ? "checkmark" : "")
+                    tick(t.name, model.currentAudioId == t.id)
                 }
             }
 
@@ -790,6 +807,7 @@ struct PlayerView<Model: PlayerEngine>: View {
                 Menu("Delay  ·  \(model.audioDelayMs) ms") {
                     delayButtons(model.audioDelayMs) { model.adjustAudioDelay($0) }
                 }
+                .staysOpenOnTap()
             }
             if model.supportsAudioBoost {
                 Menu("Volume boost  ·  \(model.audioBoost)%") {
@@ -797,10 +815,7 @@ struct PlayerView<Model: PlayerEngine>: View {
                         Button {
                             model.setAudioBoost(percent); scheduleHide()
                         } label: {
-                            Label(
-                                percent == 100 ? "Normal" : "\(percent)%",
-                                systemImage: model.audioBoost == percent ? "checkmark" : ""
-                            )
+                            tick(percent == 100 ? "Normal" : "\(percent)%", model.audioBoost == percent)
                         }
                     }
                 }
@@ -810,6 +825,7 @@ struct PlayerView<Model: PlayerEngine>: View {
             quickActionLabel("waveform", "Audio")
         }
         .foregroundStyle(.white)
+        .holdsControls(holdForMenu)
     }
 
     /// Subtitles, same idiom. Appearance is a submenu rather than a fold: the
@@ -820,13 +836,13 @@ struct PlayerView<Model: PlayerEngine>: View {
             Button {
                 model.selectSubtitle(-1); scheduleHide()
             } label: {
-                Label("Off", systemImage: model.currentSubtitleId < 0 ? "checkmark" : "")
+                tick("Off", model.currentSubtitleId < 0)
             }
             ForEach(model.subtitleTracks) { t in
                 Button {
                     model.selectSubtitle(t.id); scheduleHide()
                 } label: {
-                    Label(t.name, systemImage: model.currentSubtitleId == t.id ? "checkmark" : "")
+                    tick(t.name, model.currentSubtitleId == t.id)
                 }
             }
 
@@ -834,61 +850,65 @@ struct PlayerView<Model: PlayerEngine>: View {
                 Menu("Delay  ·  \(model.subtitleDelayMs) ms") {
                     delayButtons(model.subtitleDelayMs) { model.adjustSubtitleDelay($0) }
                 }
+                .staysOpenOnTap()
             }
             Menu("Appearance") {
                 Menu("Size") {
                     ForEach([(16, "Small"), (24, "Medium"), (34, "Large")], id: \.0) { size, name in
                         Button {
-                            subtitleSize = size
+                            subtitleSize = size; holdForMenu()
                         } label: {
-                            Label(name, systemImage: subtitleSize == size ? "checkmark" : "")
+                            tick(name, subtitleSize == size)
                         }
                     }
                 }
                 Menu("Colour") {
                     ForEach([(0xFFFFFF, "White"), (0xFFFF00, "Yellow")], id: \.0) { value, name in
                         Button {
-                            subtitleColor = value
+                            subtitleColor = value; holdForMenu()
                         } label: {
-                            Label(name, systemImage: subtitleColor == value ? "checkmark" : "")
+                            tick(name, subtitleColor == value)
                         }
                     }
                 }
                 Button {
-                    subtitleBold.toggle()
+                    subtitleBold.toggle(); holdForMenu()
                 } label: {
-                    Label("Bold", systemImage: subtitleBold ? "checkmark" : "")
+                    tick("Bold", subtitleBold)
                 }
                 Button {
-                    subtitleBackground.toggle()
+                    subtitleBackground.toggle(); holdForMenu()
                 } label: {
-                    Label("Background", systemImage: subtitleBackground ? "checkmark" : "")
+                    tick("Background", subtitleBackground)
                 }
             }
+            .staysOpenOnTap()
             languageMenu(selection: $preferredSubtitleLang)
         } label: {
             quickActionLabel("captions.bubble", "Subtitles")
         }
         .foregroundStyle(.white)
+        .holdsControls(holdForMenu)
     }
 
     /// A-V sync as jumps rather than a stepper.
     ///
-    /// A menu row closes the menu when it is tapped, so ±50 ms would mean
-    /// reopening it for every nudge. These are the sizes a sync problem
-    /// actually comes in, and "Reset" is the one people want most.
+    /// The menu stays open under these (`staysOpenOnTap`), so they can be
+    /// tapped repeatedly to walk the offset in — which is how sync is actually
+    /// found. `holdForMenu` rather than `scheduleHide`: the controls must not
+    /// time out underneath a menu that is deliberately still up.
     @ViewBuilder
     private func delayButtons(_ current: Int, _ change: @escaping (Int) -> Void) -> some View {
         ForEach([-500, -250, -100, 100, 250, 500], id: \.self) { step in
             Button {
-                change(step); scheduleHide()
+                change(step); holdForMenu()
             } label: {
                 Text(step > 0 ? "+\(step) ms" : "\(step) ms")
             }
         }
         if current != 0 {
             Button(role: .destructive) {
-                change(-current); scheduleHide()
+                change(-current); holdForMenu()
             } label: {
                 Label("Reset", systemImage: "arrow.counterclockwise")
             }
@@ -899,15 +919,15 @@ struct PlayerView<Model: PlayerEngine>: View {
     private func languageMenu(selection: Binding<String>) -> some View {
         Menu(selection.wrappedValue.isEmpty ? "Preferred language" : "Language  ·  \(selection.wrappedValue)") {
             Button {
-                selection.wrappedValue = ""
+                selection.wrappedValue = ""; scheduleHide()
             } label: {
-                Label("Off", systemImage: selection.wrappedValue.isEmpty ? "checkmark" : "")
+                tick("Off", selection.wrappedValue.isEmpty)
             }
             ForEach(PlayerLanguages.common, id: \.self) { language in
                 Button {
-                    selection.wrappedValue = language
+                    selection.wrappedValue = language; scheduleHide()
                 } label: {
-                    Label(language, systemImage: selection.wrappedValue == language ? "checkmark" : "")
+                    tick(language, selection.wrappedValue == language)
                 }
             }
         }
@@ -979,6 +999,15 @@ struct PlayerView<Model: PlayerEngine>: View {
         if ScreenshotMode.isActive { hideAt = nil; return }
         #endif
         hideAt = Date().addingTimeInterval(PlayerTiming.autoHide)
+    }
+
+    /// A menu is open, or a row inside one was tapped without closing it.
+    /// Holds the controls for as long as reading a list takes.
+    private func holdForMenu() {
+        #if DEBUG
+        if ScreenshotMode.isActive { hideAt = nil; return }
+        #endif
+        hideAt = Date().addingTimeInterval(PlayerTiming.autoHideMenu)
     }
 
     private func scheduleHideLock() { lockHideAt = Date().addingTimeInterval(PlayerTiming.autoHideLock) }
@@ -1118,8 +1147,49 @@ private struct LoadingRing: View {
 // File scope because PlayerView is generic, and Swift allows no static stored
 // properties in a generic type or in anything nested inside one.
 
+/// Menu-related view helpers.
+///
+/// Both exist because SwiftUI's `Menu` tells nobody anything: there is no
+/// "opened" callback and no "dismissed" one, so the only moment the player can
+/// observe is the tap that opens it.
+private extension View {
+    /// Pushes the controls' auto-hide out when this menu is opened.
+    ///
+    /// A simultaneous gesture rather than wrapping the label in a Button: the
+    /// Menu still gets the tap and still opens, and this runs alongside it.
+    func holdsControls(_ onOpen: @escaping () -> Void) -> some View {
+        simultaneousGesture(TapGesture().onEnded { onOpen() })
+    }
+
+    /// Keeps this menu open when one of its rows is tapped.
+    ///
+    /// For the rows that are nudges rather than choices — ±250 ms of A-V sync,
+    /// subtitle size — where closing the menu after every tap means reopening
+    /// and re-drilling to tap again. iOS 16.4; below that it behaves as it did.
+    @ViewBuilder
+    func staysOpenOnTap() -> some View {
+        if #available(iOS 16.4, *) {
+            menuActionDismissBehavior(.disabled)
+        } else {
+            self
+        }
+    }
+}
+
 private enum PlayerTiming {
     static let autoHide: TimeInterval = 4
+
+    /// How long the controls are held open while a menu is up.
+    ///
+    /// Four seconds is right for "you tapped something and are looking at the
+    /// result" and wrong for "you are reading a list". A menu that is open is
+    /// presented *by* the controls, so hiding them closes it — which is how a
+    /// tap made a quarter-second before the deadline used to open a menu and
+    /// dismiss it in the same breath. There is no callback for a menu being
+    /// dismissed by a tap outside it, so this is a ceiling rather than a
+    /// suspension: choose something and it drops back to `autoHide`.
+    static let autoHideMenu: TimeInterval = 20
+
     static let autoHideLock: TimeInterval = 3
 }
 
