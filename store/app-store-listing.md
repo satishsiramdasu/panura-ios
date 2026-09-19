@@ -48,18 +48,13 @@ Accepted cost: `web` is no longer in the title, so `web video` is not adjacent �
 search still matches; only the phrase-adjacency bonus is lost. `video browser`
 and `tv cast` are both adjacent, which is where the adjacency is worth more.
 
-Minor, and judged acceptable: `TV Cast` is also the name of an existing app, as
-`Caster` is a word in several. Neither is a borrowed brand — the phrase is
-generic and used descriptively across the category — and a name led by
-`Panura:` is not confusable with an app called `TV Cast`. The line to stay
-behind is copying a competitor's whole distinctive name, which is why "Web
-Video Caster" (InstantBits) stays out of every field.
-
-`Caster` is a generic word, not a borrowed brand: Chromecast TV Caster and
-Castify: WebCaster are both live on the store. The thing to avoid is the whole
-phrase **"Web Video Caster"**, which is InstantBits' app name — echoing that
-exactly risks rejection for impersonation. The generic words web, video,
-browser, player, cast and caster are all fine on their own.
+**Trademarks.** `TV Cast` is also an existing app's name, and `Caster` is a word
+in several — Chromecast TV Caster, Castify: WebCaster. Neither is a borrowed
+brand: both are generic and used descriptively right across the category, and a
+name led by `Panura:` is not confusable with an app called `TV Cast`. The line
+is copying a competitor's whole distinctive name, which is why the phrase "Web
+Video Caster" — InstantBits' app — stays out of every field. The individual
+words web, video, browser, player, cast, caster and tv are all fine.
 
 ⚠️ **Creating this record is what produces the App Store ID.** Paste it into
 `VersionStore.appStoreID` (`Sources/Core/VersionStore.swift`) — it is the one
