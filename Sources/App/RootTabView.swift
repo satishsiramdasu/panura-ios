@@ -41,6 +41,10 @@ struct RootTabView: View {
     @State private var pendingAddress: String?
     @ObservedObject private var session = BrowserSession.shared
     @ObservedObject private var playback = PlaybackSession.shared
+    @ObservedObject private var panuraCast = PanuraCastManager.shared
+    @ObservedObject private var chromecast = CastManager.shared
+    /// The cast remote, opened from the bar.
+    @State private var showCastControls = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -53,7 +57,12 @@ struct RootTabView: View {
                 // covers can end up unreachable.
                 // Above the app bar, below everything else: what is still
                 // playing after the player screen came down.
-                if let minimized = playback.minimized {
+                // A TV outranks Picture in Picture: if both are somehow true,
+                // the television is the more surprising place for the video to
+                // be, and the one the user is further from.
+                if isCasting {
+                    castBar.transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if let minimized = playback.minimized {
                     // Through a view that observes the engine, not by reading
                     // `playback.apple?.isPlaying` here: the session publishes
                     // *which* engine is live, never what it is doing, so a bar
@@ -113,8 +122,63 @@ struct RootTabView: View {
         .fullScreenCover(item: $playback.presented) { playing in
             PlayerScreen(item: playing.item, playlist: playing.playlist)
         }
+        .sheet(isPresented: $showCastControls) {
+            PanuraCastControlView().presentationDragIndicator(.visible)
+        }
         // Nothing in release builds — see the modifier below.
         .screenshotPlayer()
+    }
+
+    /// The bar for whichever TV has the video, or nil.
+    ///
+    /// Both cast paths end up here. They have nothing in common in the code —
+    /// one is the Google Cast SDK, the other Panura's own receiver over a
+    /// socket — but they are the same fact to a user: the video is on a
+    /// television, and this is what it is and how to stop it.
+    private var isCasting: Bool { panuraCast.isCasting || chromecast.isCasting }
+
+    @ViewBuilder
+    private var castBar: some View {
+        if panuraCast.isCasting {
+            NowPlayingBar(
+                icon: "tv.fill",
+                title: panuraCast.streamTitle,
+                where_: panuraCast.connectedTVName.isEmpty
+                    ? "Playing on TV" : "On \(panuraCast.connectedTVName)",
+                timeLeft: Self.timeLeft(
+                    positionMs: panuraCast.playback.positionMs,
+                    durationMs: panuraCast.playback.durationMs,
+                    isLive: panuraCast.playback.isLive
+                ),
+                isPlaying: panuraCast.playback.isPlaying,
+                // The remote, not the player: there is no local video to
+                // return to, and the cast screen is where the tracks and the
+                // scrubber are.
+                onTap: { showCastControls = true },
+                onPlayPause: {
+                    panuraCast.playback.isPlaying ? panuraCast.pause() : panuraCast.play()
+                },
+                onClose: { panuraCast.stop() }
+            )
+        } else if chromecast.isCasting {
+            NowPlayingBar(
+                icon: "tv.fill",
+                title: chromecast.castingTitle ?? "",
+                where_: chromecast.connectedDeviceName.map { "On \($0)" } ?? "Playing on TV",
+                timeLeft: chromecast.remoteTimeLeft,
+                isPlaying: chromecast.isRemotePlaying,
+                onTap: { showCastControls = true },
+                onPlayPause: { chromecast.toggleRemotePlay() },
+                onClose: { chromecast.stopRemote() }
+            )
+        }
+    }
+
+    /// "12:04 left", or empty for a live stream or a receiver that has not
+    /// reported a duration yet.
+    private static func timeLeft(positionMs: Int64, durationMs: Int64, isLive: Bool) -> String {
+        guard !isLive, durationMs > 0, durationMs > positionMs else { return "" }
+        return PlayerClock.format(Double(durationMs - positionMs) / 1000) + " left"
     }
 
     /// All five, always composed. The outgoing one keeps the higher `zIndex`

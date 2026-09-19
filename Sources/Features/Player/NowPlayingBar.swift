@@ -12,6 +12,9 @@ import SwiftUI
 /// picture is already somewhere — floating, or on the TV — and drawing it twice
 /// costs a decoder and buys nothing. Title, state, play/pause, close.
 struct NowPlayingBar: View {
+    /// The glyph that says where the video went. PiP has its own; a TV gets
+    /// the cast mark, which is the one the header already uses.
+    var icon: String = "pip.fill"
     let title: String
     /// "Picture in Picture", or the TV's name.
     let where_: String
@@ -26,7 +29,7 @@ struct NowPlayingBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "pip.fill")
+            Image(systemName: icon)
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(PanuraTheme.accent)
                 .frame(width: 34, height: 34)

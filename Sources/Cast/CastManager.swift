@@ -27,6 +27,20 @@ final class CastManager: NSObject, ObservableObject {
     /// Unique id of the device being connected to.
     @Published var connecting: String?
 
+    /// What is on the TV, for the Now Playing bar.
+    ///
+    /// The session tells us a device is connected and nothing else; whether
+    /// anything is actually playing on it, and what, lives on the remote media
+    /// client. Without these the bar could say "connected to" but never
+    /// "playing on", which is the fact worth a strip across the screen.
+    @Published private(set) var castingTitle: String?
+    @Published private(set) var isRemotePlaying = false
+    /// Time left on the TV, pre-formatted; empty when live or unknown.
+    @Published private(set) var remoteTimeLeft = ""
+
+    /// True when a video is loaded on the receiver, not merely connected to it.
+    var isCasting: Bool { isConnected && castingTitle != nil }
+
     /// One discovered target, flattened out of `GCKDevice` so the view layer
     /// never touches the SDK's types.
     struct CastDevice: Identifiable, Hashable {
@@ -144,6 +158,8 @@ final class CastManager: NSObject, ObservableObject {
         let request = GCKMediaLoadRequestDataBuilder()
         request.mediaInformation = builder.build()
         session.remoteMediaClient?.loadMedia(with: request.build())
+        castingTitle = item.title
+        session.remoteMediaClient?.add(self)
         AdManager.shared.showInterstitial(.cast)
     }
 }
@@ -161,6 +177,9 @@ extension CastManager: GCKSessionManagerListener {
             isConnected = false
             connectedDeviceName = nil
             connecting = nil
+            castingTitle = nil
+            isRemotePlaying = false
+            remoteTimeLeft = ""
         }
     }
     /// Without this a failed connection leaves the row spinning for ever.
@@ -178,5 +197,51 @@ extension CastManager: GCKDiscoveryManagerListener {
     /// and the list is re-read whole rather than patched by index.
     nonisolated func didUpdateDeviceList() {
         Task { @MainActor in refreshDevices() }
+    }
+}
+
+
+// MARK: - What is on the TV
+
+extension CastManager: GCKRemoteMediaClientListener {
+    nonisolated func remoteMediaClient(
+        _ client: GCKRemoteMediaClient,
+        didUpdate mediaStatus: GCKMediaStatus?
+    ) {
+        let playing = mediaStatus?.playerState == .playing
+        let title = mediaStatus?.mediaInformation?.metadata?
+            .string(forKey: kGCKMetadataKeyTitle)
+        // A live stream reports no duration; so does a video the receiver has
+        // not finished loading. Both mean "no time to show", not "0:00 left".
+        let duration = mediaStatus?.mediaInformation?.streamDuration ?? 0
+        let elapsed = mediaStatus?.streamPosition ?? 0
+        let left = duration.isFinite && duration > 0 ? max(0, duration - elapsed) : 0
+        let ended = mediaStatus?.playerState == .idle
+
+        Task { @MainActor in
+            self.isRemotePlaying = playing
+            self.remoteTimeLeft = left > 0 ? PlayerClock.format(left) + " left" : ""
+            if ended {
+                self.castingTitle = nil
+            } else if let title, !title.isEmpty {
+                self.castingTitle = title
+            }
+        }
+    }
+
+    // MARK: transport, for the bar
+
+    func toggleRemotePlay() {
+        guard let client = GCKCastContext.sharedInstance()
+            .sessionManager.currentCastSession?.remoteMediaClient else { return }
+        if isRemotePlaying { client.pause() } else { client.play() }
+    }
+
+    func stopRemote() {
+        GCKCastContext.sharedInstance()
+            .sessionManager.currentCastSession?.remoteMediaClient?.stop()
+        castingTitle = nil
+        isRemotePlaying = false
+        remoteTimeLeft = ""
     }
 }
