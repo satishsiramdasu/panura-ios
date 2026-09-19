@@ -63,6 +63,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     private(set) weak var drawableView: UIView?
     /// What libVLC is actually handed as its drawable — see `VLCVideoDrawable`.
     private var videoDrawable: VLCVideoDrawable?
+    /// Height of the picture on screen, in points, and the view area it was
+    /// worked out from. Both drive subtitle size.
+    private var videoHeightPoints: CGFloat = 0
+    private var videoAreaSize: CGSize = .zero
 
     /// VLCKit 4's PiP controller, once the video output can float. Held weakly,
     /// as VLC for iOS does: the video output owns it and ends it with itself.
@@ -429,6 +433,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         let i = all.firstIndex(of: aspect) ?? 0
         aspect = all[(i + 1) % all.count]
         applyAspect()
+        // The view has not changed size, so no layout pass will report one —
+        // but the picture inside it just did.
+        videoAreaChanged(videoAreaSize)
     }
 
     /// libVLC 4 has fit modes of its own, so Fill no longer fakes a crop from
@@ -1081,9 +1088,35 @@ extension VLCPlayerModel: PlayerEngine {
     var overlaySubtitle: String? { nil }
 
     func makeVideoView() -> UIView {
-        let view = UIView()
+        let view = VLCVideoContainerView()
         view.backgroundColor = .black
+        view.onLayout = { [weak self] size in
+            Task { @MainActor in self?.videoAreaChanged(size) }
+        }
         return view
+    }
+
+    /// The picture changed size — rotation, or an aspect mode. libVLC sizes
+    /// subtitles against the video, so they have to be scaled back up when the
+    /// video is letterboxed; `PlayerSubtitleScale` explains why.
+    ///
+    /// `currentSubTitleFontScale` is the one subtitle control libVLC applies
+    /// live. Everything else in `applySubtitleStyle` is a media-open option,
+    /// which is why changing those reopens the media — and why doing that on
+    /// every rotation was never an option.
+    private func videoAreaChanged(_ area: CGSize) {
+        guard area.height > 1 else { return }
+        videoAreaSize = area
+        // Only Fit letterboxes; Fill and Stretch give the picture the whole
+        // view, so its height is the view's.
+        var height = area.height
+        let source = player.videoSize
+        if aspect == .fit, source.width > 0, source.height > 0 {
+            height = min(area.height, area.width * source.height / source.width)
+        }
+        guard height > 1, abs(height - videoHeightPoints) > 1 else { return }
+        videoHeightPoints = height
+        player.currentSubTitleFontScale = Float(PlayerSubtitleScale.factor(videoHeight: height))
     }
 
     /// libVLC's text renderer reads its style when media opens.

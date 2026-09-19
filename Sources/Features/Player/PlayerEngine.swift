@@ -325,3 +325,34 @@ struct AirPlayButton: UIViewRepresentable {
 
     func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
+
+// MARK: - Subtitle size against the screen, not the picture
+
+/// Keeps a subtitle the same size on screen however big the picture is.
+///
+/// Both engines size subtitles as a fraction of the video, and both are right
+/// to: that is what makes a subtitle look the same on a phone and a television.
+/// It is wrong inside this app, because the picture is not the screen. A 16:9
+/// video fills a landscape phone and then, rotated upright, becomes a strip
+/// about half as tall — and the subtitles shrink with it, which is what was
+/// reported. The video got smaller; the reader did not move.
+///
+/// So the fraction is divided by how tall the picture actually is, against the
+/// height it was tuned at — a full-screen landscape video, which is the screen's
+/// short side. In that case the factor is 1 and nothing changes, which is the
+/// point: the common case must look exactly as it did.
+///
+/// `AVTextStyleRule` takes a percentage and libVLC takes a multiplier, so both
+/// can use this number directly.
+enum PlayerSubtitleScale {
+    /// Beyond 3x the text stops being a subtitle and starts being a caption
+    /// card. A picture that small is a thumbnail, not something being watched.
+    static let maxFactor: CGFloat = 3
+
+    static func factor(videoHeight: CGFloat) -> Double {
+        let screen = UIScreen.main.bounds
+        let reference = min(screen.width, screen.height)
+        guard videoHeight > 1, reference > 1 else { return 1 }
+        return Double(min(maxFactor, max(1, reference / videoHeight)))
+    }
+}

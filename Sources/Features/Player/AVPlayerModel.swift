@@ -10,6 +10,26 @@ import MediaPlayer
 final class PlayerLayerView: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+
+    /// How tall the picture itself is, in points — not the view, the video
+    /// inside it. Reported on every layout, because subtitle size is a
+    /// percentage of it. See `AVPlayerModel.videoHeightChanged`.
+    var onVideoHeight: ((CGFloat) -> Void)?
+    private var lastReported: CGFloat = 0
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // `videoRect` is computed by the layer's own layout, which has not
+        // necessarily run by the time this has. Reading it a turn later is the
+        // difference between the real rect and the one from before rotation.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let height = self.playerLayer.videoRect.height
+            guard height > 1, abs(height - self.lastReported) > 1 else { return }
+            self.lastReported = height
+            self.onVideoHeight?(height)
+        }
+    }
 }
 
 /// AVPlayer behind the same control overlay VLC uses.
@@ -72,6 +92,8 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
 
     private let player = AVPlayer()
     private weak var videoView: PlayerLayerView?
+    /// Height of the picture on screen, in points. Drives subtitle size.
+    private var videoHeightPoints: CGFloat = 0
     private var pictureInPicture: AVPictureInPictureController?
 
     private var item: MediaItem?
@@ -136,6 +158,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         let view = PlayerLayerView()
         view.backgroundColor = .black
         view.playerLayer.videoGravity = .resizeAspect
+        view.onVideoHeight = { [weak self] height in
+            Task { @MainActor in self?.videoHeightChanged(height) }
+        }
         return view
     }
 
@@ -700,6 +725,14 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     /// Size maps onto the same three steps: Medium (24) is AVPlayer's default
     /// size, Small and Large scale from it. Outline, encoding and embedded
     /// styles have no equivalent for stream subtitles and wait for the overlay.
+    /// The picture changed size — rotation, or an aspect mode. Subtitles have
+    /// to be re-sized against it; `PlayerSubtitleScale` explains why.
+    private func videoHeightChanged(_ height: CGFloat) {
+        guard abs(height - videoHeightPoints) > 1 else { return }
+        videoHeightPoints = height
+        if let item = player.currentItem { applySubtitleStyle(to: item) }
+    }
+
     private func applySubtitleStyle(to playerItem: AVPlayerItem) {
         let defaults = UserDefaults.standard
         let size = defaults.object(forKey: "subtitle_size") as? Int ?? 24
@@ -713,7 +746,11 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         let blue = Double(color & 0xFF) / 255
 
         var attributes: [String: Any] = [
-            kCMTextMarkupAttribute_RelativeFontSize as String: Double(size) / 24 * 100,
+            // Divided by how tall the picture is: this attribute is a
+            // percentage of the video's height, so left alone it shrinks the
+            // text along with a letterboxed video. See PlayerSubtitleScale.
+            kCMTextMarkupAttribute_RelativeFontSize as String:
+                Double(size) / 24 * 100 * PlayerSubtitleScale.factor(videoHeight: videoHeightPoints),
             kCMTextMarkupAttribute_ForegroundColorARGB as String: [1.0, red, green, blue],
         ]
         if bold { attributes[kCMTextMarkupAttribute_BoldStyle as String] = true }
@@ -736,6 +773,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         let i = all.firstIndex(of: aspect) ?? 0
         aspect = all[(i + 1) % all.count]
         applyAspect()
+        // Gravity changed without the view changing size, so no layout pass
+        // will report it — but the picture inside just resized.
+        if let height = videoView?.playerLayer.videoRect.height { videoHeightChanged(height) }
     }
 
     private func applyAspect() {

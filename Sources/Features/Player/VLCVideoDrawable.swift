@@ -93,3 +93,25 @@ extension VLCVideoDrawable: VLCPictureInPictureMediaControlling {
         player?.isPlaying ?? false
     }
 }
+
+/// libVLC's drawable container, which reports its size when it changes.
+///
+/// The container is the whole player area; the picture inside it is letterboxed
+/// by libVLC. Only the model knows the video's aspect, so the size goes there
+/// and the picture's height is worked out at that end — see
+/// `VLCPlayerModel.videoHeightChanged`, and `PlayerSubtitleScale` for why any
+/// of this is needed.
+final class VLCVideoContainerView: UIView {
+    var onLayout: ((CGSize) -> Void)?
+    private var lastReported: CGSize = .zero
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let size = bounds.size
+        guard size.height > 1,
+              abs(size.height - lastReported.height) > 1 || abs(size.width - lastReported.width) > 1
+        else { return }
+        lastReported = size
+        onLayout?(size)
+    }
+}
