@@ -305,9 +305,38 @@ sold, and it is what the App Store shows in search results.
 After that, in order: the player with its controls up, the subtitle options,
 "Play on TV" with a device listed, and the Videos tab.
 
-They can be captured in the iOS Simulator on the macOS CI runner without a
-device — `.github/workflows/ios-screenshots.yml` does exactly that, driven by
-`Tests/Screenshots/StoreScreenshots.swift`, and checks the pixel sizes before
-uploading them. An iPhone 14 Pro Max shoots 1290 × 2796 by hand and is accepted
-as-is; a 10.2" iPad shoots 1620 × 2160, which is the same 3:4 as the required
-2064 × 2752 and so upscales without distortion.
+### How they are captured — by hand, decided 2026-09-19
+
+On the real devices, from the TestFlight build:
+
+- **iPhone 14 Pro Max** shoots **1290 × 2796**, which is one of the two sizes
+  Apple accepts for the 6.9" slot. Upload as-is.
+- **iPad 9th gen** shoots **1620 × 2160**, which Apple does *not* accept — but it
+  is exactly 3:4, and so is the required 2064 × 2752. So it upscales by 1.274×
+  with no cropping and no distortion:
+
+  ```python
+  from PIL import Image
+  for p in Path("ipad").glob("*.png"):
+      Image.open(p).resize((2064, 2752), Image.LANCZOS).save(f"out/{p.name}")
+  ```
+
+**The simulator route was tried and abandoned.** It lives, working, on the
+unmerged `screenshots` branch — `.github/workflows/ios-screenshots.yml` driving
+`Tests/Screenshots/StoreScreenshots.swift`, with `Sources/Core/ScreenshotMode.swift`
+seeding the app and a generated clip for the player shot. It produces all four
+screens at both exact sizes and verifies the pixel dimensions before uploading.
+
+It took nine runs to get there, and the lesson is worth more than the harness:
+each round costs ~16 minutes of macOS runner time billed at 10×, and almost
+every failure was environmental rather than a bug — `simctl privacy grant photos`
+hanging until the job timed out, a path filter that silently queued no run at
+all, the browser landing on its own start page so the fixture never loaded,
+controls timing out mid-settle. A person with the device in their hand does this
+in ten minutes. Reach for the branch only if there is ever a device size nobody
+on the team owns.
+
+One trap it did catch, which applies however the shots are taken: **the browser
+screenshot must not show panura.app's home page**, which carries a Google Play
+badge. App Review guideline 2.3.10 rejects metadata naming or showing another
+mobile platform, and screenshots are metadata. `panura.app/support` is clean.

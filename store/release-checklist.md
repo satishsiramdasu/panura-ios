@@ -48,11 +48,20 @@ App Store Connect access, which arrived on 2026-09-15.
 5. ~~VLCKit 4~~ Merged to `main` 2026-09-18 (`cf6a8ee`): VLCKit 4.0.0a24,
    Picture in Picture on the VLC path, and the streaming relay that fixed gated
    MKV. The `vlckit4` branch is merged and no longer builds on push.
-6. **Screenshots**: taken on the real iPhone and iPad once the build is in
-   TestFlight. App Store Connect wants exact pixel sizes — 6.9" iPhone
-   (1320 × 2868 / 1290 × 2796) or 6.5" (1284 × 2778 / 1242 × 2688), and 13"
-   iPad (2064 × 2752 / 2048 × 2732). A smaller device's screenshots are
-   rejected at upload rather than scaled up.
+6. **Screenshots**: taken by hand on the real devices once the build is in
+   TestFlight — decided 2026-09-19, after the simulator harness cost nine CI
+   rounds to produce what a person with the device does in ten minutes. The
+   harness still works and is parked on the unmerged `screenshots` branch; see
+   the Screenshots section of `app-store-listing.md` for when it is worth
+   reaching for.
+   - iPhone 14 Pro Max shoots **1290 × 2796** — accepted for the 6.9" slot as-is.
+   - iPad 9th gen shoots **1620 × 2160**, which Apple rejects — but it is exactly
+     3:4, as is the required **2064 × 2752**, so it upscales by 1.274× without
+     cropping or distortion. A smaller device's shots are never scaled up by
+     Apple; they are simply refused at upload.
+   - The browser shot must not show `panura.app`'s home page — it carries a
+     Google Play badge, and guideline 2.3.10 rejects metadata showing another
+     mobile platform. Use `panura.app/support`.
 7. ~~Run the release workflow~~ Done 2026-09-14: build **1.0 (3)** uploaded
    (build number = workflow run number) — **never reached App Store Connect**:
    altool printed "UPLOAD FAILED" (framework signatures, iPad orientations) and
