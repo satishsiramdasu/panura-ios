@@ -8,7 +8,8 @@ struct BrowserView: View {
     var onGoHome: () -> Void = {}
     /// The options panel's Settings cell. Android sends this straight to the
     /// browser section; iOS has one settings screen, so it lands there.
-    var onOpenSettings: () -> Void = {}
+    /// Opens Settings, optionally landing on one screen rather than the root.
+    var onOpenSettings: (SettingsScreen?) -> Void = { _ in }
 
     @StateObject private var model = BrowserModel()
     @ObservedObject private var store = BrowsingStore.shared
@@ -466,7 +467,7 @@ struct BrowserView: View {
     private var globalControlsRow: some View {
         Button {
             showMenu = false
-            onOpenSettings()
+            onOpenSettings(.browser)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "slider.horizontal.3")

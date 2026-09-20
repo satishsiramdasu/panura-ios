@@ -4,63 +4,105 @@ import SwiftUI
 /// list of sections, each row naming a screen and saying what is in it. Nothing
 /// is set here — the root is a map, and every switch lives on the screen it
 /// belongs to.
+/// A settings screen that something outside Settings can ask for by name.
+///
+/// Every row on the root is one of these, so the navigation stack's `path` is
+/// the complete truth about where it is — which is what lets the browser send
+/// someone straight to Browser settings from wherever they left it.
+enum SettingsScreen: Hashable {
+    case browser, playback, subtitles, gestures, localVideos, detection, about, support
+}
+
 struct SettingsView: View {
+    /// Set by whoever opened Settings to land somewhere other than the root.
+    /// Cleared once acted on, so Back returns to the root rather than bouncing
+    /// straight in again.
+    var deepLink: Binding<SettingsScreen?> = .constant(nil)
+
     @State private var confirmReset = false
     @State private var didReset = false
+    @State private var path: [SettingsScreen] = []
 
     var body: some View {
-        NavigationStack {
+        content
+            // Unanimated: opening Browser settings from the browser should land
+            // there, not show the root list sliding past on the way. The root
+            // stays underneath, so Back still means what it says.
+            .onChange(of: deepLink.wrappedValue) { goTo($0) }
+            .onAppear { goTo(deepLink.wrappedValue) }
+    }
+
+    /// Replaces the path rather than appending to it — whatever screen was left
+    /// open last time goes, which is the bug this exists to fix.
+    private func goTo(_ screen: SettingsScreen?) {
+        guard let screen else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { path = [screen] }
+        deepLink.wrappedValue = nil
+    }
+
+    private var content: some View {
+        NavigationStack(path: $path) {
             List {
                 Section("Settings") {
-                    PreferenceRow(
+                    PreferenceLink(
                         title: "Web Browser",
                         description: "Ad blocker, private browsing, clear data",
-                        icon: "globe"
-                    ) { BrowserPreferencesView() }
+                        icon: "globe",
+                        value: SettingsScreen.browser
+                    )
 
-                    PreferenceRow(
+                    PreferenceLink(
                         title: "Playback",
                         description: "Resume, background play, speed",
-                        icon: "play.circle"
-                    ) { PlaybackPreferencesView() }
+                        icon: "play.circle",
+                        value: SettingsScreen.playback
+                    )
 
-                    PreferenceRow(
+                    PreferenceLink(
                         title: "Subtitles",
                         description: "Size, font, colour, encoding, language",
-                        icon: "captions.bubble"
-                    ) { SubtitlePreferencesView() }
+                        icon: "captions.bubble",
+                        value: SettingsScreen.subtitles
+                    )
 
-                    PreferenceRow(
+                    PreferenceLink(
                         title: "Gestures",
                         description: "Swipes, taps, skip interval, sensitivity",
-                        icon: "hand.draw"
-                    ) { GesturePreferencesView() }
+                        icon: "hand.draw",
+                        value: SettingsScreen.gestures
+                    )
 
-                    PreferenceRow(
+                    PreferenceLink(
                         title: "Local Videos",
                         description: "How the Videos tab lists what it finds",
-                        icon: "film"
-                    ) { LocalVideoPreferencesView() }
+                        icon: "film",
+                        value: SettingsScreen.localVideos
+                    )
 
-                    PreferenceRow(
+                    PreferenceLink(
                         title: "Detection",
                         description: "Site rules, automatic play, diagnostics",
-                        icon: "wave.3.right"
-                    ) { DetectionPreferencesView() }
+                        icon: "wave.3.right",
+                        value: SettingsScreen.detection
+                    )
                 }
 
                 Section("More") {
-                    PreferenceRow(
+                    PreferenceLink(
                         title: "About",
                         description: "Version, support, credits",
-                        icon: "info.circle"
-                    ) { AboutView() }
+                        icon: "info.circle",
+                        value: SettingsScreen.about
+                    )
 
-                    PreferenceRow(
+                    PreferenceLink(
                         title: "Support",
                         description: "Get help or report an issue",
-                        icon: "ladybug"
-                    ) { SupportView() }
+                        icon: "ladybug",
+                        value: SettingsScreen.support
+                    )
                 }
 
                 Section {
@@ -76,6 +118,18 @@ struct SettingsView: View {
                     Text("Data")
                 } footer: {
                     Text("Shortcuts, history and Continue Watching are kept — this resets preferences only.")
+                }
+            }
+            .navigationDestination(for: SettingsScreen.self) { screen in
+                switch screen {
+                case .browser: BrowserPreferencesView()
+                case .playback: PlaybackPreferencesView()
+                case .subtitles: SubtitlePreferencesView()
+                case .gestures: GesturePreferencesView()
+                case .localVideos: LocalVideoPreferencesView()
+                case .detection: DetectionPreferencesView()
+                case .about: AboutView()
+                case .support: SupportView()
                 }
             }
             .scrollContentBackground(.hidden)

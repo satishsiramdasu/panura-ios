@@ -45,6 +45,8 @@ struct RootTabView: View {
     @ObservedObject private var chromecast = CastManager.shared
     /// The cast remote, opened from the bar.
     @State private var showCastControls = false
+    /// Which Settings screen to land on, when something asked for one.
+    @State private var settingsDeepLink: SettingsScreen?
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -189,12 +191,15 @@ struct RootTabView: View {
                 BrowserView(
                     pendingAddress: $pendingAddress,
                     onGoHome: { select(.home) },
-                    onOpenSettings: { select(.settings) }
+                    onOpenSettings: { screen in
+                        settingsDeepLink = screen
+                        select(.settings)
+                    }
                 )
             }
             layer(.videos) { LocalVideosView() }
             layer(.stream) { StreamView() }
-            layer(.settings) { SettingsView() }
+            layer(.settings) { SettingsView(deepLink: $settingsDeepLink) }
         }
     }
 

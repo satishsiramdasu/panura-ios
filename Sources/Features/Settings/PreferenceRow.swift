@@ -79,3 +79,23 @@ struct PreferenceToggle: View {
         }
     }
 }
+
+/// The same row, navigating by value instead of by view.
+///
+/// A view-based `NavigationLink` pushes a screen the stack's `path` knows
+/// nothing about, so setting the path cannot replace it — which is how opening
+/// Browser settings from the browser used to land on whichever settings screen
+/// had been left open. Every row on the Settings root goes through this, so the
+/// path is the whole truth about where the stack is.
+struct PreferenceLink<Value: Hashable>: View {
+    let title: String
+    let description: String
+    let icon: String
+    let value: Value
+
+    var body: some View {
+        NavigationLink(value: value) {
+            PreferenceLabel(title: title, description: description, icon: icon)
+        }
+    }
+}
