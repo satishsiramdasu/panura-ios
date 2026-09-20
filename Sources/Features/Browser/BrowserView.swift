@@ -254,6 +254,17 @@ struct BrowserView: View {
         }
     }
 
+    /// Something is switched off for the site in the address bar, so the mark
+    /// in the header wears a dot.
+    ///
+    /// A shield was tried in that slot and says it more plainly — a shield can
+    /// be struck through. The brand mark wins anyway: it was already in the bar
+    /// doing nothing a second control could not do, and one button always in
+    /// the same place beats a clearer glyph in a crowded pill.
+    private var siteLowered: Bool {
+        siteSettings.isLowered(host: SiteSettings.key(for: model.currentURL))
+    }
+
     // MARK: options panel
 
     /// Hangs from the mark that opens it: square where it meets the bar,
