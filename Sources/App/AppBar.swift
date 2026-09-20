@@ -8,10 +8,13 @@ enum AppDestination: Hashable, CaseIterable {
 
     var title: String {
         switch self {
-        // "Web", not "Browser": the app is sold as a web video player, so the
-        // seat says the same word the listing does.
+        // "Browser", not "Web": the seat says the same word the listing does,
+        // and the listing is "Panura: Video Browser, TV Cast". "Web" only reads
+        // as *web videos, as against local ones* to someone who already knows
+        // the app; "Browser" tells a new one there is a browser in here, which
+        // is what they came for.
         case .home: return "Home"
-        case .web: return "Web"
+        case .web: return "Browser"
         case .videos: return "Videos"
         case .stream: return "Network Stream"
         case .settings: return "Settings"

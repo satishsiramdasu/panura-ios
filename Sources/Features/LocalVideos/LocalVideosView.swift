@@ -96,42 +96,6 @@ struct LocalVideosView: View {
             NavigationStack { CastDevicesView() }
                 .presentationDragIndicator(.visible)
         }
-        .confirmationDialog(
-            "Play here or on TV?",
-            isPresented: Binding(
-                get: { pendingChoice != nil },
-                set: { if !$0 { pendingChoice = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button(tvName.map { "Play on " + $0 } ?? "Play on TV") {
-                if let choice = pendingChoice { castOrAsk(choice.asset) }
-                pendingChoice = nil
-            }
-            Button("Play on this phone") {
-                if let choice = pendingChoice { play(choice.asset, at: choice.index) }
-                pendingChoice = nil
-            }
-            Button("Cancel", role: .cancel) { pendingChoice = nil }
-        } message: {
-            Text(pendingChoice.map { "\($0.asset.title) — a TV is connected." } ?? "")
-        }
-        .confirmationDialog(
-            "Replace what is on the TV?",
-            isPresented: Binding(
-                get: { pendingReplace != nil },
-                set: { if !$0 { pendingReplace = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Replace") {
-                if let asset = pendingReplace { cast(asset) }
-                pendingReplace = nil
-            }
-            Button("Cancel", role: .cancel) { pendingReplace = nil }
-        } message: {
-            Text("Something is already playing there.")
-        }
     }
 
     // MARK: grid
@@ -239,6 +203,58 @@ struct LocalVideosView: View {
                 Task { await delete([item]) }
             } label: { Label("Delete", systemImage: "trash") }
         }
+        // Both dialogs hang off the cell, not off the screen. A
+        // `confirmationDialog` points at the view it is attached to, so one
+        // mounted on the whole grid grew an arrow aimed at the middle of the
+        // list — at whichever video happened to be there, not the one that was
+        // pressed. Per-cell bindings mean only the pressed video ever presents,
+        // and the arrow lands on it.
+        .confirmationDialog(
+            "Play here or on TV?",
+            isPresented: choosing(item),
+            titleVisibility: .visible
+        ) {
+            Button(tvName.map { "Play on " + $0 } ?? "Play on TV") {
+                pendingChoice = nil
+                castOrAsk(item)
+            }
+            Button("Play on this phone") {
+                pendingChoice = nil
+                play(item, at: index)
+            }
+            Button("Cancel", role: .cancel) { pendingChoice = nil }
+        } message: {
+            Text("\(item.displayTitle(showExtension: showExtension)) — a TV is connected.")
+        }
+        .confirmationDialog(
+            "Replace what is on the TV?",
+            isPresented: replacing(item),
+            titleVisibility: .visible
+        ) {
+            Button("Replace") {
+                pendingReplace = nil
+                cast(item)
+            }
+            Button("Cancel", role: .cancel) { pendingReplace = nil }
+        } message: {
+            Text("Something is already playing there.")
+        }
+    }
+
+    /// True only for the video that was actually pressed, so the dialog
+    /// presents from that cell and nowhere else.
+    private func choosing(_ item: LocalVideoAsset) -> Binding<Bool> {
+        Binding(
+            get: { pendingChoice?.asset.id == item.id },
+            set: { if !$0, pendingChoice?.asset.id == item.id { pendingChoice = nil } }
+        )
+    }
+
+    private func replacing(_ item: LocalVideoAsset) -> Binding<Bool> {
+        Binding(
+            get: { pendingReplace?.id == item.id },
+            set: { if !$0, pendingReplace?.id == item.id { pendingReplace = nil } }
+        )
     }
 
     /// Search, sort and the album picker, in one row above the grid — Android
@@ -658,23 +674,14 @@ private struct VideoCell: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack(alignment: .bottomTrailing) {
-                Rectangle().fill(PanuraTheme.surfaceVariant)
-                if let thumb = item.thumbnail {
-                    Image(uiImage: thumb).resizable().scaledToFill()
-                }
+                Thumbnail(item: item)
                 Image(systemName: "play.circle.fill")
                     .font(.title2)
                     .foregroundStyle(.white.opacity(0.9))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // How long it is, where a thumbnail always carries it.
-                Text(item.durationLabel)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
-                    .padding(5)
+                DurationBadge(text: item.durationLabel).padding(5)
 
                 if selecting {
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -704,6 +711,47 @@ private struct VideoCell: View {
     }
 }
 
+/// The poster frame, bounded.
+///
+/// The image is an `overlay` on the fill rather than a sibling in a `ZStack`,
+/// and that is the whole point. `scaledToFill` reports a *layout* size larger
+/// than the box in one axis, so as a ZStack sibling it grew the stack itself —
+/// and `.bottomTrailing` then placed the duration badge at the bottom-right of
+/// the overflowing image, outside the rounded clip. Hence a badge that appeared
+/// on some videos and not others: it survived only when the clip's aspect
+/// happened to be close to the video's. An overlay takes the fill's size, so
+/// the stack stays the size of the box and the badge lands where it is aimed.
+private struct Thumbnail: View {
+    let item: LocalVideoAsset
+
+    var body: some View {
+        Rectangle()
+            .fill(PanuraTheme.surfaceVariant)
+            .overlay {
+                if let thumb = item.thumbnail {
+                    Image(uiImage: thumb).resizable().scaledToFill()
+                }
+            }
+            .clipped()
+    }
+}
+
+/// How long the video runs. White on a scrim rather than on the frame itself,
+/// because a poster frame can be any colour and a bright one swallowed it.
+private struct DurationBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 6))
+    }
+}
+
 /// The list shape: a wide thumbnail on the left, then the name and what is
 /// known about the file. Android's `VideoListItem` — 80pt tall, 120pt of
 /// thumbnail — because a list earns its place by having room for a long
@@ -718,14 +766,20 @@ private struct VideoRow: View {
     var selecting = false
     var lastPlayed = false
 
+    /// The facts worth scanning a list by, in the order they answer questions:
+    /// how long, when, how good, how big. Whatever the library has not answered
+    /// yet is simply absent — no placeholder that shifts the line when it
+    /// arrives.
+    private var metaLine: String {
+        var parts = [item.durationLabel]
+        if let created = item.createdLabel { parts.append(created) }
+        if let quality = item.qualityLabel { parts.append(quality) }
+        if let size { parts.append(size) }
+        return parts.joined(separator: "  ·  ")
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            // The full-height accent edge is Android's, verbatim.
-            if lastPlayed {
-                Capsule()
-                    .fill(PanuraTheme.accent)
-                    .frame(width: 3, height: 56)
-            }
             if selecting {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
@@ -733,48 +787,51 @@ private struct VideoRow: View {
             }
 
             ZStack(alignment: .bottomTrailing) {
-                Rectangle().fill(PanuraTheme.surfaceVariant)
-                if let thumb = item.thumbnail {
-                    Image(uiImage: thumb).resizable().scaledToFill()
-                }
-                Text(item.durationLabel)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
-                    .padding(4)
+                Thumbnail(item: item)
+                DurationBadge(text: item.durationLabel).padding(4)
             }
-            .frame(width: 120, height: 72)
+            // Wider than Android's 120, and 16:9 rather than a guess — a list
+            // row is mostly empty next to the name, and the honest thing to put
+            // in that space is more of the video.
+            .frame(width: 142, height: 80)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            // Android's list row, which fills the space this one was wasting:
-            // the name, then when it was taken, then chips for the facts worth
-            // scanning a list by.
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(title)
-                    .font(.subheadline)
+                    .font(.subheadline.weight(.medium))
                     .lineLimit(2)
 
-                if let created = item.createdLabel {
-                    Text(created)
-                        .font(.caption2)
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        .lineLimit(1)
-                }
-
-                HStack(spacing: 4) {
-                    if let quality = item.qualityLabel { infoChip(quality) }
-                    if let size { infoChip(size) }
-                }
+                // One line, dot-separated, spanning the row rather than a
+                // cluster of pills hugging the left edge with half the width
+                // left over. Duration leads it: the badge sits on the frame,
+                // but sorting a library by length means reading it in text.
+                Text(metaLine)
+                    .font(.caption2)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(8)
+        .padding(.leading, 4)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(selected ? PanuraTheme.accentSoft : PanuraTheme.surfaceContainer)
         )
+        // The accent edge marking "where was I" rides *on* the row rather than
+        // sitting inside the stack. As a first child it pushed the thumbnail
+        // across, so the one marked row was the one row out of alignment with
+        // the rest of the list.
+        .overlay(alignment: .leading) {
+            if lastPlayed {
+                Capsule()
+                    .fill(PanuraTheme.accent)
+                    .frame(width: 3)
+                    .padding(.vertical, 12)
+                    .padding(.leading, 3)
+            }
+        }
         .overlay {
             if selected {
                 RoundedRectangle(cornerRadius: 12)
@@ -782,17 +839,6 @@ private struct VideoRow: View {
             }
         }
     }
-}
-
-/// One fact about a video, sized to be read at a glance and ignored otherwise.
-/// Android's `InfoChip`, same job.
-private func infoChip(_ text: String) -> some View {
-    Text(text)
-        .font(.system(size: 10, weight: .medium))
-        .foregroundStyle(PanuraTheme.onSurfaceVariant)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 5))
 }
 
 /// Back-compat wrapper so this compiles on iOS 16 (ContentUnavailableView is iOS 17+).
