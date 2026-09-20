@@ -46,7 +46,21 @@ struct LocalVideosView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PanuraTheme.background)
-            .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Videos") }
+            // Search and the three controls belong to the bar, not to the
+            // grid. Under it with no space they read as one dark mass glued to
+            // the header; in it, on the bar's own surface and closed by a
+            // hairline, they read as the bar they are — and the grid gets a
+            // clean edge to scroll under.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    PanuraHeader("Videos")
+                    if showsToolbar {
+                        toolbar
+                        Divider()
+                    }
+                }
+                .background(PanuraTheme.surfaceContainer)
+            }
             .navigationBarHidden(true)
         }
         .task {
@@ -60,9 +74,16 @@ struct LocalVideosView: View {
 
     // MARK: grid
 
+    /// The toolbar has nothing to act on until the library is readable.
+    private var showsToolbar: Bool {
+        switch model.state {
+        case .empty, .loaded: return true
+        default: return false
+        }
+    }
+
     private var content: some View {
         VStack(spacing: 0) {
-            toolbar
             if model.visible.isEmpty {
                 ContentUnavailableViewCompat(
                     title: emptyTitle, systemImage: "film", description: emptyMessage
@@ -230,7 +251,8 @@ struct LocalVideosView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
     }
 
     private func toolbarGlyph(_ icon: String, active: Bool = false) -> some View {
