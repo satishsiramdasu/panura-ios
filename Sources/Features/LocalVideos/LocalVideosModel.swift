@@ -23,6 +23,20 @@ struct LocalVideoAsset: Identifiable {
 
     var resolutionLabel: String { "\(asset.pixelWidth)×\(asset.pixelHeight)" }
 
+    /// "1080p" — the short side, as everyone names a resolution, so a portrait
+    /// clip shot at 1080×1920 reads 1080p rather than 1920p.
+    var qualityLabel: String? {
+        let short = min(asset.pixelWidth, asset.pixelHeight)
+        return short > 0 ? "\(short)p" : nil
+    }
+
+    /// "12 Mar 2026". Free — Photos already has it — where the file size is a
+    /// second fetch, which is why only this one is on the row by default.
+    var createdLabel: String? {
+        guard let date = asset.creationDate else { return nil }
+        return date.formatted(.dateTime.day().month(.abbreviated).year())
+    }
+
     /// "holiday.mp4" or "holiday", per the Videos setting. The library always
     /// hands over the full filename, so the extension is dropped here rather
     /// than added.
@@ -337,6 +351,28 @@ final class LocalVideosModel: ObservableObject {
     /// File size, read lazily — `PHAssetResource` is a separate fetch, so it is
     /// done for the one video whose info sheet is open rather than for all of
     /// them at load.
+    /// Sizes already worked out, by asset id. The list reads this; rows that
+    /// are not in it ask for theirs and get it on the next pass.
+    @Published private(set) var sizes: [String: String] = [:]
+
+    /// Fetches one row's size, off the main actor and once.
+    ///
+    /// `PHAssetResource` is a separate hit on the photo database, which is why
+    /// this is not done for the whole library at load — but a row that is on
+    /// screen is worth one, and the answer is kept.
+    func loadSize(for item: LocalVideoAsset) {
+        guard sizes[item.id] == nil else { return }
+        let asset = item.asset
+        let id = item.id
+        Task.detached(priority: .utility) {
+            guard let resource = PHAssetResource.assetResources(for: asset).first,
+                  let bytes = resource.value(forKey: "fileSize") as? Int64
+            else { return }
+            let text = StreamProbe.formatSize(bytes)
+            await MainActor.run { self.sizes[id] = text }
+        }
+    }
+
     func fileSize(for item: LocalVideoAsset) -> String? {
         guard let resource = PHAssetResource.assetResources(for: item.asset).first,
               let bytes = resource.value(forKey: "fileSize") as? Int64 else { return nil }

@@ -116,9 +116,12 @@ struct LocalVideosView: View {
             } else {
                 VideoRow(
                     item: item, title: item.displayTitle(showExtension: showExtension),
+                    size: model.sizes[item.id],
                     selected: selection.contains(item.id), selecting: selecting,
                     lastPlayed: lastPlayed
                 )
+                // Only for rows that get drawn, and only once each.
+                .task { model.loadSize(for: item) }
             }
         }
         // The whole cell, thumbnail and caption alike, takes the tap — a
@@ -552,6 +555,9 @@ private struct VideoCell: View {
 private struct VideoRow: View {
     let item: LocalVideoAsset
     let title: String
+    /// Filled in once the library has been asked; nil until then, and the chip
+    /// simply is not there rather than showing a placeholder that jumps.
+    var size: String?
     var selected = false
     var selecting = false
     var lastPlayed = false
@@ -562,7 +568,7 @@ private struct VideoRow: View {
             if lastPlayed {
                 Capsule()
                     .fill(PanuraTheme.accent)
-                    .frame(width: 3, height: 44)
+                    .frame(width: 3, height: 56)
             }
             if selecting {
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -583,16 +589,28 @@ private struct VideoRow: View {
                     .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
                     .padding(4)
             }
-            .frame(width: 120, height: 68)
+            .frame(width: 120, height: 72)
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
+            // Android's list row, which fills the space this one was wasting:
+            // the name, then when it was taken, then chips for the facts worth
+            // scanning a list by.
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.subheadline)
                     .lineLimit(2)
-                Text(item.resolutionLabel)
-                    .font(.caption2)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+
+                if let created = item.createdLabel {
+                    Text(created)
+                        .font(.caption2)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(1)
+                }
+
+                HStack(spacing: 4) {
+                    if let quality = item.qualityLabel { infoChip(quality) }
+                    if let size { infoChip(size) }
+                }
             }
             Spacer(minLength: 0)
         }
@@ -608,6 +626,17 @@ private struct VideoRow: View {
             }
         }
     }
+}
+
+/// One fact about a video, sized to be read at a glance and ignored otherwise.
+/// Android's `InfoChip`, same job.
+private func infoChip(_ text: String) -> some View {
+    Text(text)
+        .font(.system(size: 10, weight: .medium))
+        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 5))
 }
 
 /// Back-compat wrapper so this compiles on iOS 16 (ContentUnavailableView is iOS 17+).
