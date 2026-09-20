@@ -194,9 +194,13 @@ struct BrowserView: View {
                 title: model.pageTitle,
                 url: model.currentURL?.absoluteString ?? "",
                 placeholder: "Search or enter website",
-                // The mark says whether this is a private session; the pill
-                // goes back to being an address.
-                background: PanuraTheme.surfaceVariant,
+                // Private browsing colours the whole bar, not just the mark.
+                // Dropping this was a mistake: the tint is how the session
+                // announces itself, and one small mark is too quiet for a
+                // state where nothing is being written down.
+                background: session.privateMode
+                    ? PanuraTheme.incognito.opacity(0.22)
+                    : PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
                 leading: {
                     // Same slot Android gives it: first cell inside the pill.

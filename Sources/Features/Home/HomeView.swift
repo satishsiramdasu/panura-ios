@@ -163,10 +163,11 @@ struct HomeView: View {
                 placeholder: session.privateMode
                     ? "Search privately"
                     : "Search Google or enter website",
-                // Not repainted for private browsing any more: the mark in this
-                // bar carries that now, and a purple box is a poor thing to
-                // have to read an address out of.
-                background: PanuraTheme.surfaceVariant,
+                // Tinted for private browsing, as the browser's bar is — the
+                // two read as one bar and have to agree.
+                background: session.privateMode
+                    ? PanuraTheme.incognito.opacity(0.22)
+                    : PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
                 leading: {
                     Image(systemName: "magnifyingglass")
