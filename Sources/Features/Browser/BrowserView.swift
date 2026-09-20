@@ -223,7 +223,19 @@ struct BrowserView: View {
                     .disabled(!pageUsable)
                     .accessibilityLabel("Add to shortcuts")
                 },
-                trailing: { EmptyView() }
+                trailing: {
+                    // Back and forward live here now. They were in the options
+                    // panel, which made going back a two-tap affair on the one
+                    // control people reach for most.
+                    HStack(spacing: 0) {
+                        pillNav("chevron.left", "Back", enabled: model.canGoBack) {
+                            model.goBack()
+                        }
+                        pillNav("chevron.right", "Forward", enabled: model.canGoForward) {
+                            model.goForward()
+                        }
+                    }
+                }
             )
         }
     }
@@ -240,151 +252,139 @@ struct BrowserView: View {
 
     // MARK: options panel
 
-    /// Hangs from the header, square on top and rounded where it ends — it is
-    /// attached to the bar rather than floating over it.
+    /// Hangs from the mark that opens it: square where it meets the bar,
+    /// rounded where it ends, and about three quarters of the width rather
+    /// than all of it — a panel that spans the screen reads as a new screen,
+    /// where this is a thing attached to one button.
     ///
-    /// The scrim starts BELOW the header: that bar's menu button is the chevron
-    /// that closes this, so it has to stay tappable.
+    /// The scrim starts BELOW the header, because the mark is also the close.
     private var menuPanel: some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: PanuraHeader<AnyView>.height)
-            ZStack(alignment: .top) {
+            ZStack(alignment: .topLeading) {
                 Color.black.opacity(0.32)
                     .ignoresSafeArea(edges: .bottom)
                     .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { showMenu = false } }
 
-                VStack(spacing: 0) {
-                    siteSection
-
-                    HStack(spacing: 6) {
-                        // Private browsing, and the page navigation that lost its
-                        // slots when the bottom bar became app-wide.
-                        Button {
-                            showMenu = false
-                            if session.privateMode {
-                                // Only worth asking about when there is a page to lose.
-                                if pageUsable { confirmLeavingPrivate = true }
-                                else { leavePrivateMode(keepPage: false) }
-                            } else {
-                                model.setPrivateMode(true)
-                            }
-                        } label: {
-                            Label(
-                                session.privateMode ? "Private browsing On" : "Private browsing Off",
-                                systemImage: "eyeglasses"
-                            )
-                            .font(.footnote.weight(.medium))
-                            .foregroundStyle(
-                                session.privateMode ? PanuraTheme.incognito : PanuraTheme.onSurfaceVariant
-                            )
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .buttonStyle(.plain)
-
-                        navButton("chevron.left", "Back", enabled: model.canGoBack) {
-                            model.goBack()
-                        }
-                        navButton("arrow.clockwise", "Reload", enabled: true) {
-                            model.reload()
-                        }
-                        navButton("chevron.right", "Forward", enabled: model.canGoForward) {
-                            model.goForward()
-                        }
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        domainRow
+                        actionRow
+                        advancedSection
+                        globalControlsRow
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-
-                    Divider().padding(.horizontal, 16)
-
-                    // One row, evenly divided — five cells, as on Android. Its
-                    // Downloads cell has no counterpart here (iOS ships no
-                    // download feature), so desktop mode takes that seat: with
-                    // the browser's native menu gone this is its only home.
-                    HStack(alignment: .top, spacing: 0) {
-                        if let url = model.currentURL {
-                            ShareLink(item: url) {
-                                gridCellLabel("square.and.arrow.up", "Share", enabled: true)
-                            }
-                            .buttonStyle(.plain)
-                            .simultaneousGesture(TapGesture().onEnded { showMenu = false })
-                        } else {
-                            gridCellLabel("square.and.arrow.up", "Share", enabled: false)
-                        }
-                        gridCell("trash", "Clear Cache") {
-                            model.clearCache()
-                            flash("Cache cleared")
-                        }
-                        gridCell(
-                            model.desktopMode ? "iphone" : "display",
-                            model.desktopMode ? "Mobile Site" : "Desktop Site"
-                        ) {
-                            model.toggleDesktopMode()
-                        }
-                        gridCell("ladybug", "Report Page", enabled: pageUsable) {
-                            showReport = true
-                        }
-                        gridCell("gearshape", "Settings") { onOpenSettings() }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 10)
-
-                    globalControlsRow
+                    // Capped as well as proportional: three quarters of an iPad
+                    // is a panel wide enough to lose the mark it belongs to.
+                    .frame(width: min(geo.size.width * 0.78, 400))
+                    .background(BottomRoundedRectangle(radius: 20).fill(panelSurface))
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .background(BottomRoundedRectangle(radius: 20).fill(PanuraTheme.surfaceContainer))
-                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
     }
 
-    /// Something is switched off for the site in the address bar, so the mark
-    /// in the header wears a dot.
-    ///
-    /// A shield was tried in this slot and says it more plainly — it can be
-    /// struck through. The brand mark wins anyway: it was already in the bar
-    /// doing nothing a second control could not do, and one button that is
-    /// always in the same place beats a clearer glyph in a crowded pill.
-    private var siteLowered: Bool {
-        siteSettings.isLowered(host: SiteSettings.key(for: model.currentURL))
+    /// Private browsing repaints this too. The mark says a session is private;
+    /// anything opening from the mark should agree with it.
+    private var panelSurface: Color {
+        session.privateMode ? PanuraTheme.incognitoSurfaceHigh : PanuraTheme.surfaceContainer
     }
 
-    /// What this site is allowed to do, named — the panel's reason for being.
-    ///
-    /// Everything below it applies to the browser as a whole; this applies to
-    /// the site in the address bar, which is why it is first and why it carries
-    /// the site's name. Brave's Shields panel is the model.
+    /// The site the panel is about, given room to be read.
     @ViewBuilder
-    private var siteSection: some View {
-        if let host = SiteSettings.key(for: model.currentURL) {
-            VStack(spacing: 0) {
-                HStack(spacing: 8) {
-                    Image(systemName: "globe")
-                        .font(.system(size: 13))
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    Text(host)
-                        .font(.footnote.weight(.semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 8)
-                    if !siteSettings.isDefault(host: host) {
-                        Button("Reset") {
-                            let wasBlocking = siteSettings.value(.adBlock, host: host)
-                            siteSettings.reset(host: host)
-                            applySiteChange(.adBlock, host: host, was: wasBlocking)
-                            model.setDesktopMode(siteSettings.value(.desktop, host: host))
-                        }
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(PanuraTheme.accent)
-                    }
+    private var domainRow: some View {
+        let host = SiteSettings.key(for: model.currentURL)
+        HStack(spacing: 8) {
+            Image(systemName: session.privateMode ? "eyeglasses" : "globe")
+                .font(.system(size: 14))
+                .foregroundStyle(session.privateMode ? PanuraTheme.incognito : PanuraTheme.onSurfaceVariant)
+            Text(host ?? "New tab")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            if let host, !siteSettings.isDefault(host: host) {
+                Button("Reset") {
+                    let wasBlocking = siteSettings.value(.adBlock, host: host)
+                    siteSettings.reset(host: host)
+                    applySiteChange(.adBlock, host: host, was: wasBlocking)
+                    model.setDesktopMode(siteSettings.value(.desktop, host: host))
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 6)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PanuraTheme.accent)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+
+    /// Four actions, straight under the site they act on.
+    ///
+    /// It was five and included Settings and Desktop Site, both of which now
+    /// exist lower down this same panel — one as the row at the foot, the other
+    /// as a switch. Private browsing takes a seat here instead of the full-width
+    /// row it used to have: it is a thing you turn on, like the rest of them.
+    private var actionRow: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Button {
+                showMenu = false
+                if session.privateMode {
+                    // Only worth asking about when there is a page to lose.
+                    if pageUsable { confirmLeavingPrivate = true }
+                    else { leavePrivateMode(keepPage: false) }
+                } else {
+                    model.setPrivateMode(true)
+                }
+            } label: {
+                gridCellLabel(
+                    "eyeglasses",
+                    session.privateMode ? "Private On" : "Private",
+                    enabled: true,
+                    tint: session.privateMode ? PanuraTheme.incognito : nil
+                )
+            }
+            .buttonStyle(.plain)
+
+            if let url = model.currentURL {
+                ShareLink(item: url) {
+                    gridCellLabel("square.and.arrow.up", "Share", enabled: true)
+                }
+                .buttonStyle(.plain)
+                .simultaneousGesture(TapGesture().onEnded { showMenu = false })
+            } else {
+                gridCellLabel("square.and.arrow.up", "Share", enabled: false)
+            }
+
+            gridCell("trash", "Clear Cache") {
+                model.clearCache()
+                flash("Cache cleared")
+            }
+            gridCell("ladybug", "Report Page", enabled: pageUsable) {
+                showReport = true
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.bottom, 12)
+    }
+
+    /// What this site is allowed to do, under a heading saying these are the
+    /// ones worth thinking about.
+    @ViewBuilder
+    private var advancedSection: some View {
+        if let host = SiteSettings.key(for: model.currentURL) {
+            VStack(alignment: .leading, spacing: 0) {
+                Divider().padding(.horizontal, 16)
+                Text("ADVANCED OPTIONS")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.8)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 4)
 
                 ForEach(SiteSettings.Control.allCases) { control in
                     siteToggle(control, host: host)
                 }
-
-                Divider().padding(.horizontal, 16).padding(.top, 6)
             }
+            .padding(.bottom, 10)
         }
     }
 
@@ -407,21 +407,20 @@ struct BrowserView: View {
                     Text(control.detail)
                         .font(.caption2)
                         .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
         }
         .tint(PanuraTheme.accent)
         .padding(.horizontal, 16)
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
     }
 
     /// Makes a switch real on the page that is already open.
     ///
-    /// Each of these costs a reload, which is why they are switches and not a
-    /// slider: WebKit applies blocking rules as resources are requested and
-    /// sends the user agent with the request, so nothing already fetched
-    /// changes until it is fetched again.
+    /// Each of these costs a reload: WebKit applies blocking rules as resources
+    /// are requested and sends the user agent with the request, so nothing
+    /// already fetched changes until it is fetched again.
     private func applySiteChange(_ control: SiteSettings.Control, host: String, was: Bool) {
         let now = siteSettings.value(control, host: host)
         guard now != was else { return }
@@ -430,8 +429,8 @@ struct BrowserView: View {
         case .desktop: model.setDesktopMode(now)
         // Nothing to apply: the scripts keep running and the model simply stops
         // keeping what they find. Clearing makes the page match the switch
-        // instead of keeping a list the user just asked not to have.
-        case .detection: if !now { model.clearFindings() } else { model.reload() }
+        // instead of leaving a list the user just asked not to have.
+        case .detection: if now { model.reload() } else { model.clearFindings() }
         }
     }
 
@@ -447,44 +446,51 @@ struct BrowserView: View {
             showMenu = false
             onOpenSettings()
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 13))
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                Text("Browser settings for every site")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .font(.system(size: 15))
+                    .foregroundStyle(PanuraTheme.accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Browser settings")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("Defaults for every site")
+                        .font(.caption2)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                }
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 16)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(PanuraTheme.surfaceVariant.opacity(0.5))
+        .background(PanuraTheme.surfaceVariant.opacity(session.privateMode ? 0.25 : 0.5))
     }
 
-    private func navButton(
+    /// Back and forward, in the pill's last cell — the slot the options menu
+    /// held before it moved to the mark. No Reload beside them: pulling the
+    /// page down already does that, and a third button at this width costs more
+    /// than it returns.
+    private func pillNav(
         _ icon: String,
         _ label: String,
         enabled: Bool,
         action: @escaping () -> Void
     ) -> some View {
-        Button {
-            showMenu = false
-            action()
-        } label: {
+        Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .medium))
-                .frame(width: 38, height: 38)
-                .background(Circle().fill(enabled ? PanuraTheme.accentSoft : Color.clear))
-                .foregroundStyle(enabled ? PanuraTheme.accent : Color.secondary.opacity(0.5))
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 30, height: 38)
+                .foregroundStyle(enabled ? PanuraTheme.onSurfaceVariant : Color.secondary.opacity(0.3))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // Disabled rather than hidden, so the three keep their positions.
+        // Disabled rather than hidden, so the two keep their positions.
         .disabled(!enabled)
         .accessibilityLabel(label)
     }
@@ -503,12 +509,20 @@ struct BrowserView: View {
         .disabled(!enabled)
     }
 
-    private func gridCellLabel(_ icon: String, _ label: String, enabled: Bool) -> some View {
+    private func gridCellLabel(
+        _ icon: String,
+        _ label: String,
+        enabled: Bool,
+        tint: Color? = nil
+    ) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.system(size: 18))
+                .foregroundStyle(tint ?? (enabled ? Color.primary : Color.secondary.opacity(0.5)))
                 .frame(width: 42, height: 42)
-                .background(Circle().fill(PanuraTheme.surfaceVariant))
+                .background(Circle().fill(
+                    tint.map { $0.opacity(0.18) } ?? PanuraTheme.surfaceVariant
+                ))
             Text(label)
                 .font(.system(size: 11))
                 .lineLimit(2)
