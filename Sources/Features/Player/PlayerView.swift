@@ -72,6 +72,11 @@ struct PlayerView<Model: PlayerEngine>: View {
     @State private var volumeBase: Float = 0
     @State private var speedBoosting = false
     @State private var flashZone: PlayerZone?
+    /// Seconds the double taps have added up to, signed. Android counts them
+    /// up the same way — tap again inside the window and it reads 20, then 30
+    /// — which is what makes a run of taps one gesture rather than a flicker.
+    @State private var flashSeconds = 0
+    @State private var flashReset: Task<Void, Never>?
     @State private var hudClear: Task<Void, Never>?
 
     @AppStorage("subtitle_size") private var subtitleSize = 24
@@ -368,11 +373,26 @@ struct PlayerView<Model: PlayerEngine>: View {
         withAnimation { speedBoosting = false }; model.endSpeedBoost()
     }
 
+    /// The double-tap seek indicator: show it, and add this tap to the total.
+    ///
+    /// It used to show `skipInterval` flat and fade after 480ms, so tapping
+    /// four times in a row restarted the same "10 seconds" four times — four
+    /// fades, no sense of having moved 40. It now accumulates and holds for
+    /// 750ms past the *last* tap, as Android does, so a run of taps reads as
+    /// one continuous gesture.
     private func flashSkip(_ zone: PlayerZone) {
-        withAnimation(.easeOut(duration: 0.12)) { flashZone = zone }
-        Task {
-            try? await Task.sleep(nanoseconds: 480_000_000)
-            withAnimation { if flashZone == zone { flashZone = nil } }
+        // Turning round starts the count again: +10 then -10 is not zero, it
+        // is a skip back.
+        if flashZone != zone { flashSeconds = 0 }
+        flashSeconds += (zone == .right ? 1 : -1) * model.skipInterval
+        withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { flashZone = zone }
+
+        flashReset?.cancel()
+        flashReset = Task {
+            try? await Task.sleep(nanoseconds: 750_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.24)) { flashZone = nil }
+            flashSeconds = 0
         }
     }
 
@@ -458,8 +478,17 @@ struct PlayerView<Model: PlayerEngine>: View {
         return GeometryReader { geo in
             ZStack {
                 EdgeOvalShape(rightSide: forward).fill(Color.white.opacity(0.2))
-                SkipFlashContent(forward: forward, seconds: model.skipInterval)
+                SkipFlashContent(forward: forward, seconds: abs(flashSeconds))
             }
+            // Grows out of the edge it belongs to, and only fades on the way
+            // out. Android ripples from the tap; this is the nearest thing
+            // SwiftUI gives for free, and the asymmetry matters — a shape that
+            // shrinks away again draws the eye back to something that is over.
+            .transition(.asymmetric(
+                insertion: .scale(scale: 0.88, anchor: forward ? .trailing : .leading)
+                    .combined(with: .opacity),
+                removal: .opacity
+            ))
             .frame(width: geo.size.width * 0.42, height: geo.size.height)
             .position(
                 x: forward ? geo.size.width - geo.size.width * 0.21 : geo.size.width * 0.21,
@@ -1030,32 +1059,62 @@ private struct EdgeOvalShape: Shape {
     }
 }
 
-/// Three chevrons that fade in sequence, over the skip amount — the animated
-/// heart of the double-tap indicator.
+/// Three chevrons lighting in sequence over the running total.
+///
+/// The old version gave each chevron its own `repeatForever` animation with a
+/// stagger delay. Three independent loops drift out of phase, SwiftUI starts
+/// them whenever the view happens to appear rather than when the tap happened,
+/// and the indicator only lived 480ms against a 1s cycle — so it was killed
+/// mid-stride, at a different point every time. That is the whole reason it
+/// looked wrong.
+///
+/// This is one driven cycle instead, the same six steps Android uses: the three
+/// light up in turn, then go dark in the same order, 150ms apart. Deterministic,
+/// starts at the beginning, and every run looks like every other.
 private struct SkipFlashContent: View {
     let forward: Bool
     let seconds: Int
-    @State private var animating = false
+
+    @State private var step = 0
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 1) {
+        VStack(spacing: 8) {
+            HStack(spacing: 0) {
                 ForEach(0..<3, id: \.self) { i in
-                    Image(systemName: "play.fill")
-                        .rotationEffect(.degrees(forward ? 0 : 180))
-                        .font(.system(size: 15))
-                        .opacity(animating ? 1 : 0.25)
-                        .animation(
-                            .easeInOut(duration: 0.5).repeatForever(autoreverses: true)
-                                .delay(Double(forward ? i : 2 - i) * 0.15),
-                            value: animating
-                        )
+                    Image(systemName: forward ? "chevron.right" : "chevron.left")
+                        .font(.system(size: 16, weight: .heavy))
+                        .opacity(lit(i) ? 1 : 0.16)
                 }
             }
-            Text("\(seconds) seconds").font(.caption)
+            Text("\(seconds) seconds")
+                .font(.footnote.weight(.semibold))
+                .monospacedDigit()
+                // The number is counting, so roll it rather than swap it.
+                .contentTransition(.numericText())
         }
         .foregroundStyle(.white)
-        .onAppear { animating = true }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation(.easeInOut(duration: 0.15)) { step = (step + 1) % 6 }
+            }
+        }
+    }
+
+    /// Whether chevron `i` is lit at the current step. Counted from the middle
+    /// of the screen outwards, so the wave always travels the way the video is
+    /// about to.
+    private func lit(_ i: Int) -> Bool {
+        let index = forward ? i : 2 - i
+        switch step {
+        case 0: return index == 0
+        case 1: return index <= 1
+        case 2: return true
+        case 3: return index >= 1
+        case 4: return index == 2
+        default: return false
+        }
     }
 }
 
