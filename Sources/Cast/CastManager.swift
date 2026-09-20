@@ -164,6 +164,42 @@ final class CastManager: NSObject, ObservableObject {
     }
 }
 
+extension CastManager {
+    /// Sends a video out of this phone's library to a Chromecast.
+    ///
+    /// A Chromecast cannot open a file on this device, so the same HTTP server
+    /// PanuraCast uses serves it and the receiver is handed that address. The
+    /// phone stays in the loop for the whole video.
+    ///
+    /// **This is the weaker of the two paths, and the container is why.** A
+    /// Chromecast plays MP4 and WebM; an iPhone records QuickTime, often in
+    /// HEVC, which most Chromecasts cannot decode at all. Panura on Android TV
+    /// has no such limit — it runs the same player this app does. The receiver
+    /// is told the real type rather than a hopeful one, so a refusal is a clean
+    /// failure instead of a black screen.
+    func castLocalFile(_ file: URL, title: String) {
+        guard let session = GCKCastContext.sharedInstance()
+            .sessionManager.currentCastSession else { return }
+        guard PanuraCastManager.shared.startServerForLocalFile(file),
+              let address = PanuraCastServer.proxyURL(for: file) else { return }
+
+        let metadata = GCKMediaMetadata(metadataType: .movie)
+        metadata.setString(title, forKey: kGCKMetadataKeyTitle)
+
+        let builder = GCKMediaInformationBuilder(contentURL: URL(string: address) ?? file)
+        builder.streamType = .buffered
+        builder.contentType = PanuraCastServer.mimeType(for: file)
+        builder.metadata = metadata
+
+        let request = GCKMediaLoadRequestDataBuilder()
+        request.mediaInformation = builder.build()
+        session.remoteMediaClient?.loadMedia(with: request.build())
+        castingTitle = title
+        session.remoteMediaClient?.add(self)
+        AdManager.shared.showInterstitial(.cast)
+    }
+}
+
 extension CastManager: GCKSessionManagerListener {
     nonisolated func sessionManager(_ sessionManager: GCKSessionManager, didStart session: GCKCastSession) {
         Task { @MainActor in

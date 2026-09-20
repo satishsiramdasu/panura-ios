@@ -24,6 +24,17 @@ struct LocalVideosView: View {
     /// Read once per appearance rather than per cell — it only changes when this
     /// screen is the one starting playback, and that closes the screen.
     @State private var lastPlayedID: String?
+    @ObservedObject private var panuraCast = PanuraCastManager.shared
+    @ObservedObject private var chromecast = CastManager.shared
+    /// The video waiting on "here or on TV?", with where it sits in the list so
+    /// playing on the phone still gets its playlist.
+    @State private var pendingChoice: (asset: LocalVideoAsset, index: Int)?
+    /// Sent to the TV, waiting on "replace what is playing?".
+    @State private var pendingReplace: LocalVideoAsset?
+    @State private var showCastPicker = false
+    /// One line, said once — casting gives no other sign from this screen.
+    @State private var toast: String?
+    @State private var toastTask: Task<Void, Never>?
 
     private let gridColumns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
     private let listColumns = [GridItem(.flexible(), spacing: 12)]
@@ -62,6 +73,17 @@ struct LocalVideosView: View {
                 .background(PanuraTheme.surfaceContainer)
             }
             .navigationBarHidden(true)
+            .overlay(alignment: .bottom) {
+                if let toast {
+                    Text(toast)
+                        .font(.footnote)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
+                        .padding(.bottom, 16)
+                        .transition(.opacity)
+                }
+            }
         }
         .task {
             lastPlayedID = LocalVideosModel.lastPlayedID
@@ -70,6 +92,46 @@ struct LocalVideosView: View {
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
         .sheet(isPresented: $showAlbums) { albumsSheet }
+        .sheet(isPresented: $showCastPicker) {
+            NavigationStack { CastDevicesView() }
+                .presentationDragIndicator(.visible)
+        }
+        .confirmationDialog(
+            "Play here or on TV?",
+            isPresented: Binding(
+                get: { pendingChoice != nil },
+                set: { if !$0 { pendingChoice = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(tvName.map { "Play on " + $0 } ?? "Play on TV") {
+                if let choice = pendingChoice { castOrAsk(choice.asset) }
+                pendingChoice = nil
+            }
+            Button("Play on this phone") {
+                if let choice = pendingChoice { play(choice.asset, at: choice.index) }
+                pendingChoice = nil
+            }
+            Button("Cancel", role: .cancel) { pendingChoice = nil }
+        } message: {
+            Text(pendingChoice.map { "\($0.asset.title) — a TV is connected." } ?? "")
+        }
+        .confirmationDialog(
+            "Replace what is on the TV?",
+            isPresented: Binding(
+                get: { pendingReplace != nil },
+                set: { if !$0 { pendingReplace = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Replace") {
+                if let asset = pendingReplace { cast(asset) }
+                pendingReplace = nil
+            }
+            Button("Cancel", role: .cancel) { pendingReplace = nil }
+        } message: {
+            Text("Something is already playing there.")
+        }
     }
 
     // MARK: grid
@@ -149,13 +211,18 @@ struct LocalVideosView: View {
         // Button's label only accepts one where it actually painted something.
         .contentShape(Rectangle())
         .onTapGesture {
-            if selecting { toggle(item) } else { play(item, at: index) }
+            if selecting { toggle(item) } else { playOrAsk(item, at: index) }
         }
         // Press and hold opens this. Android starts selection on the same
         // gesture, but on iOS it belongs to the context menu, so selection is
         // the menu's first entry instead — reachable from a video rather than
         // only from one glyph in the toolbar.
         .contextMenu {
+            Button {
+                castOrAsk(item)
+            } label: {
+                Label(tvName.map { "Play on " + $0 } ?? "Play on TV", systemImage: "tv")
+            }
             Button {
                 selecting = true
                 toggle(item)
@@ -491,6 +558,73 @@ struct LocalVideosView: View {
             guard i >= 0, i < items.count,
                   let url = await model.resolveURL(for: items[i]) else { return nil }
             return MediaItem(title: items[i].title, url: url, isLocal: true)
+        }
+    }
+
+    /// The TV in use, if any — named, because "Play on VU TV" is a different
+    /// promise from "Play on TV".
+    private var tvName: String? {
+        if panuraCast.isTVConnected, !panuraCast.connectedTVName.isEmpty {
+            return panuraCast.connectedTVName
+        }
+        return chromecast.connectedDeviceName
+    }
+
+    private var tvConnected: Bool { panuraCast.isTVConnected || chromecast.isConnected }
+
+    /// Tapping a video with a TV connected asks where it should play.
+    ///
+    /// Android does the same, and for the same reason: connecting a TV is not
+    /// a promise that everything goes to it — half the time the phone is the
+    /// screen you meant. Guessing either way is wrong often enough to be worth
+    /// one tap.
+    private func playOrAsk(_ asset: LocalVideoAsset, at index: Int) {
+        guard tvConnected else { play(asset, at: index); return }
+        pendingChoice = (asset, index)
+    }
+
+    /// From the context menu, where the intent is already "on the TV".
+    private func castOrAsk(_ asset: LocalVideoAsset) {
+        guard tvConnected else {
+            // Nothing to send it to yet: the cast picker is the next step, and
+            // the video can be chosen again once a TV answers.
+            showCastPicker = true
+            return
+        }
+        if panuraCast.isCasting || chromecast.isCasting {
+            pendingReplace = asset
+        } else {
+            cast(asset)
+        }
+    }
+
+    /// Exports the asset and hands the file to whichever TV is connected.
+    ///
+    /// Both paths serve it from this phone, so playback lasts exactly as long
+    /// as the phone stays on the network — there is no way around that for a
+    /// file only this device has.
+    private func cast(_ asset: LocalVideoAsset) {
+        Task {
+            guard let url = await model.resolveURL(for: asset) else {
+                flash("Could not read that video")
+                return
+            }
+            if panuraCast.isTVConnected {
+                panuraCast.castLocal(file: url, title: asset.title)
+            } else {
+                chromecast.castLocalFile(url, title: asset.title)
+            }
+            flash(tvName.map { "Playing on " + $0 } ?? "Playing on TV")
+        }
+    }
+
+    private func flash(_ message: String) {
+        toastTask?.cancel()
+        withAnimation { toast = message }
+        toastTask = Task {
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation { toast = nil }
         }
     }
 

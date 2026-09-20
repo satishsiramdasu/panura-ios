@@ -202,6 +202,12 @@ final class PanuraCastServer: NSObject {
         // differs, and the TV picks its demuxer from it.
         let serveStream: (HttpRequest) -> HttpResponse = { [weak self] request in
             guard let self, let url = self.streamURL else { return .notFound }
+            // A video out of the library is on this phone's disk, not behind a
+            // CDN. It has no headers to replay and must never be read whole
+            // into memory — a holiday clip is gigabytes.
+            if url.isFileURL {
+                return self.serveLocalFile(url, range: request.headers["range"])
+            }
             return self.serve(url, range: request.headers["range"], rewrite: true)
         }
         http["/stream.m3u8"] = serveStream
@@ -283,6 +289,77 @@ final class PanuraCastServer: NSObject {
         onProxyRequest?(url.lastPathComponent, status, out.count)
         return .raw(status, status == 206 ? "Partial Content" : "OK", responseHeaders) { writer in
             try writer.write(out)
+        }
+    }
+
+    /// Streams a file off this phone's disk to the TV, honouring byte ranges.
+    ///
+    /// Separate from `serve` on purpose. That one proxies a remote stream: it
+    /// fetches through `URLSession`, replays captured headers, and buffers the
+    /// whole body so a playlist can be rewritten. None of that applies here,
+    /// and the buffering would be fatal — a player seeks by asking for ranges
+    /// of a file that can be several gigabytes.
+    private func serveLocalFile(_ url: URL, range: String?) -> HttpResponse {
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber,
+              let handle = try? FileHandle(forReadingFrom: url)
+        else {
+            onProxyRequest?(url.lastPathComponent, 404, 0)
+            return .notFound
+        }
+        let total = size.int64Value
+        var start: Int64 = 0
+        var end = total - 1
+        var status = 200
+
+        // "bytes=START-" or "bytes=START-END". An open end means "to the end of
+        // the file", which is what a player asks for when it starts.
+        if let range, range.hasPrefix("bytes=") {
+            let parts = range.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
+            if let first = parts.first, let value = Int64(first) {
+                start = max(0, min(value, total - 1))
+                status = 206
+            }
+            if parts.count > 1, let value = Int64(parts[1]), value >= start {
+                end = min(value, total - 1)
+            }
+        }
+
+        let length = max(0, end - start + 1)
+        var headers = [
+            "Content-Type": Self.mimeType(for: url),
+            "Accept-Ranges": "bytes",
+            "Content-Length": "\(length)",
+        ]
+        if status == 206 {
+            headers["Content-Range"] = "bytes \(start)-\(end)/\(total)"
+        }
+        onProxyRequest?("file \(url.lastPathComponent)", status, Int(length))
+
+        return .raw(status, status == 206 ? "Partial Content" : "OK", headers) { writer in
+            defer { try? handle.close() }
+            try handle.seek(toOffset: UInt64(start))
+            // A chunk at a time, so memory stays flat however long the video is.
+            var remaining = length
+            while remaining > 0 {
+                let want = Int(min(remaining, 256 * 1024))
+                guard let chunk = try handle.read(upToCount: want), !chunk.isEmpty else { break }
+                try writer.write(chunk)
+                remaining -= Int64(chunk.count)
+            }
+        }
+    }
+
+    /// What the TV should expect, from the extension. The receiver picks its
+    /// demuxer from this, and a phone's own recordings are QuickTime.
+    static func mimeType(for url: URL) -> String {
+        switch url.pathExtension.lowercased() {
+        case "mov", "qt": return "video/quicktime"
+        case "m4v": return "video/x-m4v"
+        case "mkv": return "video/x-matroska"
+        case "webm": return "video/webm"
+        case "avi": return "video/x-msvideo"
+        case "3gp": return "video/3gpp"
+        default: return "video/mp4"
         }
     }
 

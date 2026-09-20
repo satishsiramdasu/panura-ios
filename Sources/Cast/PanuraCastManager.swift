@@ -170,6 +170,55 @@ final class PanuraCastManager: ObservableObject {
 
     // MARK: casting
 
+    /// Sends a video out of this phone's library to the TV.
+    ///
+    /// No probe and no direct mode: there is no CDN to ask, and nothing on the
+    /// network can reach a file on this device except through this app's own
+    /// server. So it is always proxied, and the phone has to stay on the
+    /// network and awake for as long as it is playing — which is the one real
+    /// cost of casting something local.
+    /// Starts the HTTP server and points it at a local file, for a Chromecast
+    /// cast that does not otherwise touch PanuraCast. Returns whether the TV
+    /// will be able to fetch it.
+    func startServerForLocalFile(_ file: URL) -> Bool {
+        start()
+        guard isServerRunning else { return false }
+        server.streamURL = file
+        server.headers = [:]
+        return true
+    }
+
+    func castLocal(file: URL, title: String) {
+        start()
+        guard isServerRunning else { return }
+
+        server.streamURL = file
+        // Nothing to replay: the file is on disk, not behind a gate.
+        server.headers = [:]
+        guard let proxy = PanuraCastServer.proxyURL(for: file) else {
+            lastError = "No Wi-Fi address — the TV has no way to reach this device."
+            return
+        }
+
+        isCasting = true
+        streamTitle = title
+        castID = file.absoluteString
+        mode = "proxy"
+        pendingDirect = nil
+
+        // Nonce, for the same reason as a stream: the TV keys its player on the
+        // URL, and every local video arrives at the same /stream.mp4.
+        let proxyURL = proxy + "?v=\(Int(Date().timeIntervalSince1970 * 1000))"
+        var message = CastMessage(type: "stream")
+        message.streamUrl = proxyURL
+        message.proxyUrl = proxyURL
+        message.title = title
+        message.mode = "proxy"
+        message.headers = [:]
+        server.send(message)
+        log("local file via phone: " + file.lastPathComponent)
+    }
+
     /// Sends `item` to the TV, choosing direct or proxy the way Android does.
     ///
     /// Direct means the TV fetches the CDN itself and the phone can leave the
