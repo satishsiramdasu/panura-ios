@@ -115,7 +115,10 @@ struct SettingsView: View {
             "mark_last_played", "show_extension", "videos_layout", "player_engine_mode",
             "debug_detection", "auto_play_click", "block_page_fullscreen", "ad_block",
             "block_long_press",
-            "desktop_mode_default",
+            "desktop_mode_default", "detection_enabled",
+            // Every per-site override too: "back to defaults" that left a site
+            // with detection switched off would not be back to defaults.
+            "site_settings",
         ]
         for key in keys { UserDefaults.standard.removeObject(forKey: key) }
         didReset = true

@@ -24,6 +24,7 @@ struct BrowserView: View {
     @State private var showCastPicker = false
     @State private var pendingCast: MediaItem?
     @State private var showMenu = false
+    @ObservedObject private var siteSettings = SiteSettings.shared
     @State private var showAddress = false
     @State private var showReport = false
     @State private var toast: String?
@@ -212,13 +213,13 @@ struct BrowserView: View {
                     Button {
                         withAnimation(.easeOut(duration: 0.18)) { showMenu.toggle() }
                     } label: {
-                        Image(systemName: showMenu ? "chevron.up" : "line.3.horizontal")
+                        Image(systemName: showMenu ? "chevron.up" : menuIcon)
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(showMenu ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
+                            .foregroundStyle(menuTint)
                             .frame(width: 38, height: 38)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(showMenu ? "Close menu" : "Menu")
+                    .accessibilityLabel(showMenu ? "Close menu" : "Site controls and browser menu")
                 }
             )
         }
@@ -250,6 +251,8 @@ struct BrowserView: View {
                     .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { showMenu = false } }
 
                 VStack(spacing: 0) {
+                    siteSection
+
                     HStack(spacing: 6) {
                         // Private browsing, and the page navigation that lost its
                         // slots when the bottom bar became app-wide.
@@ -321,11 +324,154 @@ struct BrowserView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 10)
+
+                    globalControlsRow
                 }
                 .background(BottomRoundedRectangle(radius: 20).fill(PanuraTheme.surfaceContainer))
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+    }
+
+    /// A shield rather than a hamburger.
+    ///
+    /// The button used to open a list of page actions, and `line.3.horizontal`
+    /// was right for that. It now opens what this site is allowed to do, and a
+    /// hamburger cannot show state — where the whole point of the panel is that
+    /// the answer differs from site to site. A shield can: struck through when
+    /// something is switched off here, and it is the glyph the same panel wears
+    /// in every browser that has one. Brave's own button is its lion, which
+    /// works because everyone already knows what the lion means; a new app has
+    /// no such credit and has to say it plainly.
+    private var menuIcon: String {
+        SiteSettings.shared.isLowered(host: SiteSettings.key(for: model.currentURL))
+            ? "shield.slash" : "shield.lefthalf.filled"
+    }
+
+    private var menuTint: Color {
+        if showMenu { return PanuraTheme.accent }
+        return SiteSettings.shared.isLowered(host: SiteSettings.key(for: model.currentURL))
+            ? PanuraTheme.onSurfaceVariant.opacity(0.75) : PanuraTheme.accent
+    }
+
+    /// What this site is allowed to do, named — the panel's reason for being.
+    ///
+    /// Everything below it applies to the browser as a whole; this applies to
+    /// the site in the address bar, which is why it is first and why it carries
+    /// the site's name. Brave's Shields panel is the model.
+    @ViewBuilder
+    private var siteSection: some View {
+        if let host = SiteSettings.key(for: model.currentURL) {
+            VStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 13))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    Text(host)
+                        .font(.footnote.weight(.semibold))
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    if !siteSettings.isDefault(host: host) {
+                        Button("Reset") {
+                            let wasBlocking = siteSettings.value(.adBlock, host: host)
+                            siteSettings.reset(host: host)
+                            applySiteChange(.adBlock, host: host, was: wasBlocking)
+                            model.setDesktopMode(siteSettings.value(.desktop, host: host))
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(PanuraTheme.accent)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
+
+                ForEach(SiteSettings.Control.allCases) { control in
+                    siteToggle(control, host: host)
+                }
+
+                Divider().padding(.horizontal, 16).padding(.top, 6)
+            }
+        }
+    }
+
+    private func siteToggle(_ control: SiteSettings.Control, host: String) -> some View {
+        Toggle(isOn: Binding(
+            get: { siteSettings.value(control, host: host) },
+            set: { value in
+                let was = siteSettings.value(control, host: host)
+                siteSettings.set(control, host: host, to: value)
+                applySiteChange(control, host: host, was: was)
+            }
+        )) {
+            HStack(spacing: 10) {
+                Image(systemName: control.icon)
+                    .font(.system(size: 14))
+                    .foregroundStyle(PanuraTheme.accent)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(control.title).font(.footnote.weight(.medium))
+                    Text(control.detail)
+                        .font(.caption2)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .tint(PanuraTheme.accent)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 5)
+    }
+
+    /// Makes a switch real on the page that is already open.
+    ///
+    /// Each of these costs a reload, which is why they are switches and not a
+    /// slider: WebKit applies blocking rules as resources are requested and
+    /// sends the user agent with the request, so nothing already fetched
+    /// changes until it is fetched again.
+    private func applySiteChange(_ control: SiteSettings.Control, host: String, was: Bool) {
+        let now = siteSettings.value(control, host: host)
+        guard now != was else { return }
+        switch control {
+        case .adBlock: model.applyAdBlock(now)
+        case .desktop: model.setDesktopMode(now)
+        // Nothing to apply: the scripts keep running and the model simply stops
+        // keeping what they find. Clearing makes the page match the switch
+        // instead of keeping a list the user just asked not to have.
+        case .detection: if !now { model.clearFindings() } else { model.reload() }
+        }
+    }
+
+    /// Everything that is the browser's setting rather than this site's.
+    ///
+    /// Named as such, exactly as Brave separates its global controls, because
+    /// the difference is not cosmetic: the auto-click, inline video and the
+    /// long-press block are WebKit user scripts, fixed when the web view is
+    /// built, and per-site versions of them would mean rebuilding the browser
+    /// on every hop between hosts.
+    private var globalControlsRow: some View {
+        Button {
+            showMenu = false
+            onOpenSettings()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 13))
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                Text("Browser settings for every site")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(PanuraTheme.surfaceVariant.opacity(0.5))
     }
 
     private func navButton(

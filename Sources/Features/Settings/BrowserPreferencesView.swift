@@ -6,6 +6,9 @@ import WebKit
 struct BrowserPreferencesView: View {
     /// Read by WebViewContainer at web-view creation.
     @AppStorage("ad_block") private var adBlock = true
+    /// The default for sites with no opinion of their own. The browser's site
+    /// panel overrides it per site — see `SiteSettings`.
+    @AppStorage("detection_enabled") private var detection = true
     /// The UA the browser starts on. The in-page menu still flips one session.
     @AppStorage("desktop_mode_default") private var desktopByDefault = false
     @ObservedObject private var session = BrowserSession.shared
@@ -36,6 +39,19 @@ struct BrowserPreferencesView: View {
 
     var body: some View {
         List {
+            Section {
+                PreferenceToggle(
+                    title: "Find videos",
+                    description: "Watch pages for playable streams. Off, the browser is only a browser",
+                    icon: "sparkle.magnifyingglass",
+                    isOn: $detection
+                )
+            } header: {
+                Text("Detection")
+            } footer: {
+                Text("The shield in the address bar sets this, and the ad blocker, for one site at a time.")
+            }
+
             Section("Privacy") {
                 PreferenceToggle(
                     title: "Ad blocker",

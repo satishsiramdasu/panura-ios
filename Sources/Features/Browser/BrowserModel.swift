@@ -105,10 +105,36 @@ final class BrowserModel: ObservableObject {
         clearFindings()
     }
 
-    func toggleDesktopMode() {
-        desktopMode.toggle()
-        webView?.customUserAgent = desktopMode ? Self.desktopUA : nil
+    func toggleDesktopMode() { setDesktopMode(!desktopMode) }
+
+    func setDesktopMode(_ on: Bool) {
+        guard desktopMode != on else { return }
+        desktopMode = on
+        webView?.customUserAgent = on ? Self.desktopUA : nil
         reload()
+    }
+
+    /// Turns ad blocking on or off for the page that is open.
+    ///
+    /// Rule lists can be added to and removed from a live content controller,
+    /// which is the whole reason this one setting can be per-site while the
+    /// script-based ones cannot — see `SiteSettings`. The reload is not
+    /// optional: rules are applied as resources are requested, so a page that
+    /// has already loaded is unaffected until it asks again.
+    func applyAdBlock(_ on: Bool) {
+        guard let webView else { return }
+        let controller = webView.configuration.userContentController
+        guard on else {
+            controller.removeAllContentRuleLists()
+            webView.reload()
+            return
+        }
+        Task { @MainActor in
+            for list in await FilterListUpdater.current() {
+                controller.add(list)
+            }
+            webView.reload()
+        }
     }
 
     /// Findings belong to a page — drop them whenever we navigate.
@@ -149,6 +175,11 @@ final class BrowserModel: ObservableObject {
         ruleMatched: Bool = false,
         source: DetectionSource = .unknown
     ) {
+        // Detection turned off for this site: the scripts still run — they are
+        // registered when the web view is built — but nothing they find is
+        // kept, which is what the switch promises.
+        guard SiteSettings.shared.value(.detection, host: SiteSettings.key(for: currentURL))
+        else { return }
         let key = url.absoluteString
         guard !seen.contains(key) else { return }
         seen.insert(key)
