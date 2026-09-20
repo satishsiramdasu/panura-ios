@@ -106,17 +106,6 @@ struct BrowserView: View {
                 onSent: { flash("Report sent") }
             )
         }
-        .confirmationDialog(
-            "Close this page?",
-            isPresented: $confirmLeavingPrivate,
-            titleVisibility: .visible
-        ) {
-            Button("Close page", role: .destructive) { leavePrivateMode(keepPage: false) }
-            Button("Keep it open") { leavePrivateMode(keepPage: true) }
-            Button("Stay private", role: .cancel) {}
-        } message: {
-            Text("Private browsing is turning off, so this page will be recorded in history from now on.")
-        }
         .onChange(of: model.currentURL) { url in
             // No title yet: at this instant `pageTitle` still holds the page we
             // just left, and passing it filed the new site under the old one's
@@ -241,6 +230,24 @@ struct BrowserView: View {
                     }
                 }
             )
+        }
+        // Anchored to the bar, not to the page.
+        //
+        // This hung off the outer stack, and a confirmation dialog now points
+        // at the view it was attached to — so a question about private
+        // browsing arrived as a bubble growing out of the middle of whatever
+        // page was open. It belongs to the bar: the tint that is about to
+        // disappear is right here.
+        .confirmationDialog(
+            "Close this page?",
+            isPresented: $confirmLeavingPrivate,
+            titleVisibility: .visible
+        ) {
+            Button("Close page", role: .destructive) { leavePrivateMode(keepPage: false) }
+            Button("Keep it open") { leavePrivateMode(keepPage: true) }
+            Button("Stay private", role: .cancel) {}
+        } message: {
+            Text("Private browsing is turning off, so this page will be recorded in history from now on.")
         }
     }
 
