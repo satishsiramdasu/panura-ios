@@ -18,6 +18,21 @@ struct PanuraHeader<Content: View>: View {
     /// Tapping the glyph goes Home, as it does on Android's browser. nil leaves
     /// it decorative, which is what every screen that IS a destination wants.
     var onTapGlyph: (() -> Void)?
+    /// The glyph is doing something right now — in the browser, holding the
+    /// site panel open. Drawn as the pressed state a button would have.
+    var glyphActive: Bool = false
+    /// Something needs attention behind the glyph. The browser marks it when a
+    /// protection is switched off for the site in the address bar.
+    var glyphMarked: Bool = false
+    var glyphLabel: String = "Home"
+    /// Recolours the mark itself. Private browsing uses it.
+    ///
+    /// The bar used to turn purple instead — the address pill repainted behind
+    /// the text — which read as a theme change rather than as a state, and made
+    /// the one element you actually type into the hardest thing on screen to
+    /// look at. Colouring the mark says the same thing in the place the eye
+    /// already goes, and leaves the page's own chrome alone.
+    var glyphTint: Color?
     @ViewBuilder var content: Content
 
     static var height: CGFloat { 52 }
@@ -37,15 +52,45 @@ struct PanuraHeader<Content: View>: View {
 
     @ViewBuilder
     private var glyph: some View {
-        let icon = Image("AppLogo")
+        let mark = Image("AppLogo")
             .resizable()
             .scaledToFit()
             .frame(width: 30, height: 30)
+        let icon = Group {
+            if let glyphTint {
+                // `sourceAtop` over a compositing group paints every opaque
+                // pixel of the mark and nothing around it — a flat silhouette
+                // in the tint, rather than the muddy result of multiplying a
+                // colour through artwork that already has its own.
+                mark
+                    .overlay(glyphTint.blendMode(.sourceAtop))
+                    .compositingGroup()
+            } else {
+                mark
+            }
+        }
             .frame(width: 44, height: 44)
+            .background(
+                Circle()
+                    .fill(glyphActive ? PanuraTheme.accentSoft : .clear)
+                    .frame(width: 40, height: 40)
+            )
+            // A brand mark cannot be struck through the way a shield can, so
+            // the state goes beside it: one dot, ringed in the bar's own colour
+            // so it reads as sitting on top rather than as part of the logo.
+            .overlay(alignment: .topTrailing) {
+                if glyphMarked {
+                    Circle()
+                        .fill(PanuraTheme.onSurfaceVariant)
+                        .frame(width: 9, height: 9)
+                        .overlay(Circle().strokeBorder(PanuraTheme.surfaceContainer, lineWidth: 2))
+                        .offset(x: -7, y: 9)
+                }
+            }
         if let onTapGlyph {
             Button(action: onTapGlyph) { icon }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Home")
+                .accessibilityLabel(glyphLabel)
         } else {
             icon
         }

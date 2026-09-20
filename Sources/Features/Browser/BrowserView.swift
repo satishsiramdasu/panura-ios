@@ -168,17 +168,35 @@ struct BrowserView: View {
         model.load(address)
     }
 
-    // MARK: header — app glyph · address pill · cast
+    // MARK: header — Panura mark · address pill · cast
 
+    /// The Panura mark opens the site panel; the address pill is only an
+    /// address again.
+    ///
+    /// The panel used to hang off a button inside the pill, which made the pill
+    /// carry three jobs — where you are, saving the page, and every browser
+    /// option — in the width of a phone. The mark is already in this bar, it is
+    /// the one control that belongs to the app rather than to the page, and
+    /// this is the slot Brave, Chrome and Safari all use for the same panel.
+    ///
+    /// Going Home by tapping the mark goes with it. That was a second way to
+    /// reach a place the app bar already has a seat for; opening what this site
+    /// is allowed to do has no other way in.
     private var header: some View {
-        PanuraHeader(onTapGlyph: onGoHome) {
+        PanuraHeader(
+            onTapGlyph: { withAnimation(.easeOut(duration: 0.18)) { showMenu.toggle() } },
+            glyphActive: showMenu,
+            glyphMarked: siteLowered,
+            glyphLabel: showMenu ? "Close site controls" : "Site controls and browser menu",
+            glyphTint: session.privateMode ? PanuraTheme.incognito : nil
+        ) {
             AddressPill(
                 title: model.pageTitle,
                 url: model.currentURL?.absoluteString ?? "",
                 placeholder: "Search or enter website",
-                background: session.privateMode
-                    ? PanuraTheme.incognito.opacity(0.22)
-                    : PanuraTheme.surfaceVariant,
+                // The mark says whether this is a private session; the pill
+                // goes back to being an address.
+                background: PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
                 leading: {
                     // Same slot Android gives it: first cell inside the pill.
@@ -205,22 +223,7 @@ struct BrowserView: View {
                     .disabled(!pageUsable)
                     .accessibilityLabel("Add to shortcuts")
                 },
-                trailing: {
-                    // The page menu, in the pill's last cell — the browser has no
-                    // bottom bar of its own, so its options hang off here and the
-                    // panel drops from this bar. Chevron while open: this is also
-                    // the close.
-                    Button {
-                        withAnimation(.easeOut(duration: 0.18)) { showMenu.toggle() }
-                    } label: {
-                        Image(systemName: showMenu ? "chevron.up" : menuIcon)
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundStyle(menuTint)
-                            .frame(width: 38, height: 38)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(showMenu ? "Close menu" : "Site controls and browser menu")
-                }
+                trailing: { EmptyView() }
             )
         }
     }
@@ -333,25 +336,15 @@ struct BrowserView: View {
         }
     }
 
-    /// A shield rather than a hamburger.
+    /// Something is switched off for the site in the address bar, so the mark
+    /// in the header wears a dot.
     ///
-    /// The button used to open a list of page actions, and `line.3.horizontal`
-    /// was right for that. It now opens what this site is allowed to do, and a
-    /// hamburger cannot show state — where the whole point of the panel is that
-    /// the answer differs from site to site. A shield can: struck through when
-    /// something is switched off here, and it is the glyph the same panel wears
-    /// in every browser that has one. Brave's own button is its lion, which
-    /// works because everyone already knows what the lion means; a new app has
-    /// no such credit and has to say it plainly.
-    private var menuIcon: String {
-        SiteSettings.shared.isLowered(host: SiteSettings.key(for: model.currentURL))
-            ? "shield.slash" : "shield.lefthalf.filled"
-    }
-
-    private var menuTint: Color {
-        if showMenu { return PanuraTheme.accent }
-        return SiteSettings.shared.isLowered(host: SiteSettings.key(for: model.currentURL))
-            ? PanuraTheme.onSurfaceVariant.opacity(0.75) : PanuraTheme.accent
+    /// A shield was tried in this slot and says it more plainly — it can be
+    /// struck through. The brand mark wins anyway: it was already in the bar
+    /// doing nothing a second control could not do, and one button that is
+    /// always in the same place beats a clearer glyph in a crowded pill.
+    private var siteLowered: Bool {
+        siteSettings.isLowered(host: SiteSettings.key(for: model.currentURL))
     }
 
     /// What this site is allowed to do, named — the panel's reason for being.

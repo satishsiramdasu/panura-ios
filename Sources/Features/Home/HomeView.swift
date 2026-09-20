@@ -156,16 +156,17 @@ struct HomeView: View {
     // MARK: header — address pill, same shape as the browser's top bar
 
     private var header: some View {
-        PanuraHeader {
+        PanuraHeader(glyphTint: session.privateMode ? PanuraTheme.incognito : nil) {
             AddressPill(
                 title: "",
                 url: "",
                 placeholder: session.privateMode
                     ? "Search privately"
                     : "Search Google or enter website",
-                background: session.privateMode
-                    ? PanuraTheme.incognito.opacity(0.22)
-                    : PanuraTheme.surfaceVariant,
+                // Not repainted for private browsing any more: the mark in this
+                // bar carries that now, and a purple box is a poor thing to
+                // have to read an address out of.
+                background: PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
                 leading: {
                     Image(systemName: "magnifyingglass")
