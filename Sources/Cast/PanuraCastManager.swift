@@ -457,6 +457,19 @@ final class PanuraCastManager: ObservableObject {
                 audioTracks: message.audioTracks,
                 subtitleTracks: message.subtitleTracks
             )
+            // The receiver reports position and nothing else, so the end of a
+            // video has to be read out of it. Without this the phone believed
+            // a cast was still running long after the TV had finished, which
+            // is why picking a second video kept asking whether to replace
+            // something that was no longer playing.
+            //
+            // A second and a half of slack: the last status before the end
+            // rarely lands exactly on the duration.
+            if !playback.isLive, playback.durationMs > 0, !playback.isPlaying,
+               playback.positionMs >= playback.durationMs - 1500 {
+                isCasting = false
+                streamTitle = ""
+            }
         default:
             break
         }

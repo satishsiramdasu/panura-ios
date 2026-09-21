@@ -27,6 +27,19 @@ struct PanuraCastControlView: View {
                 if !playback.audioTracks.isEmpty || !playback.subtitleTracks.isEmpty {
                     Section { tracks } header: { Text("Tracks") }
                 }
+                if !CastFlow.shared.queue.isEmpty {
+                    Section {
+                        NavigationLink {
+                            CastQueueView()
+                        } label: {
+                            Label(
+                                "Queue · \(CastFlow.shared.queue.count) waiting",
+                                systemImage: "list.bullet"
+                            )
+                        }
+                    }
+                }
+
                 Section {
                     Button("Stop casting", role: .destructive) {
                         cast.stopStream()

@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import SwiftUI
 
@@ -15,6 +16,30 @@ import SwiftUI
 /// is deliberately plain data: a view should never have to ask a manager what
 /// is going on, and a stage that can be described in a sentence can be shown in
 /// one.
+/// One thing waiting to go to the TV.
+///
+/// It holds an *identifier*, never a resolved file. A queue outlives the screen
+/// that built it — the Videos tab can be closed, the app backgrounded — and a
+/// temporary export URL resolved half an hour ago may be gone by the time its
+/// turn comes. Resolving at the moment of playing also means an iCloud video is
+/// fetched when it is needed rather than all of them at once.
+struct CastQueueItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let payload: Payload
+
+    /// The two kinds of thing that can be cast, which reach the TV by
+    /// completely different routes: a stream is a URL the TV fetches for
+    /// itself, while a video in the library only exists on this phone and has
+    /// to be served from it.
+    enum Payload: Equatable {
+        case stream(MediaItem)
+        case photo(localIdentifier: String)
+    }
+
+    var isStream: Bool { if case .stream = payload { return true }; return false }
+}
+
 @MainActor
 final class CastFlow: ObservableObject {
     static let shared = CastFlow()
@@ -56,12 +81,120 @@ final class CastFlow: ObservableObject {
     /// casting at all.
     @Published var showing = false
 
+    /// What is waiting, in order. The video currently on the TV is not in it.
+    @Published private(set) var queue: [CastQueueItem] = []
+    /// What the TV has now, so the screen can name it while the queue shows
+    /// what follows.
+    @Published private(set) var nowPlaying: CastQueueItem?
+
     private var work: Task<Void, Never>?
+    private var watchers: Set<AnyCancellable> = []
     /// What the current attempt is about, so "Send original" can carry on with
     /// the same video after abandoning its conversion.
     private var pending: (file: URL, title: String, id: String)?
 
-    private init() {}
+    private init() {
+        // Both receivers say the same thing in different words when a video
+        // ends: Panura's stops reporting a cast, and the Cast SDK drops the
+        // title it was playing. Either is the cue to start whatever is next.
+        //
+        // `dropFirst` because both start out in the "nothing playing" state,
+        // and that is not a video finishing.
+        PanuraCastManager.shared.$isCasting
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] casting in
+                if !casting { self?.finished() }
+            }
+            .store(in: &watchers)
+
+        CastManager.shared.$castingTitle
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] title in
+                if title == nil { self?.finished() }
+            }
+            .store(in: &watchers)
+    }
+
+    // MARK: the queue
+
+    /// Adds to the end of the queue, and starts straight away if the TV is idle.
+    ///
+    /// Queueing several at once is the point of it: picking twenty videos and
+    /// being asked twenty questions would be worse than no queue at all.
+    func enqueue(_ items: [CastQueueItem], startIfIdle: Bool = true) {
+        guard !items.isEmpty else { return }
+        queue.append(contentsOf: items)
+        showing = true
+        let idle = !PanuraCastManager.shared.isCasting && !CastManager.shared.isCasting
+        if startIfIdle, idle, !stage.isBusy { advance() }
+    }
+
+    /// Replaces what is on the TV with `items`, dropping anything still queued.
+    func replace(with items: [CastQueueItem]) {
+        queue = items
+        advance()
+    }
+
+    func remove(_ item: CastQueueItem) {
+        queue.removeAll { $0.id == item.id }
+    }
+
+    func move(from source: IndexSet, to destination: Int) {
+        queue.move(fromOffsets: source, toOffset: destination)
+    }
+
+    func clearQueue() {
+        queue.removeAll()
+    }
+
+    /// Starts the next item, if there is one.
+    func advance() {
+        guard !queue.isEmpty else {
+            nowPlaying = nil
+            stage = .idle
+            return
+        }
+        let next = queue.removeFirst()
+        nowPlaying = next
+        showing = true
+        work?.cancel()
+        work = Task { await play(next) }
+    }
+
+    /// The TV finished something. Only acts while this flow believes a video is
+    /// on it, so stopping a cast by hand does not start the queue up again.
+    private func finished() {
+        guard case .playing = stage else { return }
+        nowPlaying = nil
+        if queue.isEmpty {
+            stage = .idle
+        } else {
+            advance()
+        }
+    }
+
+    private func play(_ item: CastQueueItem) async {
+        switch item.payload {
+        case let .stream(media):
+            stage = .sending(title: item.title, device: deviceName ?? "the TV")
+            if PanuraCastManager.shared.isTVConnected {
+                PanuraCastManager.shared.cast(media)
+            } else {
+                CastManager.shared.cast(media)
+            }
+            stage = .playing
+        case let .photo(identifier):
+            stage = .reading(title: item.title)
+            guard let file = await LocalVideosModel.resolveURL(localIdentifier: identifier) else {
+                stage = .failed("Could not read \(item.title).")
+                return
+            }
+            pending = (file, item.title, item.id)
+            await run(file: file, title: item.title, id: item.id, forceOriginal: false)
+        }
+    }
 
     /// Sends a file from this phone to whichever TV is connected.
     ///

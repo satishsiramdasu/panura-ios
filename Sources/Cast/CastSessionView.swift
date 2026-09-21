@@ -58,6 +58,10 @@ struct CastSessionView: View {
             PanuraCastControlView()
         } else if chromecast.isCasting {
             ChromecastControlView()
+        } else if !flow.queue.isEmpty {
+            // Nothing on the TV yet but things lined up for it — the queue is
+            // the whole story, so it gets the screen to itself.
+            NavigationStack { CastQueueView() }
         } else {
             NavigationStack { CastDevicesView() }
         }
@@ -189,6 +193,19 @@ struct ChromecastControlView: View {
                     }
                 } header: { Text("Controls") }
 
+                if !CastFlow.shared.queue.isEmpty {
+                    Section {
+                        NavigationLink {
+                            CastQueueView()
+                        } label: {
+                            Label(
+                                "Queue · \(CastFlow.shared.queue.count) waiting",
+                                systemImage: "list.bullet"
+                            )
+                        }
+                    }
+                }
+
                 Section {
                     Button("Stop casting", role: .destructive) {
                         cast.stopRemote()
@@ -202,6 +219,75 @@ struct ChromecastControlView: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                 }
+            }
+        }
+    }
+}
+
+/// What is lined up for the TV.
+///
+/// Shown on its own when nothing is playing yet, and as a section inside the
+/// controls once something is. Reorderable and removable, because a queue you
+/// cannot change is a list of regrets — and "Play now" is there because the
+/// commonest correction is wanting one of them immediately rather than fourth.
+struct CastQueueView: View {
+    @ObservedObject private var flow = CastFlow.shared
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            if let playing = flow.nowPlaying {
+                Section {
+                    Label(playing.title, systemImage: "play.fill")
+                        .font(.subheadline)
+                        .lineLimit(2)
+                } header: { Text("On the TV") }
+            }
+
+            Section {
+                if flow.queue.isEmpty {
+                    Text("Nothing queued")
+                        .font(.footnote)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                } else {
+                    ForEach(flow.queue) { item in
+                        HStack(spacing: 10) {
+                            Image(systemName: item.isStream ? "globe" : "film")
+                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            Text(item.title).font(.subheadline).lineLimit(2)
+                        }
+                        .contextMenu {
+                            Button {
+                                flow.replace(with: [item] + flow.queue.filter { $0.id != item.id })
+                            } label: { Label("Play now", systemImage: "play.fill") }
+                            Button(role: .destructive) {
+                                flow.remove(item)
+                            } label: { Label("Remove", systemImage: "trash") }
+                        }
+                    }
+                    .onDelete { offsets in
+                        for index in offsets { flow.remove(flow.queue[index]) }
+                    }
+                    .onMove { source, destination in
+                        flow.move(from: source, to: destination)
+                    }
+                }
+            } header: {
+                Text(flow.queue.isEmpty ? "Up next" : "Up next · \(flow.queue.count)")
+            }
+
+            if !flow.queue.isEmpty {
+                Section {
+                    Button("Clear queue", role: .destructive) { flow.clearQueue() }
+                }
+            }
+        }
+        .navigationTitle("Queue")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) { EditButton() }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("Done") { dismiss() }
             }
         }
     }

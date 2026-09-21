@@ -31,6 +31,8 @@ struct LocalVideosView: View {
     @State private var pendingChoice: (asset: LocalVideoAsset, index: Int)?
     /// Sent to the TV, waiting on "replace what is playing?".
     @State private var pendingReplace: LocalVideoAsset?
+    /// A whole selection waiting on "here or on TV?".
+    @State private var pendingBatch: [LocalVideoAsset]?
 
     @State private var showCastPicker = false
     /// One line, said once — casting gives no other sign from this screen.
@@ -96,6 +98,46 @@ struct LocalVideosView: View {
         .sheet(isPresented: $showCastPicker) {
             NavigationStack { CastDevicesView() }
                 .presentationDragIndicator(.visible)
+        }
+        // A selection has no cell to point at, so unlike the per-video dialogs
+        // this one belongs to the screen.
+        .confirmationDialog(
+            "Play these on the TV?",
+            isPresented: Binding(
+                get: { pendingBatch != nil },
+                set: { if !$0 { pendingBatch = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(tvName.map { "Play on " + $0 } ?? "Play on TV") {
+                let picked = pendingBatch ?? []
+                pendingBatch = nil
+                cast(picked)
+                selecting = false
+                selection.removeAll()
+            }
+            Button("Add to the queue") {
+                let picked = pendingBatch ?? []
+                pendingBatch = nil
+                queue(picked)
+                selecting = false
+                selection.removeAll()
+            }
+            Button("Play on this phone") {
+                let picked = pendingBatch ?? []
+                pendingBatch = nil
+                if let first = picked.first,
+                   let index = model.visible.firstIndex(where: { $0.id == first.id }) {
+                    play(first, at: index)
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingBatch = nil }
+        } message: {
+            Text(pendingBatch.map { picked in
+                picked.count == 1
+                    ? "1 video, and a TV is connected."
+                    : "\(picked.count) videos, and a TV is connected."
+            } ?? "")
         }
     }
 
@@ -184,7 +226,7 @@ struct LocalVideosView: View {
         // only from one glyph in the toolbar.
         .contextMenu {
             Button {
-                castOrAsk(item)
+                castOrAsk([item])
             } label: {
                 Label(tvName.map { "Play on " + $0 } ?? "Play on TV", systemImage: "tv")
             }
@@ -217,7 +259,7 @@ struct LocalVideosView: View {
         ) {
             Button(tvName.map { "Play on " + $0 } ?? "Play on TV") {
                 pendingChoice = nil
-                castOrAsk(item)
+                castOrAsk([item])
             }
             Button("Play on this phone") {
                 pendingChoice = nil
@@ -232,9 +274,13 @@ struct LocalVideosView: View {
             isPresented: replacing(item),
             titleVisibility: .visible
         ) {
-            Button("Replace") {
+            Button("Replace what is playing") {
                 pendingReplace = nil
-                cast(item)
+                cast([item])
+            }
+            Button("Add to the queue") {
+                pendingReplace = nil
+                queue([item])
             }
             Button("Cancel", role: .cancel) { pendingReplace = nil }
         } message: {
@@ -388,14 +434,23 @@ struct LocalVideosView: View {
                 .buttonStyle(.plain)
                 .disabled(picked.isEmpty)
 
-            Button {
-                guard let first = picked.first,
-                      let index = all.firstIndex(where: { $0.id == first.id })
-                else { return }
-                play(first, at: index)
-            } label: { Image(systemName: "play.fill") }
-                .buttonStyle(.plain)
-                .disabled(picked.isEmpty)
+            // Captioned and filled, unlike the glyphs around it: this is the
+            // action the selection was made for, and a bare triangle did not
+            // say whether it meant one video or all of them.
+            Button { playSelection(picked) } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "play.fill").font(.system(size: 12, weight: .bold))
+                    Text(playLabel(picked)).font(.footnote.weight(.semibold))
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule().fill(picked.isEmpty ? PanuraTheme.surfaceVariant : PanuraTheme.accent)
+                )
+                .foregroundStyle(picked.isEmpty ? PanuraTheme.onSurfaceVariant : Color.black)
+            }
+            .buttonStyle(.plain)
+            .disabled(picked.isEmpty)
 
             Button {
                 Task { await delete(picked) }
@@ -601,17 +656,43 @@ struct LocalVideosView: View {
     }
 
     /// From the context menu, where the intent is already "on the TV".
-    private func castOrAsk(_ asset: LocalVideoAsset) {
+    /// Says what pressing it will do, which changes with the selection and
+    /// with whether a TV is listening.
+    private func playLabel(_ picked: [LocalVideoAsset]) -> String {
+        if picked.count > 1 { return tvConnected ? "Play \(picked.count)" : "Play all" }
+        return "Play"
+    }
+
+    /// One selection, two destinations. With a TV connected the question is
+    /// worth asking, because a selection is as often something to line up for
+    /// the television as it is something to watch here.
+    private func playSelection(_ picked: [LocalVideoAsset]) {
+        guard !picked.isEmpty else { return }
+        if tvConnected {
+            pendingBatch = picked
+            return
+        }
+        guard let first = picked.first,
+              let index = model.visible.firstIndex(where: { $0.id == first.id })
+        else { return }
+        play(first, at: index)
+        selecting = false
+        selection.removeAll()
+    }
+
+    private func castOrAsk(_ assets: [LocalVideoAsset]) {
+        guard !assets.isEmpty else { return }
         guard tvConnected else {
             // Nothing to send it to yet: the cast picker is the next step, and
-            // the video can be chosen again once a TV answers.
+            // the videos can be chosen again once a TV answers.
             showCastPicker = true
             return
         }
+        // Only ask when there is something to lose. An idle TV just plays them.
         if panuraCast.isCasting || chromecast.isCasting {
-            pendingReplace = asset
+            pendingBatch = assets
         } else {
-            cast(asset)
+            cast(assets)
         }
     }
 
@@ -623,17 +704,24 @@ struct LocalVideosView: View {
     /// Hands a video to `CastFlow`, which owns everything from here to a picture
     /// on the TV — and owns the screen that says so. Reading the file is still
     /// this screen's job, because only it knows the photo library.
-    private func cast(_ asset: LocalVideoAsset) {
-        let title = asset.displayTitle(showExtension: showExtension)
-        CastFlow.shared.beginReading(title: title)
-        Task {
-            guard let url = await model.resolveURL(for: asset) else {
-                CastFlow.shared.cancel()
-                flash("Could not read that video")
-                return
-            }
-            CastFlow.shared.send(file: url, title: asset.title, id: asset.id)
-        }
+    /// Sends videos to the TV, replacing whatever is there.
+    private func cast(_ assets: [LocalVideoAsset]) {
+        CastFlow.shared.replace(with: assets.map(queueItem))
+    }
+
+    /// Adds videos to the end of the queue. Starts them only if the TV is idle,
+    /// which is what makes this different from casting.
+    private func queue(_ assets: [LocalVideoAsset]) {
+        CastFlow.shared.enqueue(assets.map(queueItem))
+        flash(assets.count == 1 ? "Added to the queue" : "\(assets.count) added to the queue")
+    }
+
+    private func queueItem(_ asset: LocalVideoAsset) -> CastQueueItem {
+        CastQueueItem(
+            id: asset.id,
+            title: asset.displayTitle(showExtension: showExtension),
+            payload: .photo(localIdentifier: asset.id)
+        )
     }
 
     private func flash(_ message: String) {

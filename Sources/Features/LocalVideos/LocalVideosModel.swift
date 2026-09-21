@@ -298,6 +298,65 @@ final class LocalVideosModel: ObservableObject {
         return nil
     }
 
+    /// Resolves a library video from its identifier alone.
+    ///
+    /// The cast queue holds identifiers rather than assets, so that it can
+    /// outlive the screen that built it and so an iCloud video is fetched when
+    /// its turn comes rather than all of them at once. This is the way back to
+    /// a file.
+    static func resolveURL(localIdentifier: String) async -> URL? {
+        let found = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        guard let asset = found.firstObject else { return nil }
+        if let url = await Self.avAssetURL(for: asset) { return url }
+        return await Self.copyOriginal(for: asset, id: localIdentifier)
+    }
+
+    private static func avAssetURL(for asset: PHAsset) async -> URL? {
+        await withCheckedContinuation { cont in
+            var resumed = false
+            let options = PHVideoRequestOptions()
+            options.isNetworkAccessAllowed = true
+            options.deliveryMode = .highQualityFormat
+            options.version = .current
+            PHImageManager.default().requestAVAsset(forVideo: asset, options: options) { avAsset, _, _ in
+                guard !resumed else { return }
+                resumed = true
+                cont.resume(returning: (avAsset as? AVURLAsset)?.url)
+            }
+        }
+    }
+
+    /// Same destination as the instance copy, so a video fetched once is not
+    /// fetched again by the other route.
+    private static func copyOriginal(for asset: PHAsset, id: String) async -> URL? {
+        let resources = PHAssetResource.assetResources(for: asset)
+        guard let resource = resources.first(where: { $0.type == .video })
+                ?? resources.first(where: { $0.type == .fullSizeVideo })
+                ?? resources.first
+        else { return nil }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("panura-library", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let key = String(id.prefix(36)).replacingOccurrences(of: "/", with: "_")
+        let ext = (resource.originalFilename as NSString).pathExtension
+        let destination = directory
+            .appendingPathComponent(key)
+            .appendingPathExtension(ext.isEmpty ? "mov" : ext)
+        if FileManager.default.fileExists(atPath: destination.path) { return destination }
+
+        let options = PHAssetResourceRequestOptions()
+        options.isNetworkAccessAllowed = true
+        return await withCheckedContinuation { cont in
+            PHAssetResourceManager.default().writeData(
+                for: resource, toFile: destination, options: options
+            ) { failure in
+                cont.resume(returning: failure == nil ? destination : nil)
+            }
+        }
+    }
+
     private func avAssetURL(for item: LocalVideoAsset) async -> URL? {
         await withCheckedContinuation { cont in
             var resumed = false
