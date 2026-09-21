@@ -25,6 +25,17 @@ enum AutoPlayClickScript {
       var AD_HOSTS = /admob\.com|googlesyndication\.com|doubleclick\.net|googleadservices\.com|imasdk\.googleapis\.com|amazon-adsystem\.com|adnxs\.com|rubiconproject\.com|pubmatic\.com|openx\.net|criteo\.com|applovin\.com|ironsrc\.com|unity3d\.com|mopub\.com|inmobi\.com|vungle\.com|chartboost\.com/i;
       try { if (AD_HOSTS.test(location.href)) return; } catch (e) { return; }
 
+      // Never on a search page either, and Google above all — which is where
+      // most sessions begin.
+      //
+      // Nothing here waits on a play click, so there is nothing to gain, and
+      // the selectors below are actively dangerous on a results page: it is
+      // full of inline video previews and controls carrying "play" in a label,
+      // so the script clicks a result and navigates the page out from under
+      // whoever was reading it.
+      var SKIP_HOSTS = /(^|\.)google\.[a-z]{2,}(\.[a-z]{2,})?$|(^|\.)bing\.com$|(^|\.)duckduckgo\.com$|(^|\.)ecosia\.org$|(^|\.)startpage\.com$|(^|\.)qwant\.com$|(^|\.)yandex\.[a-z]{2,}$|(^|\.)search\.yahoo\.com$|(^|\.)search\.brave\.com$|(^|\.)youtube\.com$|(^|\.)youtu\.be$/i;
+      try { if (SKIP_HOSTS.test(location.hostname)) return; } catch (e) { return; }
+
       // Players mount late and often replace their own controls, so try more
       // than once — but a fixed few times, never a loop.
       var ROUNDS = [900, 2200, 4000];
