@@ -472,13 +472,9 @@ struct CastPickerDialog: ViewModifier {
 
     func body(content: Content) -> some View {
         content.sheet(isPresented: $isPresented) {
-            if #available(iOS 16.4, *) {
-                dialog
-                    .presentationBackground(.clear)
-                    .presentationDetents([.large])
-            } else {
-                dialog.presentationDragIndicator(.visible)
-            }
+            dialog
+                .presentationDragIndicator(.hidden)
+                .castDialogChrome(true)
         }
     }
 
@@ -495,6 +491,20 @@ struct CastPickerDialog: ViewModifier {
 }
 
 extension View {
+    /// Makes a sheet look like a dialog: no background of its own, so what is
+    /// inside it floats over the app.
+    ///
+    /// `presentationBackground` is iOS 16.4 and the app ships to 16.0, so below
+    /// that it stays an ordinary sheet. The card inside is identical either way.
+    @ViewBuilder
+    func castDialogChrome(_ enabled: Bool) -> some View {
+        if enabled, #available(iOS 16.4, *) {
+            self.presentationBackground(.clear)
+        } else {
+            self
+        }
+    }
+
     /// The one way the cast picker is presented, everywhere it is presented.
     func castPicker(isPresented: Binding<Bool>) -> some View {
         modifier(CastPickerDialog(isPresented: isPresented))
