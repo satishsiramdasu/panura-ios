@@ -31,8 +31,11 @@ struct CastSessionView: View {
                     detail: "Reading it out of your library. A video still in iCloud is fetched first.",
                     progress: nil
                 )
-            case let .converting(title, explanation, progress):
-                busy(title: title, caption: "Preparing for the TV", detail: explanation, progress: progress)
+            case let .converting(title, explanation, progress, overridable):
+                busy(
+                    title: title, caption: "Preparing for the TV",
+                    detail: explanation, progress: progress, overridable: overridable
+                )
             case let .sending(title, device):
                 busy(
                     title: title,
@@ -64,7 +67,10 @@ struct CastSessionView: View {
     /// they can honestly say. A determinate bar appears only where there is a
     /// real number behind it — a fake one that sits at 90% teaches people to
     /// distrust every bar in the app.
-    private func busy(title: String, caption: String, detail: String, progress: Float?) -> some View {
+    private func busy(
+        title: String, caption: String, detail: String,
+        progress: Float?, overridable: Bool = false
+    ) -> some View {
         VStack(spacing: 18) {
             CastMark(connected: true)
                 .frame(width: 44, height: 44)
@@ -100,9 +106,9 @@ struct CastSessionView: View {
                 Button("Cancel", role: .cancel) { flow.cancel() }
                     .buttonStyle(.bordered)
 
-                // Only offered while converting: it is the one wait that is a
-                // judgement call rather than a necessity.
-                if progress != nil {
+                // Only where the conversion is a judgement about this TV, not
+                // a limit of the receiver.
+                if overridable {
                     Button("Send original") { flow.sendOriginal() }
                         .buttonStyle(.borderedProminent)
                         .tint(PanuraTheme.accent)

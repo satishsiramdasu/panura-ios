@@ -23,6 +23,10 @@ enum CastTranscoder {
     /// rather than "preparing".
     enum Reason {
         case dolbyVision, hdr, hevcForChromecast
+        /// Right codec, wrong wrapper. Every iPhone recording is QuickTime, and
+        /// a Chromecast takes MP4 and WebM — so an H.264 clip that needs no
+        /// re-encoding at all still has to be repackaged.
+        case containerForChromecast
 
         var explanation: String {
             switch self {
@@ -32,8 +36,20 @@ enum CastTranscoder {
                 return "This clip is HDR. Converting it to standard range so the TV shows the right colours."
             case .hevcForChromecast:
                 return "Chromecast cannot decode HEVC. Panura is making an H.264 copy."
+            case .containerForChromecast:
+                return "Chromecast needs this in an MP4. Repackaging it — the video itself is left untouched."
             }
         }
+
+        /// True when only the wrapper is wrong, so the video and audio can be
+        /// copied across as they are. Seconds rather than minutes, and no
+        /// quality lost, which is worth a branch of its own.
+        var isRepackageOnly: Bool { self == .containerForChromecast }
+
+        /// True where the conversion exists because a *display* may get it
+        /// wrong, which only the person watching can confirm. The Chromecast
+        /// cases are hard limits of the receiver and not open to opinion.
+        var isDisplayJudgement: Bool { self == .dolbyVision || self == .hdr }
     }
 
     /// Where the video is going. A Chromecast and Panura on Android TV do not
@@ -85,7 +101,29 @@ enum CastTranscoder {
 
         let isHEVC = codec == fourCC("hvc1") || codec == fourCC("hev1")
         if isHEVC, target == .chromecast { return .hevcForChromecast }
+        // Panura on Android TV needs nothing further: it runs this app's own
+        // player, so the container is its problem and it has no trouble with
+        // it. A Chromecast takes MP4 and WebM and nothing else.
+        if target == .chromecast, !["mp4", "m4v", "webm"].contains(url.pathExtension.lowercased()) {
+            return .containerForChromecast
+        }
         return nil
+    }
+
+    /// Whether a file can reach `target` at all, with an explanation when it
+    /// cannot.
+    ///
+    /// Only Chromecast can hit this, and only for containers AVFoundation
+    /// itself cannot open — Matroska above all. There is no conversion to
+    /// offer, because reading the file is the step that fails, so the honest
+    /// answer is to say so and name the path that does work rather than send it
+    /// and let the TV go black.
+    static func blocker(for url: URL, target: Target) -> String? {
+        guard target == .chromecast else { return nil }
+        let unreadable = ["mkv", "avi", "flv", "ts", "wmv", "ogv", "divx", "m2ts"]
+        guard unreadable.contains(url.pathExtension.lowercased()) else { return nil }
+        return "Chromecast cannot play this kind of file, and it is not one this phone can convert. "
+            + "Panura on Android TV plays it as it is."
     }
 
     /// Exports an H.264 SDR copy, reporting progress, and hands back its URL.
@@ -97,6 +135,7 @@ enum CastTranscoder {
     static func convert(
         _ url: URL,
         id: String,
+        repackageOnly: Bool = false,
         onProgress: @escaping (Float) -> Void
     ) async throws -> URL {
         let destination = cacheURL(for: id)
@@ -110,20 +149,28 @@ enum CastTranscoder {
         let tracks = try await asset.loadTracks(withMediaType: .video)
         guard !tracks.isEmpty else { throw Failure.noVideoTrack }
 
-        // A resolution preset, not `HighestQuality`: the resolution presets are
-        // the H.264 ones, and `HighestQuality` would happily hand back the HEVC
-        // this exists to get rid of. 1080p because a phone shooting 4K DV is the
-        // common case and a TV gains nothing from 4K over a phone's own Wi-Fi.
-        let preset = AVAssetExportPreset1920x1080
+        // Passthrough where only the wrapper is wrong: the streams are copied
+        // into an MP4 untouched. Seconds instead of minutes, and no generation
+        // of quality lost re-encoding something that was already fine.
+        //
+        // Otherwise a resolution preset, not `HighestQuality` — the resolution
+        // presets are the H.264 ones, and `HighestQuality` would happily hand
+        // back the HEVC this exists to get rid of. 1080p because a phone
+        // shooting 4K DV is the common case, and a TV gains nothing from 4K
+        // arriving over that phone's own Wi-Fi.
+        let preset = repackageOnly ? AVAssetExportPresetPassthrough : AVAssetExportPreset1920x1080
         guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
             throw Failure.exportFailed("This device cannot convert that video.")
         }
         session.outputURL = destination
         session.outputFileType = .mp4
-        // Tone-maps HDR down to SDR rather than clipping it.
-        session.videoComposition = try? await AVVideoComposition.videoComposition(
-            withPropertiesOf: asset
-        )
+        if !repackageOnly {
+            // Tone-maps HDR down to SDR rather than clipping it. Meaningless
+            // for a passthrough, and setting it would force a re-encode.
+            session.videoComposition = try? await AVVideoComposition.videoComposition(
+                withPropertiesOf: asset
+            )
+        }
 
         let ticker = Task {
             while !Task.isCancelled {

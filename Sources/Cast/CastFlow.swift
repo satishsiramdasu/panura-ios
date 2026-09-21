@@ -29,7 +29,13 @@ final class CastFlow: ObservableObject {
         case reading(title: String)
         /// Making a copy the TV can decode. Carries why, because "converting"
         /// alone invites the reasonable question of why it wasn't just sent.
-        case converting(title: String, explanation: String, progress: Float)
+        /// `overridable` is the difference between a judgement and a fact. A
+        /// TV that renders Dolby Vision correctly makes that conversion
+        /// pointless, and only the viewer can tell — so it can be waved off.
+        /// A Chromecast that cannot decode HEVC cannot be talked round, and
+        /// offering to send the original there would only promise a black
+        /// screen.
+        case converting(title: String, explanation: String, progress: Float, overridable: Bool)
         /// Handed over; waiting for the TV to pick it up.
         case sending(title: String, device: String)
         /// The TV has it. From here the controls take over.
@@ -118,13 +124,29 @@ final class CastFlow: ObservableObject {
 
         // Trusted TVs, and anything the file proves is safe, skip straight past
         // conversion. An H.264 clip never waits.
+        let target: CastTranscoder.Target = toPanura ? .panura : .chromecast
+
+        // Some things cannot be sent at all and cannot be fixed here either.
+        // Saying so beats letting the TV go black, and the message names the
+        // path that does work.
+        if let blocker = CastTranscoder.blocker(for: file, target: target) {
+            stage = .failed(blocker)
+            return
+        }
+
         let trusted = forceOriginal || (deviceName.map(CastPreferences.allowsOriginal(on:)) ?? false)
         if !trusted {
-            let target: CastTranscoder.Target = toPanura ? .panura : .chromecast
             if let reason = await CastTranscoder.reason(for: file, target: target) {
-                stage = .converting(title: title, explanation: reason.explanation, progress: 0)
+                stage = .converting(
+                    title: title,
+                    explanation: reason.explanation,
+                    progress: 0,
+                    overridable: reason.isDisplayJudgement
+                )
                 do {
-                    url = try await CastTranscoder.convert(file, id: id) { [weak self] value in
+                    url = try await CastTranscoder.convert(
+                        file, id: id, repackageOnly: reason.isRepackageOnly
+                    ) { [weak self] value in
                         Task { @MainActor in self?.advance(progress: value) }
                     }
                 } catch CastTranscoder.Failure.cancelled {
@@ -150,7 +172,9 @@ final class CastFlow: ObservableObject {
     /// Only touches the progress of a conversion still in flight — a late
     /// callback must not drag a finished cast back to "converting".
     private func advance(progress: Float) {
-        guard case let .converting(title, explanation, _) = stage else { return }
-        stage = .converting(title: title, explanation: explanation, progress: progress)
+        guard case let .converting(title, explanation, _, overridable) = stage else { return }
+        stage = .converting(
+            title: title, explanation: explanation, progress: progress, overridable: overridable
+        )
     }
 }
