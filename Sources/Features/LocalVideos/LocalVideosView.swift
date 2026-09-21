@@ -95,10 +95,7 @@ struct LocalVideosView: View {
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
         .sheet(isPresented: $showAlbums) { albumsSheet }
-        .sheet(isPresented: $showCastPicker) {
-            NavigationStack { CastDevicesView() }
-                .presentationDragIndicator(.visible)
-        }
+        .castPicker(isPresented: $showCastPicker)
         // A selection has no cell to point at, so unlike the per-video dialogs
         // this one belongs to the screen.
         .confirmationDialog(

@@ -127,9 +127,10 @@ struct BrowserView: View {
         } message: {
             Text(pendingQueue?.title ?? "")
         }
-        .sheet(isPresented: $showCastPicker, onDismiss: castPendingIfConnected) {
-            NavigationStack { CastDevicesView() }
-                .presentationDragIndicator(.visible)
+        .castPicker(isPresented: $showCastPicker)
+        // The video that asked for a TV goes as soon as one answers.
+        .onChange(of: showCastPicker) { shown in
+            if !shown { castPendingIfConnected() }
         }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
         // The best stream is open on arrival, and re-chosen each time rather

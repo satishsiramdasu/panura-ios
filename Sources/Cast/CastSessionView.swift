@@ -63,7 +63,7 @@ struct CastSessionView: View {
             // the whole story, so it gets the screen to itself.
             NavigationStack { CastQueueView() }
         } else {
-            NavigationStack { CastDevicesView() }
+            CastDevicesView().padding(.horizontal, 16)
         }
     }
 

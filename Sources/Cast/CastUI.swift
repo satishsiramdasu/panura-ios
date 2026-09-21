@@ -105,10 +105,7 @@ struct CastToolbarButton: View {
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
         }
         .accessibilityLabel(connected ? "Playing on TV — open controls" : "Play on TV")
-        .sheet(isPresented: $showPicker) {
-            NavigationStack { CastDevicesView() }
-                .presentationDragIndicator(.visible)
-        }
+        .castPicker(isPresented: $showPicker)
         .sheet(isPresented: $showControls) {
             CastSessionView()
         }
@@ -134,293 +131,478 @@ struct CastToolbarButton: View {
 struct CastDevicesView: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
+    @Environment(\.dismiss) private var dismiss
     @State private var showControls = false
-    /// nil = the picker. Seeded from live state so reopening mid-connect resumes
+    /// nil = the choice. Seeded from live state so reopening mid-connect resumes
     /// the Panura wait rather than dropping back to the choice.
     @State private var method: Method?
+    /// Scanning starts on a tap, never on arrival. Discovery is a live multicast
+    /// on the local network, and someone opening this to reach their Panura TV
+    /// has no reason to pay for a Chromecast sweep.
+    @State private var scanned = false
 
     private enum Method { case panura, chromecast }
 
+    /// A card, not a screen of grouped rows.
+    ///
+    /// Choosing a television is one decision with two answers and one warning,
+    /// and a `List` gave it the furniture of a settings screen — separators,
+    /// inset groups, a navigation bar — around content that fits in a panel.
+    /// What is left is the choice itself.
     var body: some View {
-        List {
-            if cast.isConnected || panura.isTVConnected {
-                connectedSection
-            } else {
-                switch method {
-                case .none: pickerSection
-                case .panura: panuraSection
-                case .chromecast: chromecastDevicesSection
-                }
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(PanuraTheme.background)
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            // Back to the picker, abandoning any in-flight Panura attempt — the
-            // advertise has to stop with it or the header keeps blinking.
-            if method != nil, !cast.isConnected, !panura.isTVConnected {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Back") {
-                        if method == .panura { panura.stop() }
-                        if method == .chromecast { cast.stopDiscovery() }
-                        method = nil
+        VStack(spacing: 0) {
+            header
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if cast.isConnected || panura.isTVConnected {
+                        connectedBody
+                    } else {
+                        switch method {
+                        case .none: pickerBody
+                        case .panura: panuraBody
+                        case .chromecast: chromecastBody
+                        }
                     }
                 }
+                .padding(.horizontal, 18)
+                .padding(.bottom, 18)
             }
         }
+        .frame(maxWidth: 460)
+        .background(RoundedRectangle(cornerRadius: 22).fill(PanuraTheme.surfaceContainer))
         .sheet(isPresented: $showControls) { CastSessionView() }
         .onAppear {
             // Reopening while a link is in flight resumes that path.
             if panura.isAdvertising || panura.isTVConnected { method = .panura }
         }
-        // Whatever the way out — Back, dismissing the sheet, connecting — the
-        // scan ends with the screen. An idle scan costs battery and the SDK
-        // will not stop one on its own.
+        // Whatever the way out — back, dismissing, connecting — the scan ends
+        // with the screen. An idle scan costs battery and the SDK will not stop
+        // one on its own.
         .onDisappear { cast.stopDiscovery() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            if method != nil, !cast.isConnected, !panura.isTVConnected {
+                // Back to the choice, abandoning any in-flight attempt — the
+                // advertise has to stop with it or the header keeps blinking.
+                Button {
+                    if method == .panura { panura.stop() }
+                    if method == .chromecast { cast.stopDiscovery() }
+                    method = nil
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+            } else {
+                CastMark(connected: cast.isConnected || panura.isTVConnected)
+                    .frame(width: 22, height: 22)
+                    .foregroundStyle(PanuraTheme.accent)
+                    .frame(width: 40, height: 40)
+                    .background(
+                        PanuraTheme.accent.opacity(0.16),
+                        in: RoundedRectangle(cornerRadius: 11)
+                    )
+            }
+
+            Text(title).font(.headline)
+            Spacer(minLength: 0)
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
     }
 
     private var title: String {
         if cast.isConnected || panura.isTVConnected { return "Connected" }
         switch method {
-        case .panura: return "Panura Cast"
+        case .panura: return "Panura on your TV"
         case .chromecast: return "Chromecast"
-        case .none: return "Play on TV"
+        case .none: return "Cast to TV"
         }
     }
 
-    // MARK: step 1 — how do you want to connect?
+    // MARK: the choice
 
-    private var pickerSection: some View {
-        Section {
-            methodCard(
-                title: "Panura Cast",
-                subtitle: "Plays through the Panura app on your Android TV or Fire TV",
-                note: "Works with any stream — direct play, subtitles, full remote control.",
-                noteGood: true,
-                recommended: true,
-                // Panura's own mark, because that is literally what this path
-                // needs: the Panura app, running on the TV.
+    private var pickerBody: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("RECOMMENDED", icon: "star.fill")
+            deviceCard(
+                title: "Panura on Android TV",
+                subtitle: "Google TV, Android TV and Fire TV",
                 icon: { Image("AppLogo").resizable().scaledToFit() }
             ) {
                 method = .panura
                 panura.start()
             }
-            methodCard(
+            notice(
+                "Plays anything this app plays — every format, subtitles, and the full remote.",
+                tone: .good
+            )
+
+            sectionLabel("NETWORK DEVICES", icon: "wifi")
+            deviceCard(
                 title: "Chromecast",
-                subtitle: "Built-in Chromecast, dongle or Google TV",
-                note: "Limited stream support.",
-                noteGood: false,
-                recommended: false,
-                // The real Cast mark, because here it means Google Cast and
-                // nothing else — beside Panura's own mark, the two icons say
-                // which protocol each row is.
+                subtitle: "Built-in Chromecast, a dongle, or Google TV",
                 icon: { CastMark() }
             ) {
                 method = .chromecast
-                // The scan starts here, on the tap, and nowhere else.
-                cast.startDiscovery()
             }
-        } header: {
-            Text("Choose how you want to play")
         }
     }
 
-    private func methodCard<Icon: View>(
-        title: String,
-        subtitle: String,
-        note: String,
-        noteGood: Bool,
-        recommended: Bool,
-        @ViewBuilder icon: () -> Icon,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    icon()
-                        .frame(width: 26, height: 26)
-                        .foregroundStyle(PanuraTheme.accent)
-                    Text(title).font(.headline)
-                    if recommended {
-                        Text("Recommended")
-                            .font(.caption2.weight(.bold))
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(PanuraTheme.accentSoft, in: Capsule())
-                            .foregroundStyle(PanuraTheme.accent)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.secondary)
-                }
-                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
-                Label(note, systemImage: noteGood ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(noteGood ? Color.green : Color.orange)
-            }
-            .padding(.vertical, 6)
-        }
-        .buttonStyle(.plain)
-    }
+    // MARK: Chromecast
 
-    // MARK: step 2b — the Chromecast devices themselves
+    private var chromecastBody: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("AVAILABLE DEVICES", icon: "tv")
 
-    /// Every Cast target on the network, one tap each.
-    ///
-    /// The scan says it is running rather than showing an empty list: a TV takes
-    /// a couple of seconds to answer, and "no devices" arriving instantly would
-    /// be a lie for most of that time.
-    private var chromecastDevicesSection: some View {
-        Section {
-            if cast.devices.isEmpty {
-                HStack(spacing: 10) {
-                    if cast.isScanning { ProgressView().controlSize(.small) }
-                    Text(cast.isScanning ? "Looking for TVs…" : "No Cast devices found")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+            if !scanned {
+                // Nothing has been scanned. The button is the entire state, and
+                // it is the tap that starts the sweep.
+                emptyState(
+                    icon: "antenna.radiowaves.left.and.right",
+                    title: "Nothing scanned yet",
+                    detail: "Look for Chromecast devices on this Wi-Fi network"
+                )
+                wideButton("Scan for devices", icon: "antenna.radiowaves.left.and.right") {
+                    scanned = true
+                    cast.startDiscovery()
                 }
+            } else if cast.devices.isEmpty {
+                emptyState(
+                    icon: cast.isScanning ? "dot.radiowaves.left.and.right" : "questionmark.circle",
+                    title: cast.isScanning ? "Looking for TVs…" : "No devices found",
+                    detail: cast.isScanning ? "This takes a few seconds" : "Tap refresh to scan again"
+                )
+                wideButton("Refresh", icon: "arrow.clockwise") { cast.startDiscovery() }
             } else {
                 ForEach(cast.devices) { device in
-                    Button {
+                    deviceCard(
+                        title: device.name,
+                        subtitle: (device.model?.isEmpty == false) ? device.model! : "Cast device",
+                        busy: cast.connecting == device.id,
+                        icon: { CastMark() }
+                    ) {
                         cast.connect(device)
-                    } label: {
-                        HStack(spacing: 10) {
-                            CastMark()
-                                .frame(width: 22, height: 22)
-                                .foregroundStyle(PanuraTheme.accent)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(device.name).font(.subheadline)
-                                if let model = device.model, !model.isEmpty {
-                                    Text(model)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer(minLength: 4)
-                            if cast.connecting == device.id {
-                                ProgressView().controlSize(.small)
-                            }
-                        }
                     }
-                    .buttonStyle(.plain)
                     .disabled(cast.connecting != nil)
                 }
+                wideButton("Refresh", icon: "arrow.clockwise") { cast.startDiscovery() }
             }
-        } header: {
-            Text("Cast devices")
-        } footer: {
-            Text("On the same Wi-Fi as this phone. If a TV is missing, check that "
-                 + "Panura is allowed to find devices on the local network.")
+
+            notice(
+                "Both devices must be on the same Wi-Fi, and Panura needs permission to find devices on it.",
+                tone: .warn
+            )
         }
     }
 
-    // MARK: step 2a — Panura Cast
+    // MARK: Panura on the TV
 
-    private var panuraSection: some View {
-        Section {
-            // The two states are distinct and the difference matters: we can be
-            // discoverable with no TV listening, and a cast then goes nowhere.
-            // Say which one is true rather than one "connected".
+    private var panuraBody: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionLabel("THIS PHONE", icon: "iphone")
+
             if panura.isAdvertising {
-                Label("Discoverable — waiting for a TV…", systemImage: "dot.radiowaves.left.and.right")
-                    .foregroundStyle(.secondary)
+                statusRow(
+                    "Waiting for your TV…",
+                    detail: PanuraCastServer.localIPv4().map { "This phone is " + $0 } ?? "",
+                    icon: "dot.radiowaves.left.and.right",
+                    busy: true
+                )
             } else if panura.isServerRunning {
                 // Sockets are up but Bonjour has not published: the TV cannot
-                // possibly find us, and saying "waiting" would point the user at
-                // the TV for a fault that is on this device.
-                Label("Not discoverable", systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(PanuraTheme.tertiary)
+                // possibly find us, and "waiting" would point at the TV for a
+                // fault that is on this device.
+                statusRow(
+                    "Not discoverable",
+                    detail: "The TV has no way to find this phone",
+                    icon: "exclamationmark.triangle.fill",
+                    busy: false
+                )
             } else {
-                Button("Make this phone discoverable") { panura.start() }
+                wideButton("Make this phone discoverable", icon: "dot.radiowaves.left.and.right") {
+                    panura.start()
+                }
             }
 
-            // The address the TV must reach. If this is absent or on a different
-            // subnet from the TV, discovery cannot work whatever the app does.
-            if panura.isServerRunning, let ip = PanuraCastServer.localIPv4() {
-                LabeledContent("This device", value: ip).font(.footnote)
-            }
+            notice(
+                "Open Panura on your TV and it will find this phone on the same Wi-Fi. The phone serves the video, so keep it on the network while playing.",
+                tone: .good
+            )
 
             if let error = panura.lastError {
-                Text(error).font(.footnote).foregroundStyle(PanuraTheme.error)
-                Button {
-                    // Deep-links to Panura's own settings page, where the Local
-                    // Network toggle lives.
+                notice(error, tone: .warn)
+                wideButton("Open Panura's settings", icon: "gear") {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(url)
                     }
-                } label: {
-                    Label("Open Panura settings", systemImage: "gear")
                 }
             }
 
-            Toggle("Always cast through this phone", isOn: $panura.forceProxy).font(.footnote)
-            proxyLog
-        } header: {
-            Text("Linking to the Panura app on your TV")
-        } footer: {
-            Text("Open Panura on your Android TV and it will find this phone on the "
-                 + "same Wi-Fi. The phone serves the video, so it must stay on the "
-                 + "network while playing.")
+            Toggle("Always cast through this phone", isOn: $panura.forceProxy)
+                .font(.footnote)
+                .tint(PanuraTheme.accent)
         }
     }
 
     // MARK: connected
 
-    private var connectedSection: some View {
-        Section {
-            if panura.isTVConnected {
-                HStack(spacing: 10) {
-                    Image("AppLogo").resizable().scaledToFit()
-                        .frame(width: 22, height: 22)
-                    Text(panura.connectedTVName.isEmpty
-                         ? "Panura TV connected" : panura.connectedTVName)
-                }
-                if panura.isCasting, !panura.streamTitle.isEmpty {
-                    Label(panura.streamTitle, systemImage: "play.fill")
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
-                if panura.isCasting {
-                    Button {
-                        showControls = true
-                    } label: { Label("Open controls", systemImage: "slider.horizontal.3") }
-                }
+    private var connectedBody: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 10) {
+                Circle().fill(PanuraTheme.success).frame(width: 8, height: 8)
+                Text(connectedName).font(.subheadline.weight(.medium))
+                Spacer(minLength: 0)
             }
-            if cast.isConnected {
-                HStack(spacing: 10) {
-                    CastMark(connected: true)
-                        .frame(width: 22, height: 22)
-                        .foregroundStyle(PanuraTheme.accent)
-                    Text(cast.connectedDeviceName ?? "Chromecast connected")
-                }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.surfaceVariant))
+
+            if panura.isCasting, !panura.streamTitle.isEmpty {
+                Label(panura.streamTitle, systemImage: "play.fill")
+                    .font(.footnote)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // Disconnect ends whichever path is actually up. It used to call
-            // PanuraCast's teardown unconditionally, which does nothing at all to
-            // a Cast session — so on a Chromecast the button left the device
-            // connected.
-            Button("Disconnect", role: .destructive) {
-                if cast.isConnected { cast.endSession() }
-                if panura.isTVConnected || panura.isAdvertising { panura.stop() }
-                method = nil
+            if panura.isCasting || cast.isCasting {
+                wideButton("Open controls", icon: "slider.horizontal.3") { showControls = true }
+            } else {
+                notice("Ready — play a video to start casting.", tone: .good)
             }
-            proxyLog
-        } footer: {
-            Text("Ready — play a video to start casting.")
+
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Text("Close")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(PanuraTheme.surfaceVariant, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                // Disconnect ends whichever path is actually up. It used to call
+                // PanuraCast's teardown unconditionally, which does nothing at
+                // all to a Cast session — so on a Chromecast the button left the
+                // device connected.
+                Button {
+                    if cast.isConnected { cast.endSession() }
+                    if panura.isTVConnected || panura.isAdvertising { panura.stop() }
+                    method = nil
+                    scanned = false
+                } label: {
+                    Text("Disconnect")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.error))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
-    @ViewBuilder
-    private var proxyLog: some View {
-        if !panura.proxyLog.isEmpty {
-            DisclosureGroup("Cast log (\(panura.proxyLog.count))") {
-                ForEach(panura.proxyLog, id: \.self) { line in
-                    Text(line).font(.caption2.monospaced()).foregroundStyle(.secondary)
+    private var connectedName: String {
+        if panura.isTVConnected {
+            return panura.connectedTVName.isEmpty ? "Panura TV" : panura.connectedTVName
+        }
+        return cast.connectedDeviceName ?? "Chromecast"
+    }
+
+    // MARK: parts
+
+    private func sectionLabel(_ text: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+            Text(text).font(.caption2.weight(.semibold)).kerning(0.6)
+        }
+        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+    }
+
+    private func deviceCard<Icon: View>(
+        title: String,
+        subtitle: String,
+        busy: Bool = false,
+        @ViewBuilder icon: () -> Icon,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                icon()
+                    .frame(width: 24, height: 24)
+                    .foregroundStyle(PanuraTheme.accent)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        PanuraTheme.accent.opacity(0.14),
+                        in: RoundedRectangle(cornerRadius: 12)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 4)
+                if busy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 }
             }
-            .font(.footnote)
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 14).fill(PanuraTheme.surfaceVariant))
+            .contentShape(RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func statusRow(_ title: String, detail: String, icon: String, busy: Bool) -> some View {
+        HStack(spacing: 12) {
+            if busy {
+                ProgressView().controlSize(.small).frame(width: 24)
+            } else {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .foregroundStyle(PanuraTheme.tertiary)
+                    .frame(width: 24)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.subheadline.weight(.medium))
+                if !detail.isEmpty {
+                    Text(detail).font(.caption2).foregroundStyle(PanuraTheme.onSurfaceVariant)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 14).fill(PanuraTheme.surfaceVariant))
+    }
+
+    private func emptyState(icon: String, title: String, detail: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 20))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .frame(width: 54, height: 54)
+                .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 16))
+            Text(title).font(.subheadline.weight(.medium))
+            Text(detail)
+                .font(.caption2)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+    }
+
+    private func wideButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 13, weight: .semibold))
+                Text(title).font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(PanuraTheme.accent)
+            .frame(maxWidth: .infinity)
+            .frame(height: 46)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(PanuraTheme.accent.opacity(0.55), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private enum Tone { case good, warn }
+
+    /// A bordered note rather than grey footer text.
+    ///
+    /// The two things worth saying here — what a path is good for, and the Wi-Fi
+    /// rule that breaks it — are the difference between casting working and not,
+    /// and footnote grey under a list is exactly where eyes skip.
+    private func notice(_ text: String, tone: Tone) -> some View {
+        let colour = tone == .good ? PanuraTheme.success : PanuraTheme.tertiary
+        return HStack(alignment: .top, spacing: 8) {
+            Image(systemName: tone == .good ? "checkmark.circle.fill" : "info.circle.fill")
+                .font(.system(size: 12))
+            Text(text).font(.caption2).fixedSize(horizontal: false, vertical: true)
+        }
+        .foregroundStyle(colour)
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 10).fill(colour.opacity(0.10)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(colour.opacity(0.35), lineWidth: 1)
+        )
+    }
+}
+
+/// Presents the cast picker as a centred dialog rather than a bottom sheet.
+///
+/// A sheet is for a task you work through; this is a question with two answers,
+/// and Android's own cast picker is a dialog for the same reason. The clear
+/// presentation background is iOS 16.4, so on anything older it stays an
+/// ordinary sheet — the card inside is identical either way, and no one is left
+/// without a way to pick a television.
+struct CastPickerDialog: ViewModifier {
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: $isPresented) {
+            if #available(iOS 16.4, *) {
+                dialog
+                    .presentationBackground(.clear)
+                    .presentationDetents([.large])
+            } else {
+                dialog.presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    private var dialog: some View {
+        ZStack {
+            Color.black.opacity(0.001)
+                .ignoresSafeArea()
+                .onTapGesture { isPresented = false }
+            CastDevicesView()
+                .padding(.horizontal, 16)
+                .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
         }
     }
 }
+
+extension View {
+    /// The one way the cast picker is presented, everywhere it is presented.
+    func castPicker(isPresented: Binding<Bool>) -> some View {
+        modifier(CastPickerDialog(isPresented: isPresented))
+    }
+}
+
 
 /// The cast card on Home.
 ///
@@ -502,10 +684,7 @@ struct CastHomeCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(connected ? "Casting to \(title)" : "Cast to TV")
-        .sheet(isPresented: $showPicker) {
-            NavigationStack { CastDevicesView() }
-                .presentationDragIndicator(.visible)
-        }
+        .castPicker(isPresented: $showPicker)
         .sheet(isPresented: $showControls) {
             CastSessionView()
         }
