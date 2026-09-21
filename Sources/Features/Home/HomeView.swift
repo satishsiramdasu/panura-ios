@@ -34,12 +34,14 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     brandBlock
-                    // Directly under the brand: casting is half of what the
-                    // app is for, and until now the only way in was a glyph in
-                    // the header that explains itself to nobody.
-                    CastHomeCard().padding(.horizontal, 16)
                     shortcutsSection
                     if !store.continueWatching.isEmpty { continueWatchingSection }
+                    // Above Options rather than under the brand. Shortcuts and
+                    // Continue Watching are what someone opening the app came
+                    // for; casting is what they reach for once they have picked
+                    // something, and it sits with the other places to go rather
+                    // than in front of the places they were going.
+                    CastHomeCard().padding(.horizontal, 16)
                     optionsSection
                 }
                 .padding(.vertical, 20)
