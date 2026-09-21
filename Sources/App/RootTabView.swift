@@ -45,6 +45,7 @@ struct RootTabView: View {
     @ObservedObject private var chromecast = CastManager.shared
     /// The cast remote, opened from the bar.
     @State private var showCastControls = false
+    @ObservedObject private var castFlow = CastFlow.shared
     /// Which Settings screen to land on, when something asked for one.
     @State private var settingsDeepLink: SettingsScreen?
 
@@ -115,8 +116,21 @@ struct RootTabView: View {
         .fullScreenCover(item: $playback.presented) { playing in
             PlayerScreen(item: playing.item, playlist: playing.playlist)
         }
-        .sheet(isPresented: $showCastControls) {
-            PanuraCastControlView().presentationDragIndicator(.visible)
+        // One screen for the whole of casting — getting the video ready, the
+        // conversion some TVs need, the hand-over, and then the controls. It
+        // used to open `PanuraCastControlView` whichever path was in use, so a
+        // Chromecast showed a screen wired to a receiver it was not talking to.
+        .sheet(isPresented: $showCastControls) { CastSessionView() }
+        // Starting a cast anywhere in the app raises it, so the wait is never
+        // silent — a Dolby Vision clip can take minutes to convert, and without
+        // this the phone simply looked like it had stopped responding.
+        .onChange(of: castFlow.showing) { showing in
+            if showing { showCastControls = true }
+        }
+        .onChange(of: showCastControls) { showing in
+            // Dismissing the screen clears a finished attempt, but never stops
+            // a conversion — Cancel is what does that, and it is on the screen.
+            if !showing { castFlow.settle() }
         }
         // Nothing in release builds — see the modifier below.
         .screenshotPlayer()

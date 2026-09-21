@@ -110,7 +110,7 @@ struct CastToolbarButton: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showControls) {
-            PanuraCastControlView().presentationDragIndicator(.visible)
+            CastSessionView()
         }
     }
 }
@@ -170,7 +170,7 @@ struct CastDevicesView: View {
                 }
             }
         }
-        .sheet(isPresented: $showControls) { PanuraCastControlView() }
+        .sheet(isPresented: $showControls) { CastSessionView() }
         .onAppear {
             // Reopening while a link is in flight resumes that path.
             if panura.isAdvertising || panura.isTVConnected { method = .panura }
@@ -507,7 +507,7 @@ struct CastHomeCard: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showControls) {
-            PanuraCastControlView().presentationDragIndicator(.visible)
+            CastSessionView()
         }
     }
 }

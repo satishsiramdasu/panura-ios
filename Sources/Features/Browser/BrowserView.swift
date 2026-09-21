@@ -93,7 +93,7 @@ struct BrowserView: View {
             )
         }
         .sheet(isPresented: $showPanuraControls) {
-            PanuraCastControlView().presentationDragIndicator(.visible)
+            CastSessionView()
         }
         .sheet(isPresented: $showCastPicker, onDismiss: castPendingIfConnected) {
             NavigationStack { CastDevicesView() }
