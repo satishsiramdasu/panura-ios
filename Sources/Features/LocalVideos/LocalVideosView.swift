@@ -31,6 +31,19 @@ struct LocalVideosView: View {
     @State private var pendingChoice: (asset: LocalVideoAsset, index: Int)?
     /// Sent to the TV, waiting on "replace what is playing?".
     @State private var pendingReplace: LocalVideoAsset?
+
+    /// A conversion in flight, with enough to say what is happening and why.
+    struct Conversion {
+        let title: String
+        let explanation: String
+        var progress: Float
+    }
+    @State private var conversion: Conversion?
+    /// Held so Cancel can stop the export rather than only hiding the sheet.
+    @State private var conversionTask: Task<Void, Never>?
+    /// The video the current cast is about, so "Send original" knows what to
+    /// send once it has abandoned the conversion.
+    @State private var castingAsset: LocalVideoAsset?
     @State private var showCastPicker = false
     /// One line, said once — casting gives no other sign from this screen.
     @State private var toast: String?
@@ -96,6 +109,17 @@ struct LocalVideosView: View {
             NavigationStack { CastDevicesView() }
                 .presentationDragIndicator(.visible)
         }
+        // Not dismissable by dragging: the export is still running behind it,
+        // and a sheet that can be swiped away leaves no way back to the Cancel
+        // that actually stops it.
+        .sheet(isPresented: Binding(
+            get: { conversion != nil },
+            set: { if !$0 { conversion = nil } }
+        )) {
+            conversionSheet
+                .interactiveDismissDisabled()
+                .presentationDetents([.height(260)])
+        }
     }
 
     // MARK: grid
@@ -133,6 +157,69 @@ struct LocalVideosView: View {
             if selecting { selectionBar }
         }
         .overlay(alignment: .bottom) { statusBanner }
+    }
+
+    /// What is being converted, why, and the two ways out.
+    ///
+    /// The escape hatch matters: some TVs do handle Dolby Vision properly, and
+    /// on those the conversion is pure waiting. We cannot tell which is which by
+    /// asking — a TV that renders DV as noise reports a perfectly successful
+    /// playback — so the person watching is the only reliable judge. Choosing to
+    /// send the original is remembered for that TV, so the answer is given once.
+    private var conversionSheet: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "wand.and.stars")
+                .font(.largeTitle)
+                .foregroundStyle(PanuraTheme.accent)
+
+            Text("Preparing for \(tvName ?? "the TV")")
+                .font(.headline)
+
+            Text(conversion?.explanation ?? "")
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ProgressView(value: Double(conversion?.progress ?? 0))
+                .tint(PanuraTheme.accent)
+
+            HStack(spacing: 12) {
+                Button("Cancel", role: .cancel) {
+                    conversionTask?.cancel()
+                    conversion = nil
+                }
+                .buttonStyle(.bordered)
+
+                Button("Send original") {
+                    if let tv = tvName { CastPreferences.allowOriginal(on: tv) }
+                    sendOriginalNow()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(PanuraTheme.accent)
+            }
+            .font(.subheadline)
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PanuraTheme.surface)
+    }
+
+    /// Abandons the conversion and casts the file as it is — for a TV that
+    /// turns out to handle it after all.
+    private func sendOriginalNow() {
+        guard let asset = castingAsset else { conversion = nil; return }
+        conversionTask?.cancel()
+        conversion = nil
+        conversionTask = Task {
+            guard let url = await model.resolveURL(for: asset) else { return }
+            if panuraCast.isTVConnected {
+                panuraCast.castLocal(file: url, title: asset.title)
+            } else {
+                chromecast.castLocalFile(url, title: asset.title)
+            }
+            flash(tvName.map { "Playing on " + $0 } ?? "Playing on TV")
+        }
     }
 
     /// Says which of the three empty cases this is — a filter that matched
@@ -620,12 +707,45 @@ struct LocalVideosView: View {
     /// as the phone stays on the network — there is no way around that for a
     /// file only this device has.
     private func cast(_ asset: LocalVideoAsset) {
-        Task {
-            guard let url = await model.resolveURL(for: asset) else {
+        conversionTask?.cancel()
+        castingAsset = asset
+        conversionTask = Task {
+            guard let original = await model.resolveURL(for: asset) else {
                 flash("Could not read that video")
                 return
             }
-            if panuraCast.isTVConnected {
+            let toPanura = panuraCast.isTVConnected
+            let target: CastTranscoder.Target = toPanura ? .panura : .chromecast
+            // A TV whose owner has said it copes gets the file untouched.
+            let trusted = tvName.map(CastPreferences.allowsOriginal(on:)) ?? false
+
+            // Anything the TV is likely to get wrong becomes plain H.264 SDR
+            // first. An H.264 clip already is what every receiver handles, so
+            // the common case goes straight out with no wait at all.
+            var url = original
+            if !trusted, let reason = await CastTranscoder.reason(for: original, target: target) {
+                conversion = Conversion(
+                    title: asset.displayTitle(showExtension: showExtension),
+                    explanation: reason.explanation,
+                    progress: 0
+                )
+                do {
+                    url = try await CastTranscoder.convert(original, id: asset.id) { value in
+                        Task { @MainActor in conversion?.progress = value }
+                    }
+                } catch CastTranscoder.Failure.cancelled {
+                    conversion = nil
+                    return
+                } catch {
+                    conversion = nil
+                    flash("Could not convert that video for the TV")
+                    return
+                }
+                conversion = nil
+                guard !Task.isCancelled else { return }
+            }
+
+            if toPanura {
                 panuraCast.castLocal(file: url, title: asset.title)
             } else {
                 chromecast.castLocalFile(url, title: asset.title)
