@@ -103,16 +103,21 @@ final class CastFlow: ObservableObject {
         PanuraCastManager.shared.$isCasting
             .removeDuplicates()
             .dropFirst()
-            .sink { [weak self] casting in
-                if !casting { self?.finished() }
+            // Hopped onto the main actor explicitly. A `sink` closure carries
+            // no actor isolation of its own, so calling straight into this
+            // main-actor class from inside one does not compile.
+            .sink { casting in
+                guard !casting else { return }
+                Task { @MainActor [weak self] in self?.finished() }
             }
             .store(in: &watchers)
 
         CastManager.shared.$castingTitle
             .removeDuplicates()
             .dropFirst()
-            .sink { [weak self] title in
-                if title == nil { self?.finished() }
+            .sink { title in
+                guard title == nil else { return }
+                Task { @MainActor [weak self] in self?.finished() }
             }
             .store(in: &watchers)
     }
