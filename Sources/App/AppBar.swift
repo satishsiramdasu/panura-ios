@@ -185,6 +185,12 @@ struct AppMenuPanel: View {
         let id = UUID()
         let icon: String
         let label: String
+        /// What the row is for, in a few words. A glyph and a noun leave people
+        /// guessing at exactly the rows they have never pressed.
+        var detail: String = ""
+        /// The tile behind the glyph. Each row keeps its own colour so the list
+        /// can be found by shape rather than read top to bottom every time.
+        var tint: Color = PanuraTheme.accent
         let action: () -> Void
     }
 
@@ -192,42 +198,101 @@ struct AppMenuPanel: View {
     /// Highlighted because you are already there.
     let current: AppDestination?
 
-    private let columns = [GridItem(.adaptive(minimum: 74), spacing: 8)]
-
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 12) {
-            ForEach(items) { item in
-                Button(action: item.action) {
-                    VStack(spacing: 6) {
-                        Image(systemName: item.icon)
-                            .font(.system(size: 20))
-                            .frame(width: 46, height: 46)
-                            .background(
-                                Circle().fill(
-                                    current?.title == item.label
-                                        ? PanuraTheme.accentSoft
-                                        : PanuraTheme.surfaceVariant
-                                )
-                            )
-                            .foregroundStyle(
-                                current?.title == item.label ? PanuraTheme.accent : Color.primary
-                            )
-                        Text(item.label)
-                            .font(.caption2)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(.primary)
+        VStack(spacing: 0) {
+            identity
+            Divider().overlay(PanuraTheme.surfaceVariant)
+
+            // A list, not a grid of glyphs. The grid could say "Settings" and
+            // "Network Stream" and no more; every row here can say what it is
+            // for, which is what the rarely-pressed ones needed.
+            ScrollView {
+                VStack(spacing: 2) {
+                    ForEach(items) { item in
+                        Button(action: item.action) { row(item) }
+                            .buttonStyle(.plain)
                     }
-                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
+            // Tall enough for the list it has, never taller than most of the
+            // screen — it rests on the bar and must not swallow the app.
+            .frame(maxHeight: 420)
+
+            Divider().overlay(PanuraTheme.surfaceVariant)
+            Text(Self.versionLine)
+                .font(.caption2)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 20)
         .frame(maxWidth: .infinity)
         .background(TopRoundedRectangle(radius: 20).fill(PanuraTheme.surfaceContainer))
+    }
+
+    /// Who this is. The panel is the one place in the app that names itself.
+    private var identity: some View {
+        HStack(spacing: 12) {
+            Image("AppLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 38, height: 38)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Panura").font(.headline)
+                Text("Web video, and your TV")
+                    .font(.caption)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
+    }
+
+    private func row(_ item: Item) -> some View {
+        let here = current?.title == item.label
+        return HStack(spacing: 14) {
+            Image(systemName: item.icon)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(item.tint)
+                .frame(width: 40, height: 40)
+                .background(item.tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 11))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.label)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(here ? PanuraTheme.accent : .primary)
+                if !item.detail.isEmpty {
+                    Text(item.detail)
+                        .font(.caption2)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 4)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(here ? PanuraTheme.accentSoft : Color.clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// Version and build, as the drawer of every app this one is measured
+    /// against carries — and the first thing worth knowing in a bug report.
+    static var versionLine: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = info?["CFBundleVersion"] as? String ?? "1"
+        return "Version \(version) (\(build))"
     }
 }
 

@@ -1,3 +1,4 @@
+import UIKit
 import SwiftUI
 
 /// The app's shell: every destination stacked, one bar under them, and the
@@ -45,6 +46,8 @@ struct RootTabView: View {
     @ObservedObject private var chromecast = CastManager.shared
     /// The cast remote, opened from the bar.
     @State private var showCastControls = false
+    /// The report sheet, reachable from the menu rather than only the browser.
+    @State private var showReport = false
     @ObservedObject private var castFlow = CastFlow.shared
     /// Which Settings screen to land on, when something asked for one.
     @State private var settingsDeepLink: SettingsScreen?
@@ -121,6 +124,9 @@ struct RootTabView: View {
         // used to open `PanuraCastControlView` whichever path was in use, so a
         // Chromecast showed a screen wired to a receiver it was not talking to.
         .sheet(isPresented: $showCastControls) { CastSessionView() }
+        .sheet(isPresented: $showReport) {
+            ReportIssueSheet(pageURL: nil, source: "menu")
+        }
         // Starting a cast anywhere in the app raises it, so the wait is never
         // silent — a Dolby Vision clip can take minutes to convert, and without
         // this the phone simply looked like it had stopped responding.
@@ -251,11 +257,63 @@ struct RootTabView: View {
     /// Cast is deliberately NOT here. It is a control rather than a place, it
     /// has to be reachable from whatever screen you are on, and it now lives
     /// top-right in the header of every one of them — same slot as Android's.
+    /// Everything without a seat in the bar.
+    ///
+    /// Deliberately not Browser and Videos as well: they have seats two
+    /// centimetres below this panel, and a menu that repeats the bar teaches
+    /// people the bar is not to be trusted. What belongs here is what has
+    /// nowhere else to be.
     private var menuItems: [AppMenuPanel.Item] {
-        [
-            AppMenuPanel.Item(icon: "link", label: "Network Stream") { select(.stream) },
-            AppMenuPanel.Item(icon: "gearshape.fill", label: "Settings") { select(.settings) },
+        var items: [AppMenuPanel.Item] = [
+            AppMenuPanel.Item(
+                icon: "tv.badge.wifi", label: "Cast to TV",
+                detail: isCasting ? "Playing on \(castDeviceName ?? "your TV")" : "Find a television",
+                tint: PanuraTheme.accent
+            ) { showMenu = false; showCastControls = true },
+            AppMenuPanel.Item(
+                icon: "link", label: "Network Stream",
+                detail: "Play a link straight from its address",
+                tint: .cyan
+            ) { select(.stream) },
+            AppMenuPanel.Item(
+                icon: "gearshape.fill", label: "Settings",
+                detail: "Playback, browser, subtitles, gestures",
+                tint: .gray
+            ) { select(.settings) },
+            AppMenuPanel.Item(
+                icon: "questionmark.circle.fill", label: "Help",
+                detail: "Answers, and how to reach us",
+                tint: .blue
+            ) { settingsDeepLink = .support; select(.settings) },
+            AppMenuPanel.Item(
+                icon: "exclamationmark.bubble.fill", label: "Report a problem",
+                detail: "A site that will not play, or anything broken",
+                tint: .orange
+            ) { showMenu = false; showReport = true },
         ]
+        // Only once there is a listing to open. A Rate row that goes nowhere is
+        // worse than no Rate row.
+        if VersionStore.storeLinkReady {
+            items.append(
+                AppMenuPanel.Item(
+                    icon: "star.fill", label: "Rate Panura",
+                    detail: "Leave a review on the App Store",
+                    tint: .yellow
+                ) {
+                    showMenu = false
+                    UIApplication.shared.open(VersionStore.storeURL)
+                }
+            )
+        }
+        return items
+    }
+
+    /// The TV in use, for the menu row that says so.
+    private var castDeviceName: String? {
+        if panuraCast.isTVConnected, !panuraCast.connectedTVName.isEmpty {
+            return panuraCast.connectedTVName
+        }
+        return chromecast.connectedDeviceName
     }
 }
 
