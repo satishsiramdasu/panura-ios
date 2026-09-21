@@ -84,12 +84,40 @@ struct ReportIssueSheet: View {
             }
             .navigationTitle(pageURL != nil ? "Report this page" : "Report an issue")
             .navigationBarTitleDisplayMode(.inline)
+            // Sending sits at the bottom, under the thumb, rather than in a
+            // corner of the navigation bar. It is the one thing this screen is
+            // for, and a form whose only action is a small word in the top
+            // right reads as optional.
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 6) {
+                    Button { send() } label: {
+                        Text("Send report")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(detailsTooShort ? PanuraTheme.onSurfaceVariant : Color.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(
+                                Capsule().fill(
+                                    detailsTooShort ? PanuraTheme.surfaceVariant : PanuraTheme.accent
+                                )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(detailsTooShort)
+
+                    Button("Cancel") { dismiss() }
+                        .font(.footnote)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .padding(.vertical, 4)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+                .background(.ultraThinMaterial)
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Send") { send() }.disabled(detailsTooShort)
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
                 }
             }
             .onAppear { if reason.isEmpty { reason = reasons[0] } }
