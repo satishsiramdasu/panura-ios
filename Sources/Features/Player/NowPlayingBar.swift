@@ -29,7 +29,11 @@ struct NowPlayingBar: View {
     let isPlaying: Bool
     let onTap: () -> Void
     let onPlayPause: () -> Void
-    let onClose: () -> Void
+    /// Stops what is on the television. Not a disconnect: the TV stays linked,
+    /// ready for the next video, because "I have finished this one" and "I have
+    /// finished with the television" are different intentions and an X reads as
+    /// the second.
+    let onStop: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -67,8 +71,8 @@ struct NowPlayingBar: View {
             .buttonStyle(.plain)
             .accessibilityLabel(isPlaying ? "Pause" : "Play")
 
-            Button(action: onClose) {
-                Image(systemName: "xmark")
+            Button(action: onStop) {
+                Image(systemName: "stop.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
                     .frame(width: 38, height: 38)

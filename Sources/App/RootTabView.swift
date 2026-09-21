@@ -173,7 +173,11 @@ struct RootTabView: View {
                 onPlayPause: {
                     panuraCast.playback.isPlaying ? panuraCast.pause() : panuraCast.play()
                 },
-                onClose: { panuraCast.stop() }
+                // Stops the video and keeps the TV. This used to call
+                // PanuraCast's full teardown -- server, advertising and the
+                // link -- while the Chromecast branch beside it stopped only
+                // the media, so the same button meant two different things.
+                onStop: { CastFlow.shared.stopCasting() }
             )
         } else if chromecast.isCasting {
             NowPlayingBar(
@@ -184,7 +188,7 @@ struct RootTabView: View {
                 isPlaying: chromecast.isRemotePlaying,
                 onTap: { showCastControls = true },
                 onPlayPause: { chromecast.toggleRemotePlay() },
-                onClose: { chromecast.stopRemote() }
+                onStop: { CastFlow.shared.stopCasting() }
             )
         }
     }

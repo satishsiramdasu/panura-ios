@@ -154,6 +154,24 @@ final class CastFlow: ObservableObject {
         queue.removeAll()
     }
 
+    /// Stops what is playing on the television and abandons the queue.
+    ///
+    /// The order matters. `finished()` watches for a cast ending and starts
+    /// whatever is next, and stopping by hand looks exactly like a video
+    /// finishing — so the stage is cleared first, which is what tells it this
+    /// was deliberate. Without that, pressing stop played the next thing.
+    ///
+    /// The TV stays connected. Stopping a video is not leaving the television.
+    func stopCasting() {
+        queue.removeAll()
+        nowPlaying = nil
+        stage = .idle
+        work?.cancel()
+        work = nil
+        if PanuraCastManager.shared.isCasting { PanuraCastManager.shared.stopStream() }
+        if CastManager.shared.isCasting { CastManager.shared.stopRemote() }
+    }
+
     /// Starts the next item, if there is one.
     ///
     /// `auto` marks the queue moving on by itself rather than somebody asking
