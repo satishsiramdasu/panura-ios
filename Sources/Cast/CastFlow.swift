@@ -128,13 +128,13 @@ final class CastFlow: ObservableObject {
         queue.append(contentsOf: items)
         showing = true
         let idle = !PanuraCastManager.shared.isCasting && !CastManager.shared.isCasting
-        if startIfIdle, idle, !stage.isBusy { advance() }
+        if startIfIdle, idle, !stage.isBusy { advance(auto: false) }
     }
 
     /// Replaces what is on the TV with `items`, dropping anything still queued.
     func replace(with items: [CastQueueItem]) {
         queue = items
-        advance()
+        advance(auto: false)
     }
 
     func remove(_ item: CastQueueItem) {
@@ -150,7 +150,10 @@ final class CastFlow: ObservableObject {
     }
 
     /// Starts the next item, if there is one.
-    func advance() {
+    ///
+    /// `auto` marks the queue moving on by itself rather than somebody asking
+    /// for it, which is what decides whether an ad may follow.
+    func advance(auto: Bool = false) {
         guard !queue.isEmpty else {
             nowPlaying = nil
             stage = .idle
@@ -160,7 +163,7 @@ final class CastFlow: ObservableObject {
         nowPlaying = next
         showing = true
         work?.cancel()
-        work = Task { await play(next) }
+        work = Task { await play(next, auto: auto) }
     }
 
     /// The TV finished something. Only acts while this flow believes a video is
@@ -171,18 +174,18 @@ final class CastFlow: ObservableObject {
         if queue.isEmpty {
             stage = .idle
         } else {
-            advance()
+            advance(auto: true)
         }
     }
 
-    private func play(_ item: CastQueueItem) async {
+    private func play(_ item: CastQueueItem, auto: Bool) async {
         switch item.payload {
         case let .stream(media):
             stage = .sending(title: item.title, device: deviceName ?? "the TV")
             if PanuraCastManager.shared.isTVConnected {
                 PanuraCastManager.shared.cast(media)
             } else {
-                CastManager.shared.cast(media)
+                CastManager.shared.cast(media, advertise: !auto)
             }
             stage = .playing
         case let .photo(identifier):
@@ -192,7 +195,7 @@ final class CastFlow: ObservableObject {
                 return
             }
             pending = (file, item.title, item.id)
-            await run(file: file, title: item.title, id: item.id, forceOriginal: false)
+            await run(file: file, title: item.title, id: item.id, forceOriginal: false, auto: auto)
         }
     }
 
@@ -249,7 +252,9 @@ final class CastFlow: ObservableObject {
         return CastManager.shared.connectedDeviceName
     }
 
-    private func run(file: URL, title: String, id: String, forceOriginal: Bool) async {
+    private func run(
+        file: URL, title: String, id: String, forceOriginal: Bool, auto: Bool = false
+    ) async {
         let panura = PanuraCastManager.shared
         let toPanura = panura.isTVConnected
         let device = deviceName ?? "the TV"
@@ -297,7 +302,7 @@ final class CastFlow: ObservableObject {
         if toPanura {
             panura.castLocal(file: url, title: title)
         } else {
-            CastManager.shared.castLocalFile(url, title: title)
+            CastManager.shared.castLocalFile(url, title: title, advertise: !auto)
         }
         stage = .playing
     }

@@ -124,7 +124,14 @@ final class CastManager: NSObject, ObservableObject {
     }
 
     /// Load a media item onto the connected receiver.
-    func cast(_ item: MediaItem) {
+    /// `advertise` is false when the queue moves on by itself.
+    ///
+    /// The rule this class already keeps is that an ad follows a *successful
+    /// action* — someone's action. A queue advancing is nobody's: the phone may
+    /// be in a pocket while the television plays, and throwing an interstitial
+    /// up then is both a poor surprise and an impression AdMob has every reason
+    /// to treat as unsolicited.
+    func cast(_ item: MediaItem, advertise: Bool = true) {
         guard let session = GCKCastContext.sharedInstance()
             .sessionManager.currentCastSession else { return }
         let metadata = GCKMediaMetadata(metadataType: .movie)
@@ -160,7 +167,7 @@ final class CastManager: NSObject, ObservableObject {
         session.remoteMediaClient?.loadMedia(with: request.build())
         castingTitle = item.title
         session.remoteMediaClient?.add(self)
-        AdManager.shared.showInterstitial(.cast)
+        if advertise { AdManager.shared.showInterstitial(.cast) }
     }
 }
 
@@ -177,7 +184,7 @@ extension CastManager {
     /// has no such limit — it runs the same player this app does. The receiver
     /// is told the real type rather than a hopeful one, so a refusal is a clean
     /// failure instead of a black screen.
-    func castLocalFile(_ file: URL, title: String) {
+    func castLocalFile(_ file: URL, title: String, advertise: Bool = true) {
         guard let session = GCKCastContext.sharedInstance()
             .sessionManager.currentCastSession else { return }
         guard PanuraCastManager.shared.startServerForLocalFile(file),
@@ -196,7 +203,7 @@ extension CastManager {
         session.remoteMediaClient?.loadMedia(with: request.build())
         castingTitle = title
         session.remoteMediaClient?.add(self)
-        AdManager.shared.showInterstitial(.cast)
+        if advertise { AdManager.shared.showInterstitial(.cast) }
     }
 }
 
