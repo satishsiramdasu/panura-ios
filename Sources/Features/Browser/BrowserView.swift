@@ -19,6 +19,10 @@ struct BrowserView: View {
     @ObservedObject private var playback = PlaybackSession.shared
     @EnvironmentObject private var cast: CastManager
     @State private var showFoundSheet = false
+    /// Which sheet row has its buttons out. The best stream starts open,
+    /// because opening the sheet and tapping again to reach Play was two taps
+    /// for the thing almost everyone wanted.
+    @State private var expandedVideo: ExtractedVideo.ID?
     @State private var showPanuraControls = false
     /// The cast picker, opened by a Cast tap with no TV connected. The video
     /// that asked for it waits here and goes as soon as one is.
@@ -71,8 +75,15 @@ struct BrowserView: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !model.foundVideos.isEmpty {
                 foundBar
+                    // It arrives at the bottom of a page someone is reading, and
+                    // a bar that simply appears there is missed — they carry on
+                    // with the site's own player and never learn the app does
+                    // anything. So it rises and settles, once.
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .id(model.foundVideos.count == 1 ? "single" : "many")
             }
         }
+        .animation(.spring(response: 0.42, dampingFraction: 0.72), value: model.foundVideos.count)
         .overlay(alignment: .bottom) { toastView }
         // The page must go quiet while its video plays in ours, and start
         // again when the player closes — including a close that happens from
@@ -121,6 +132,11 @@ struct BrowserView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
+        // The best stream is open on arrival, and re-chosen each time rather
+        // than remembered: the page may have found something better since.
+        .onChange(of: showFoundSheet) { shown in
+            if shown { expandedVideo = model.orderedVideos.first?.id }
+        }
         .sheet(isPresented: $showReport) {
             ReportIssueSheet(
                 pageURL: model.currentURL?.absoluteString,
@@ -635,9 +651,19 @@ struct BrowserView: View {
     @ViewBuilder
     private var foundBar: some View {
         VStack(spacing: 6) {
-            // The bar is only mounted when there is something to speak for, so
-            // there is no other branch to take.
-            if let primary {
+            // Two shapes, because one stream and nine are different questions.
+            //
+            // One: there is nothing to choose, so the bar does the choosing —
+            // quality, size, filename and the actions, right there.
+            //
+            // Several: choosing IS the task, and a bar that picked one of them
+            // and hid the rest behind a chevron made the choice look made. It
+            // says how many and opens the list, in the app's own colour so it
+            // reads as the app speaking rather than part of the page.
+            if model.foundVideos.count > 1 {
+                Button { showFoundSheet = true } label: { manyRow }
+                    .buttonStyle(.plain)
+            } else if let primary {
                 Button { showFoundSheet = true } label: { infoRow(primary) }
                     .buttonStyle(.plain)
                 actionRow(primary)
@@ -656,6 +682,96 @@ struct BrowserView: View {
     /// than a footnote under it. Text a step up from caption, a 44pt row so the
     /// whole thing is a comfortable target, and the actions below at full
     /// height.
+    /// One stream in the sheet.
+    ///
+    /// The filename, not the page title. Every stream here came from the same
+    /// page, so repeating that page's name on each row said nothing and cost
+    /// two lines apiece — it is the sheet's heading now. What is left is what
+    /// tells two streams apart: where it came from, what it is called, and what
+    /// the probe made of it.
+    ///
+    /// Buttons belong to the open row only, as on Android. All of them at once
+    /// turned a list of four into a wall of eight buttons.
+    @ViewBuilder
+    private func foundSheetRow(_ video: ExtractedVideo) -> some View {
+        let open = expandedVideo == video.id
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                var transaction = Transaction()
+                transaction.animation = .easeOut(duration: 0.18)
+                withTransaction(transaction) {
+                    expandedVideo = open ? nil : video.id
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    sourceBadge(video.source, fallback: false)
+                    Text(video.fileLabel)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    probeBadge(video)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .rotationEffect(.degrees(open ? 180 : 0))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if open {
+                HStack(spacing: 8) {
+                    Button {
+                        showFoundSheet = false
+                        play(video)
+                    } label: {
+                        streamActionLabel("Play", icon: "play.fill", filled: true)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        showFoundSheet = false
+                        castOrConnect(video)
+                    } label: {
+                        streamActionLabel(castLabel, filled: false) {
+                            CastMark(connected: castConnected)
+                                .frame(width: 18, height: 18)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// The bar when there is a choice to make.
+    private var manyRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "play.rectangle.on.rectangle.fill")
+                .font(.system(size: 17, weight: .semibold))
+            Text("\(model.foundVideos.count) videos found")
+                .font(.subheadline.weight(.semibold))
+            if !model.foundSubtitles.isEmpty {
+                Text("·")
+                Text("\(model.foundSubtitles.count) subtitles")
+                    .font(.footnote)
+                    .opacity(0.9)
+            }
+            Spacer(minLength: 4)
+            Text("Choose")
+                .font(.footnote.weight(.semibold))
+            Image(systemName: "chevron.up").font(.caption.weight(.bold))
+        }
+        .foregroundStyle(Color.black)
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(PanuraTheme.accent, in: RoundedRectangle(cornerRadius: 12))
+        .contentShape(RoundedRectangle(cornerRadius: 12))
+    }
+
     private func infoRow(_ video: ExtractedVideo) -> some View {
         HStack(spacing: 8) {
             // Which hook found this, rather than "a video was found" — the count
@@ -845,51 +961,18 @@ struct BrowserView: View {
         NavigationStack {
             List {
                 ForEach(model.orderedVideos) { video in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            sourceBadge(video.source, fallback: false)
-                            Text(video.title.isEmpty ? video.fileLabel : video.title)
-                                .font(.subheadline.weight(.medium))
-                                .lineLimit(2)
-                            Spacer(minLength: 4)
-                            probeBadge(video)
-                        }
-                        Text(video.url.absoluteString)
-                            .font(.caption2)
-                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                            .lineLimit(1)
-
-                        HStack(spacing: 8) {
-                            Button {
-                                showFoundSheet = false
-                                play(video)
-                            } label: {
-                                streamActionLabel("Play", icon: "play.fill", filled: true)
+                    foundSheetRow(video)
+                        .swipeActions {
+                            Button(role: .destructive) { model.remove(video) } label: {
+                                Label("Remove", systemImage: "trash")
                             }
-                            .buttonStyle(.plain)
-
-                            Button {
-                                showFoundSheet = false
-                                castOrConnect(video)
-                            } label: {
-                                streamActionLabel(castLabel, filled: false) {
-                                    CastMark(connected: castConnected)
-                                        .frame(width: 18, height: 18)
-                                }
-                            }
-                            .buttonStyle(.plain)
                         }
-                    }
-                    .padding(.vertical, 4)
-                    .swipeActions {
-                        Button(role: .destructive) { model.remove(video) } label: {
-                            Label("Remove", systemImage: "trash")
-                        }
-                    }
                 }
-
             }
-            .navigationTitle("Detected videos")
+            // The page is named once, here, instead of on every row. Each
+            // stream came from this page; repeating its title as a heading for
+            // each one said nothing and cost two lines apiece.
+            .navigationTitle(model.pageTitle.isEmpty ? "Detected videos" : model.pageTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
