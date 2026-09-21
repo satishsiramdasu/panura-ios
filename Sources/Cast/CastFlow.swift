@@ -311,3 +311,17 @@ final class CastFlow: ObservableObject {
         )
     }
 }
+
+extension CastFlow {
+    /// Wraps a detected stream for the queue.
+    ///
+    /// The `MediaItem` is carried whole, headers included, because the TV is
+    /// deliberately not told anything in advance: it is a receiver, and every
+    /// decision about what plays next — the URL, the referer, which user agent
+    /// to claim — is made on this phone at the moment it hands the next one
+    /// over. A queue the TV knew about would be a queue that needed the TV's
+    /// agreement to change.
+    static func item(for media: MediaItem) -> CastQueueItem {
+        CastQueueItem(id: media.id, title: media.title, payload: .stream(media))
+    }
+}

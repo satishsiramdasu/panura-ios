@@ -164,6 +164,11 @@ enum CastTranscoder {
         }
         session.outputURL = destination
         session.outputFileType = .mp4
+        // Puts the index at the front instead of the end. The file is about to
+        // be played over HTTP from this phone, and a player that has to fetch
+        // the tail before it can start is a slower start and one more range
+        // request to get wrong.
+        session.shouldOptimizeForNetworkUse = true
         if !repackageOnly {
             // Tone-maps HDR down to SDR rather than clipping it. Meaningless
             // for a passthrough, and setting it would force a re-encode.

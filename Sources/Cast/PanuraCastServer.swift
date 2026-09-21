@@ -314,13 +314,30 @@ final class PanuraCastServer: NSObject {
         // "bytes=START-" or "bytes=START-END". An open end means "to the end of
         // the file", which is what a player asks for when it starts.
         if let range, range.hasPrefix("bytes=") {
-            let parts = range.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
-            if let first = parts.first, let value = Int64(first) {
+            let spec = range.dropFirst(6).trimmingCharacters(in: .whitespaces)
+            let parts = spec.split(separator: "-", omittingEmptySubsequences: false)
+            let first = parts.first.map(String.init) ?? ""
+            let second = parts.count > 1 ? String(parts[1]) : ""
+
+            if first.isEmpty, let suffix = Int64(second), suffix > 0 {
+                // "bytes=-N" is the LAST N bytes, not the first N. This is how
+                // a player reads the `moov` atom, which QuickTime writes at the
+                // end of the file — and `moov` is the index it seeks with.
+                //
+                // Read as an ordinary range it returned the *start* of the file
+                // under a 200, so the player got bytes it could not parse,
+                // retried, and sat loading for ever. That is the whole of the
+                // "seek backwards and it hangs" bug: seeking is when the index
+                // is needed.
+                start = max(0, total - suffix)
+                end = total - 1
+                status = 206
+            } else if let value = Int64(first) {
                 start = max(0, min(value, total - 1))
                 status = 206
-            }
-            if parts.count > 1, let value = Int64(parts[1]), value >= start {
-                end = min(value, total - 1)
+                if let value = Int64(second), value >= start {
+                    end = min(value, total - 1)
+                }
             }
         }
 

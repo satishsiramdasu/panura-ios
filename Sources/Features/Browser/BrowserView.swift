@@ -24,6 +24,8 @@ struct BrowserView: View {
     /// that asked for it waits here and goes as soon as one is.
     @State private var showCastPicker = false
     @State private var pendingCast: MediaItem?
+    /// A stream found while the TV is already busy, waiting on replace-or-queue.
+    @State private var pendingQueue: MediaItem?
     @State private var showMenu = false
     @ObservedObject private var siteSettings = SiteSettings.shared
     @State private var showAddress = false
@@ -95,6 +97,28 @@ struct BrowserView: View {
         .sheet(isPresented: $showPanuraControls) {
             CastSessionView()
         }
+        .confirmationDialog(
+            "Something is already on the TV",
+            isPresented: pendingQueueBinding,
+            titleVisibility: .visible
+        ) {
+            Button("Play this instead") {
+                if let item = pendingQueue {
+                    CastFlow.shared.replace(with: [CastFlow.item(for: item)])
+                    showPanuraControls = true
+                }
+                pendingQueue = nil
+            }
+            Button("Add to the queue") {
+                if let item = pendingQueue {
+                    CastFlow.shared.enqueue([CastFlow.item(for: item)])
+                }
+                pendingQueue = nil
+            }
+            Button("Cancel", role: .cancel) { pendingQueue = nil }
+        } message: {
+            Text(pendingQueue?.title ?? "")
+        }
         .sheet(isPresented: $showCastPicker, onDismiss: castPendingIfConnected) {
             NavigationStack { CastDevicesView() }
                 .presentationDragIndicator(.visible)
@@ -137,14 +161,20 @@ struct BrowserView: View {
     /// A cast that had to wait for a TV. Sending it on dismissal rather than
     /// making the user find the button again is the whole point of remembering
     /// which video asked.
+    /// A stream found while the TV is busy, waiting on replace-or-queue.
+    private var pendingQueueBinding: Binding<Bool> {
+        Binding(
+            get: { pendingQueue != nil },
+            set: { if !$0 { pendingQueue = nil } }
+        )
+    }
+
     private func castPendingIfConnected() {
         guard let item = pendingCast else { return }
         pendingCast = nil
-        if panuraCast.isTVConnected {
-            panuraCast.cast(item)
+        if panuraCast.isTVConnected || cast.isConnected {
+            CastFlow.shared.replace(with: [CastFlow.item(for: item)])
             showPanuraControls = true
-        } else if cast.isConnected {
-            cast.cast(item)
         }
     }
 
@@ -809,14 +839,19 @@ struct BrowserView: View {
     /// Chromecast is limited to what its receiver accepts.
     private func castOrConnect(_ video: ExtractedVideo) {
         let item = model.playable(video)
-        if panuraCast.isTVConnected {
-            panuraCast.cast(item)
-            showPanuraControls = true
-        } else if cast.isConnected {
-            cast.cast(item)
-        } else {
+        guard panuraCast.isTVConnected || cast.isConnected else {
             pendingCast = item
             showCastPicker = true
+            return
+        }
+        // Something already on the TV is worth a question: a stream found while
+        // another is playing is as often the next thing to watch as it is a
+        // correction.
+        if panuraCast.isCasting || cast.isCasting {
+            pendingQueue = item
+        } else {
+            CastFlow.shared.replace(with: [CastFlow.item(for: item)])
+            showPanuraControls = true
         }
     }
 
