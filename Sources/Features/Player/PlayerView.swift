@@ -471,29 +471,32 @@ struct PlayerView<Model: PlayerEngine>: View {
         .clipShape(Capsule())
     }
 
-    /// Android-style double-tap seek indicator: a D-shaped white wash on the edge
-    /// with animated chevrons and the skip amount below.
+    /// The double-tap seek indicator: chevrons and the amount, on a pill.
+    ///
+    /// It used to be a D-shaped wash covering 42% of the screen, edge to edge
+    /// vertically. That is Android's shape, but Android draws it as a ripple
+    /// that is gone in a few hundred milliseconds; held still it is simply a
+    /// grey slab over half the video, and what it is telling you occupies a
+    /// hundredth of it. The badge says the same thing and leaves the picture
+    /// visible, which is the point of seeking.
     private func skipFlash(_ zone: PlayerZone) -> some View {
         let forward = zone == .right
         return GeometryReader { geo in
-            ZStack {
-                EdgeOvalShape(rightSide: forward).fill(Color.white.opacity(0.2))
-                SkipFlashContent(forward: forward, seconds: abs(flashSeconds))
-            }
-            // Grows out of the edge it belongs to, and only fades on the way
-            // out. Android ripples from the tap; this is the nearest thing
-            // SwiftUI gives for free, and the asymmetry matters — a shape that
-            // shrinks away again draws the eye back to something that is over.
-            .transition(.asymmetric(
-                insertion: .scale(scale: 0.88, anchor: forward ? .trailing : .leading)
-                    .combined(with: .opacity),
-                removal: .opacity
-            ))
-            .frame(width: geo.size.width * 0.42, height: geo.size.height)
-            .position(
-                x: forward ? geo.size.width - geo.size.width * 0.21 : geo.size.width * 0.21,
-                y: geo.size.height / 2
-            )
+            SkipFlashContent(forward: forward, seconds: abs(flashSeconds))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 18))
+                // Grows out of the side it belongs to and only fades on the way
+                // out — a shape that shrinks away again draws the eye back to
+                // something that is already over.
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.86).combined(with: .opacity),
+                    removal: .opacity
+                ))
+                .position(
+                    x: forward ? geo.size.width * 0.76 : geo.size.width * 0.24,
+                    y: geo.size.height / 2
+                )
         }
     }
 
@@ -1030,33 +1033,6 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     private func clamp01(_ v: CGFloat) -> CGFloat { max(0, min(1, v)) }
     private func clamp01f(_ v: Float) -> Float { max(0, min(1, v)) }
-}
-
-/// D-shaped wash on the screen edge for the double-tap seek indicator: flat on
-/// the outer edge, bulging inward. Mirrors Android's Left/RightSideOvalShape.
-private struct EdgeOvalShape: Shape {
-    let rightSide: Bool
-    func path(in rect: CGRect) -> Path {
-        let w = rect.width, h = rect.height
-        var p = Path()
-        if rightSide {
-            p.move(to: CGPoint(x: w, y: h))
-            p.addLine(to: CGPoint(x: w, y: 0))
-            p.addLine(to: CGPoint(x: w * 0.1, y: 0))
-            p.addCurve(to: CGPoint(x: w * 0.1, y: h),
-                       control1: CGPoint(x: -w * 0.1, y: h / 2),
-                       control2: CGPoint(x: -w * 0.1, y: h / 2))
-        } else {
-            p.move(to: CGPoint(x: 0, y: 0))
-            p.addLine(to: CGPoint(x: w * 0.9, y: 0))
-            p.addCurve(to: CGPoint(x: w * 0.9, y: h),
-                       control1: CGPoint(x: w * 1.1, y: h / 2),
-                       control2: CGPoint(x: w * 1.1, y: h / 2))
-            p.addLine(to: CGPoint(x: 0, y: h))
-        }
-        p.closeSubpath()
-        return p
-    }
 }
 
 /// Three chevrons lighting in sequence over the running total.

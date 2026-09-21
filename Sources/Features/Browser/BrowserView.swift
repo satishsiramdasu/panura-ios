@@ -704,12 +704,24 @@ struct BrowserView: View {
                     expandedVideo = open ? nil : video.id
                 }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     sourceBadge(video.source, fallback: false)
-                    Text(video.fileLabel)
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(video.fileLabel)
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        // The facts the choice is made on. They were carried by
+                        // the probe badge alone, which says nothing at all for a
+                        // stream the probe skips — and it skips every stream a
+                        // site rule claimed, because those hosts hand out
+                        // single-use tokens. So the commonest rows were the
+                        // blank ones.
+                        Text(streamMeta(video))
+                            .font(.caption2)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 4)
                     probeBadge(video)
                     Image(systemName: "chevron.down")
@@ -992,6 +1004,30 @@ struct BrowserView: View {
 
     /// What the probe learned, in the one place there is room to spell it out.
     @ViewBuilder
+    /// Resolution, size and kind, in that order, and only what is known.
+    ///
+    /// Kind comes from the probe when it ran and from the manifest rule or the
+    /// URL when it did not, so a row says whether it is adaptive even before
+    /// anything has been fetched — which is the one fact available for free and
+    /// the one that decides whether seeking will work.
+    private func streamMeta(_ video: ExtractedVideo) -> String {
+        var parts: [String] = []
+        if let tag = video.probeResult?.qualityTag { parts.append(tag) }
+        if let size = video.probeResult?.fileSize { parts.append(size) }
+        if let kind = video.probeResult?.hlsType {
+            parts.append(kind)
+        } else {
+            switch (video.contentType ?? video.url.pathExtension).lowercased() {
+            case "hls", "m3u8": parts.append("Adaptive")
+            case "dash", "mpd": parts.append("Adaptive")
+            case "mp4", "m4v", "mov": parts.append("Progressive")
+            case "webm": parts.append("WebM")
+            default: break
+            }
+        }
+        return parts.isEmpty ? video.url.host ?? "Stream" : parts.joined(separator: "  ·  ")
+    }
+
     private func probeBadge(_ video: ExtractedVideo) -> some View {
         switch video.probeState {
         case .pending:
