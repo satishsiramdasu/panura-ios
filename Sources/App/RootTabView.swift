@@ -48,6 +48,7 @@ struct RootTabView: View {
     @State private var showCastControls = false
     /// The report sheet, reachable from the menu rather than only the browser.
     @State private var showReport = false
+    @State private var showFAQ = false
     @ObservedObject private var castFlow = CastFlow.shared
     /// Which Settings screen to land on, when something asked for one.
     @State private var settingsDeepLink: SettingsScreen?
@@ -127,6 +128,7 @@ struct RootTabView: View {
         .sheet(isPresented: $showReport) {
             ReportIssueSheet(pageURL: nil, source: "menu")
         }
+        .sheet(isPresented: $showFAQ) { FAQView() }
         // Starting a cast anywhere in the app raises it, so the wait is never
         // silent — a Dolby Vision clip can take minutes to convert, and without
         // this the phone simply looked like it had stopped responding.
@@ -284,7 +286,7 @@ struct RootTabView: View {
                 icon: "questionmark.circle.fill", label: "Help",
                 detail: "Answers, and how to reach us",
                 tint: .blue
-            ) { settingsDeepLink = .support; select(.settings) },
+            ) { showMenu = false; showFAQ = true },
             AppMenuPanel.Item(
                 icon: "exclamationmark.bubble.fill", label: "Report a problem",
                 detail: "A site that will not play, or anything broken",

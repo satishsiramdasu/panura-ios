@@ -167,6 +167,7 @@ struct AboutView: View {
 /// Support screen — Android's, with the same two ways out plus the report form.
 struct SupportView: View {
     @State private var showReport = false
+    @State private var showFAQ = false
 
     var body: some View {
         List {
@@ -180,13 +181,17 @@ struct SupportView: View {
                 }
                 .buttonStyle(.plain)
 
-                Link(destination: URL(string: "https://panura.app/support")!) {
+                // In the app, not on the website: someone whose casting has
+                // just failed may have no working connection to read a web
+                // page with.
+                Button { showFAQ = true } label: {
                     PreferenceLabel(
                         title: "Help & FAQ",
                         description: "Answers to the things that go wrong most often",
                         icon: "questionmark.circle"
                     )
                 }
+                .buttonStyle(.plain)
                 Link(destination: URL(string: "mailto:strapps@proton.me")!) {
                     PreferenceLabel(
                         title: "Send email",
@@ -212,6 +217,7 @@ struct SupportView: View {
         .navigationTitle("Support")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "settings") }
+        .sheet(isPresented: $showFAQ) { FAQView() }
     }
 }
 
