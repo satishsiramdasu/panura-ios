@@ -126,12 +126,6 @@ struct WebViewContainer: UIViewRepresentable {
             // wrote cookies to disk would be a hole straight through private mode.
             Self.makeConfiguration(handler: coordinator, privateMode: privateMode)
         }
-        coordinator.embeds.log = { [weak model] url, verdict in
-            Task { @MainActor in
-                model?.reportDebug(url: url, verdict: verdict, host: "embed", source: "frame-relay")
-            }
-        }
-
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
@@ -607,15 +601,9 @@ struct WebViewContainer: UIViewRepresentable {
                 }
                 return
             case "debug":
-                // Always collected, shown only when the Diagnostics setting is
-                // on — so turning it on reveals the log already captured rather
-                // than requiring a reload.
-                model.reportDebug(
-                    url: dict["url"] as? String ?? "",
-                    verdict: dict["verdict"] as? String ?? "",
-                    host: dict["host"] as? String ?? "",
-                    source: dict["src"] as? String ?? ""
-                )
+                // The sniffer still announces what it decided; nothing listens
+                // any more. Kept as a case so an announcement is swallowed
+                // rather than falling through to the video handler.
                 return
             default:
                 break // "video"

@@ -7,11 +7,9 @@ struct BrowserPreferencesView: View {
     /// Read by WebViewContainer at web-view creation.
     @AppStorage("ad_block") private var adBlock = true
     // Moved here with the Detection screen they used to live on.
-    @AppStorage("debug_detection") private var debugDetection = false
     @AppStorage("auto_play_click") private var autoPlayClick = true
     @AppStorage("block_page_fullscreen") private var blockPageFullscreen = true
     @AppStorage("block_long_press") private var blockLongPress = true
-    @State private var rulesRefreshed = false
     /// The default for sites with no opinion of their own. The browser's site
     /// panel overrides it per site — see `SiteSettings`.
     @AppStorage("detection_enabled") private var detection = true
@@ -109,26 +107,11 @@ struct BrowserPreferencesView: View {
                         icon: "hand.tap",
                         isOn: $blockLongPress
                     )
-                    PreferenceButton(
-                        title: rulesRefreshed ? "Site rules will refresh" : "Refresh site rules",
-                        description: "Re-download the detection rules. Reopen the Browser tab to apply them.",
-                        icon: rulesRefreshed ? "checkmark" : "arrow.down.circle"
-                    ) {
-                        ManifestStore.clearCache()
-                        rulesRefreshed = true
-                    }
-                    .disabled(rulesRefreshed)
-                    PreferenceToggle(
-                        title: "Diagnostics",
-                        description: "Log every media URL a page requests and why it was kept or filtered",
-                        icon: "ladybug",
-                        isOn: $debugDetection
-                    )
                 }
             } header: {
                 Text("Detection")
             } footer: {
-                Text("The Panura mark in the address bar sets this, and what is hidden, for one site at a time. Rules are fetched from Panura's servers, so a site that stops working can be fixed without an app update.")
+                Text("The Panura mark in the address bar sets this, and what is hidden, for one site at a time.")
             }
 
             Section {

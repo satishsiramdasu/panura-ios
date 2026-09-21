@@ -34,7 +34,6 @@ struct BrowserView: View {
     /// Asked when private browsing is switched OFF with a page still open — the
     /// session is live and is about to start being recorded again.
     @State private var confirmLeavingPrivate = false
-    @AppStorage("debug_detection") private var debugDetection = false
     /// Only read to rebuild the web view when it changes: user scripts are fixed
     /// at creation, so a toggle in Settings means nothing until a new one exists.
     @AppStorage("auto_play_click") private var autoPlayClick = true
@@ -70,9 +69,7 @@ struct BrowserView: View {
         // the app background showing through it is the dark strip along the
         // bar's top edge.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            // With diagnostics on the bar must also open when nothing was
-            // detected — that is precisely the case worth inspecting.
-            if !model.foundVideos.isEmpty || (debugDetection && !model.debugLog.isEmpty) {
+            if !model.foundVideos.isEmpty {
                 foundBar
             }
         }
@@ -638,23 +635,12 @@ struct BrowserView: View {
     @ViewBuilder
     private var foundBar: some View {
         VStack(spacing: 6) {
+            // The bar is only mounted when there is something to speak for, so
+            // there is no other branch to take.
             if let primary {
                 Button { showFoundSheet = true } label: { infoRow(primary) }
                     .buttonStyle(.plain)
                 actionRow(primary)
-            } else {
-                Button { showFoundSheet = true } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "ladybug.fill").font(.system(size: 18))
-                        Text("Sniffer log (\(model.debugLog.count))")
-                            .font(.subheadline.weight(.medium))
-                        Spacer()
-                        Image(systemName: "chevron.up").font(.footnote)
-                    }
-                    .frame(height: 30)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)
@@ -902,38 +888,6 @@ struct BrowserView: View {
                     }
                 }
 
-                if debugDetection {
-                    Section {
-                        ForEach(model.debugLog) { entry in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text("\(entry.source) → \(entry.verdict)")
-                                    .font(.caption.weight(.medium))
-                                    .foregroundStyle(
-                                        entry.verdict.hasPrefix("emitted") ? PanuraTheme.success : PanuraTheme.onSurfaceVariant
-                                    )
-                                Text(entry.host)
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                                Text(entry.url)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(4)
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    } header: {
-                        HStack {
-                            Text("Sniffer log (\(model.debugLog.count))")
-                            Spacer()
-                            Button("Copy") {
-                                UIPasteboard.general.string = model.debugLogText
-                            }
-                            .font(.caption)
-                        }
-                    } footer: {
-                        Text("Every media-shaped URL the page requested and what the sniffer decided. Turn off in Settings.")
-                    }
-                }
             }
             .navigationTitle("Detected videos")
             .navigationBarTitleDisplayMode(.inline)

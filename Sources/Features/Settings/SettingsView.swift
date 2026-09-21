@@ -162,7 +162,7 @@ struct SettingsView: View {
             "gesture_seek", "gesture_brightness", "gesture_volume", "gesture_zoom",
             "gesture_double_tap", "gesture_long_press", "gesture_sensitivity",
             "mark_last_played", "show_extension", "videos_layout", "player_engine_mode",
-            "debug_detection", "auto_play_click", "block_page_fullscreen", "ad_block",
+            "auto_play_click", "block_page_fullscreen", "ad_block",
             "block_long_press",
             "desktop_mode_default", "detection_enabled",
             // Every per-site override too: "back to defaults" that left a site
