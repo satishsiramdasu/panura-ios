@@ -10,7 +10,10 @@ import SwiftUI
 /// the complete truth about where it is — which is what lets the browser send
 /// someone straight to Browser settings from wherever they left it.
 enum SettingsScreen: Hashable {
-    case browser, playback, subtitles, gestures, localVideos, detection, about, support
+    // No `detection`: those settings moved under Web Browser, where the
+    // switch they all depend on already lived. A screen of its own put the
+    // app's most specialised options at the same level as "Playback".
+    case browser, playback, subtitles, gestures, localVideos, about, support
 }
 
 struct SettingsView: View {
@@ -48,7 +51,7 @@ struct SettingsView: View {
                 Section("Settings") {
                     PreferenceLink(
                         title: "Web Browser",
-                        description: "Ad blocker, private browsing, clear data",
+                        description: "Hide distractions, private browsing, finding videos",
                         icon: "globe",
                         value: SettingsScreen.browser
                     )
@@ -79,13 +82,6 @@ struct SettingsView: View {
                         description: "How the Videos tab lists what it finds",
                         icon: "film",
                         value: SettingsScreen.localVideos
-                    )
-
-                    PreferenceLink(
-                        title: "Detection",
-                        description: "Site rules, automatic play, diagnostics",
-                        icon: "wave.3.right",
-                        value: SettingsScreen.detection
                     )
                 }
 
@@ -127,7 +123,6 @@ struct SettingsView: View {
                 case .subtitles: SubtitlePreferencesView()
                 case .gestures: GesturePreferencesView()
                 case .localVideos: LocalVideoPreferencesView()
-                case .detection: DetectionPreferencesView()
                 case .about: AboutView()
                 case .support: SupportView()
                 }
@@ -257,70 +252,3 @@ struct PlaybackPreferencesView: View {
     }
 }
 
-// MARK: - Detection
-
-struct DetectionPreferencesView: View {
-    @AppStorage("debug_detection") private var debugDetection = false
-    @AppStorage("auto_play_click") private var autoPlayClick = true
-    @AppStorage("block_page_fullscreen") private var blockPageFullscreen = true
-    @AppStorage("block_long_press") private var blockLongPress = true
-    @State private var rulesRefreshed = false
-
-    var body: some View {
-        List {
-            Section {
-                PreferenceButton(
-                    title: rulesRefreshed ? "Site rules will refresh" : "Refresh site rules",
-                    description: "Re-download the detection rules. Reopen the Web tab to apply them.",
-                    icon: rulesRefreshed ? "checkmark" : "arrow.down.circle"
-                ) {
-                    ManifestStore.clearCache()
-                    rulesRefreshed = true
-                }
-                .disabled(rulesRefreshed)
-            } header: {
-                Text("Rules")
-            } footer: {
-                Text("Detection rules are fetched from Panura's servers, so a site that stops working can be fixed without an app update.")
-            }
-
-            Section("Behaviour") {
-                PreferenceToggle(
-                    title: "Press play automatically",
-                    description: "Some sites request nothing until their play button is pressed; Panura presses it for them",
-                    icon: "play.square",
-                    isOn: $autoPlayClick
-                )
-                PreferenceToggle(
-                    title: "Keep page videos inline",
-                    description: "Pressing play keeps the video in the page; full screen only opens when you tap it. Reopen the Web tab to apply",
-                    icon: "rectangle.inset.filled",
-                    isOn: $blockPageFullscreen
-                )
-                PreferenceToggle(
-                    title: "Block long-press menu",
-                    description: "No text selection or Copy Link menu when you hold a page. Typing and pasting in a page's own boxes still work.",
-                    icon: "hand.tap",
-                    isOn: $blockLongPress
-                )
-            }
-
-            Section {
-                PreferenceToggle(
-                    title: "Diagnostics",
-                    description: "Log every media URL a page requests and why it was kept or filtered",
-                    icon: "ladybug",
-                    isOn: $debugDetection
-                )
-            } header: {
-                Text("Troubleshooting")
-            } footer: {
-                Text("The log appears under the detected-videos sheet in the browser.")
-            }
-        }
-        .scrollContentBackground(.hidden)
-        .background(PanuraTheme.background)
-        .navigationTitle("Detection")
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}

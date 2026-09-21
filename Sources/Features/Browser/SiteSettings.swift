@@ -26,7 +26,7 @@ final class SiteSettings: ObservableObject {
 
         var title: String {
             switch self {
-            case .adBlock: return "Block ads & trackers"
+            case .adBlock: return "Hide distractions"
             case .detection: return "Find videos"
             case .desktop: return "Desktop site"
             }
@@ -34,7 +34,7 @@ final class SiteSettings: ObservableObject {
 
         var detail: String {
             switch self {
-            case .adBlock: return "Filter lists, applied on reload"
+            case .adBlock: return "Ads, pop-ups and trackers — applied on reload"
             case .detection: return "Watch this site for playable streams"
             case .desktop: return "Ask for the desktop layout"
             }
