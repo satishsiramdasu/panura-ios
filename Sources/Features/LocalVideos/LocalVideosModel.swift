@@ -298,6 +298,36 @@ final class LocalVideosModel: ObservableObject {
         return nil
     }
 
+    /// A thumbnail from an identifier alone.
+    ///
+    /// Watch Later keeps identifiers rather than pictures - a `UIImage` is not
+    /// something to write into UserDefaults, and Photos is the authority on what
+    /// a video looks like anyway. Asked for when the row is drawn, which is also
+    /// the only time the answer is wanted.
+    static func thumbnail(localIdentifier: String, size: CGSize) async -> UIImage? {
+        let found = PHAsset.fetchAssets(withLocalIdentifiers: [localIdentifier], options: nil)
+        guard let asset = found.firstObject else { return nil }
+        let options = PHImageRequestOptions()
+        // A single callback: the default opportunistic delivery calls back twice
+        // and would resume the continuation a second time, which is a crash.
+        options.deliveryMode = .highQualityFormat
+        options.resizeMode = .fast
+        options.isNetworkAccessAllowed = true
+        return await withCheckedContinuation { cont in
+            var resumed = false
+            PHImageManager.default().requestImage(
+                for: asset, targetSize: size,
+                contentMode: .aspectFill, options: options
+            ) { image, info in
+                let degraded = (info?[PHImageResultIsDegradedKey] as? Bool) ?? false
+                if degraded { return }
+                guard !resumed else { return }
+                resumed = true
+                cont.resume(returning: image)
+            }
+        }
+    }
+
     /// Resolves a library video from its identifier alone.
     ///
     /// The cast queue holds identifiers rather than assets, so that it can

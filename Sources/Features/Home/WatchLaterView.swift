@@ -75,12 +75,16 @@ struct WatchLaterView: View {
 
     private func row(_ entry: SiteEntry) -> some View {
         HStack(spacing: 12) {
-            PosterThumb(
-                url: entry.poster.flatMap(URL.init(string:)),
-                alternate: entry.posterAlt.flatMap(URL.init(string:)),
-                fallback: entry.isLocal == true ? "film" : "globe",
-                width: 92, height: 52, corner: 8
-            )
+            if entry.isLocal == true {
+                LibraryThumb(localIdentifier: entry.url, width: 92, height: 52, corner: 8)
+            } else {
+                PosterThumb(
+                    url: entry.poster.flatMap(URL.init(string:)),
+                    alternate: entry.posterAlt.flatMap(URL.init(string:)),
+                    fallback: "globe",
+                    width: 92, height: 52, corner: 8
+                )
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.title)
                     .font(.subheadline.weight(.medium))
@@ -139,5 +143,35 @@ struct WatchLaterView: View {
                 .padding(.horizontal, 40)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// A library video's own frame, fetched from Photos when the row appears.
+///
+/// Nothing about the picture is stored: the entry keeps the identifier, and a
+/// `UIImage` has no business in UserDefaults. Photos is also the only thing that
+/// knows what the video looks like now — it may have been edited since it was
+/// set aside, and an iCloud video may not have been on the phone at all.
+private struct LibraryThumb: View {
+    let localIdentifier: String
+    let width: CGFloat
+    let height: CGFloat
+    let corner: CGFloat
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        PosterThumb(
+            image: image, fallback: "film",
+            width: width, height: height, corner: corner
+        )
+        .task(id: localIdentifier) {
+            guard image == nil else { return }
+            image = await LocalVideosModel.thumbnail(
+                localIdentifier: localIdentifier,
+                // Twice the drawn size, so it is not soft on a 3x screen.
+                size: CGSize(width: width * 3, height: height * 3)
+            )
+        }
     }
 }
