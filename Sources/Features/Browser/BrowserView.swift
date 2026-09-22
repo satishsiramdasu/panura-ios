@@ -840,7 +840,6 @@ struct BrowserView: View {
     /// `fallback` fills the slot when nothing said how a URL was found — the
     /// bar has one glyph there and cannot leave it blank, while a sheet row can
     /// simply not draw a badge, which is what Android does.
-    @ViewBuilder
     /// Everything known about one stream, as badges.
     ///
     /// Android says it this way and it is the right way: four short facts that
@@ -904,6 +903,7 @@ struct BrowserView: View {
         .lineLimit(1)
     }
 
+    @ViewBuilder
     private func sourceBadge(_ source: DetectionSource, fallback: Bool = true) -> some View {
         if source == .unknown {
             if fallback {
