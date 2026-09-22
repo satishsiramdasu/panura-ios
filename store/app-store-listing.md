@@ -219,14 +219,43 @@ to `true`, and make the ATT prompt mandatory. Do not ship ads without all four.
 
 ## Age rating
 
-Answer the questionnaire honestly and expect **the highest tier**: the app
-contains a general-purpose web browser, so "Unrestricted Web Access" is a yes.
-Everything else — violence, sexual content, gambling, contests — is no, since the
-app has no content of its own.
+**Answered 2026-09-22. Apple calculated 16+, accepted without override.**
+
+One Yes in the whole questionnaire: **Unrestricted Web Access**, because the app
+contains a general-purpose web browser. That answer alone sets the rating.
+
+Everything else is None or No, and the reason is the same for all of them: these
+questions ask what the app *contains, shows or provides*, and Panura provides no
+content of its own — no catalogue, no directory, no bundled media.
+
+| Section | Answer |
+|---|---|
+| Parental Controls, Age Assurance | No — site toggles and private browsing are not guardian tools |
+| User-Generated Content, Social Media, Messaging | No — nothing a user makes is distributed to anyone |
+| Social Media Disabled for Under 13 | No — Yes would assert the Declared Age Range API is called, and it is not |
+| Advertising | **No, while `FeatureFlags.adsEnabled` is false.** The SDK is linked but never starts. See the ads section above: this becomes Yes before any build that ships them |
+| Mature themes, medical, sexuality, violence, gambling, contests | None throughout |
+
+It is tempting to hedge on the content screens, because a browser can reach
+anything. Don't. The open web is declared by Unrestricted Web Access — that is
+the mechanism Apple provides for exactly this — and marking a content category
+would claim the app supplies it. Hedging also buys nothing: web access has
+already taken the rating as high as these answers can.
+
+**Do not override to 18+.** The override exists for an app whose EULA sets an
+age floor, and neither document does: `terms-of-use.html` states no minimum age,
+and the privacy policy's Children section says only that the app is not directed
+at children and points parents to Screen Time and Family Link. A rating above
+the calculated one would also make Panura look like it carries adult content of
+its own, which is the opposite of what every other answer establishes. Age
+Suitability URL stays blank.
 
 This is the same position Safari and every third-party browser is in. Do not try
 to argue the browser is incidental; it is the main feature, and understating it
-is a rejection.
+is a rejection. (An earlier draft of this section said to expect "the highest
+tier" — true under the old system, where unrestricted web access forced 17+.
+Apple's revised tiers land it at 16+. The instruction was right; only the number
+moved.)
 
 ## Export compliance
 
