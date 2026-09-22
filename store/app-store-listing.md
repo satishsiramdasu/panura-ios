@@ -217,10 +217,30 @@ change the other.
 Advertising Data, mark Device ID as used for tracking, flip `NSPrivacyTracking`
 to `true`, and make the ATT prompt mandatory. Do not ship ads without all four.
 
-## Availability — the EU is out for 1.0
+## Availability — the EU and mainland China are out for 1.0
 
-**Decided 2026-09-22: ship everywhere except the 27 EU member states, and add
-them once a business is registered.**
+**Decided 2026-09-22: ship everywhere except the 27 EU member states and
+mainland China. The EU comes back once a business is registered; China stays
+out.**
+
+Two different reasons, and only one of them is temporary.
+
+### Mainland China: no ICP filing
+
+Apple requires an Internet Content Provider filing number from China's MIIT for
+an app to be listed in the mainland China App Store. There is no way to defer
+this one the way the EU can be deferred — without the number the app cannot be
+distributed there at all.
+
+Obtaining one needs a mainland Chinese business entity or a local publishing
+partner, which is a larger undertaking than the EU registration and buys a
+market this app has no particular claim on. Not worth it for 1.0, and probably
+not for 1.x.
+
+Hong Kong, Macau and Taiwan are separate storefronts, are unaffected, and stay
+selected.
+
+### The EU: trader details would be published
 
 The Digital Services Act requires Apple to verify *and publicly display* a
 trader's contact details on the product page in EU storefronts: legal entity
@@ -241,8 +261,9 @@ build or version is needed to change it, and the rest of the listing is
 unaffected.
 
 **To do it:** App Store Connect → the app → Pricing and Availability →
-Availability → deselect the 27 EU member states. The UK is not in the EU and
-stays selected. Check Norway, Iceland and Liechtenstein against Apple's own list
+Availability → deselect the 27 EU member states and mainland China. That leaves
+roughly 147 of the account's 175 regions. The UK is not in the EU and stays
+selected. Check Norway, Iceland and Liechtenstein against Apple's own list
 rather than assuming — EEA membership is not EU membership and the two are
 treated differently.
 
