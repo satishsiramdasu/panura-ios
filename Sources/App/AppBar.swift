@@ -8,7 +8,7 @@ import SwiftUI
 /// by how often a place is visited rather than by what it is. The drawer holds
 /// all five, in one list, with room to say what each one is for.
 enum AppDestination: Hashable, CaseIterable {
-    case home, web, videos, stream, settings
+    case home, web, videos, stream, watchLater, settings
 
     var title: String {
         switch self {
@@ -21,6 +21,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .web: return "Browser"
         case .videos: return "Videos"
         case .stream: return "Network Stream"
+        case .watchLater: return "Watch Later"
         case .settings: return "Settings"
         }
     }
@@ -34,6 +35,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .web: return "Find and cast videos on any site"
         case .videos: return "Everything in this phone's library"
         case .stream: return "Play a link straight from its address"
+        case .watchLater: return "Pages and videos you set aside"
         case .settings: return "Playback, browser, subtitles, gestures"
         }
     }
@@ -44,6 +46,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .web: return selected ? "globe.americas.fill" : "globe"
         case .videos: return selected ? "film.fill" : "film"
         case .stream: return "link"
+        case .watchLater: return selected ? "clock.fill" : "clock"
         case .settings: return selected ? "gearshape.fill" : "gearshape"
         }
     }
@@ -56,6 +59,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .web: return PanuraTheme.accent
         case .videos: return .green
         case .stream: return .cyan
+        case .watchLater: return .purple
         case .settings: return .gray
         }
     }

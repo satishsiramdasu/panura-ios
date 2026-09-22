@@ -135,6 +135,13 @@ final class BrowserModel: ObservableObject {
     /// episode.
     var posterURL: URL? { sessionArtwork ?? pagePoster }
 
+    /// What to show if `posterURL` will not load.
+    ///
+    /// Only ever the page's own artwork, and only when something else outranked
+    /// it: if the page poster is already the answer there is nothing to fall
+    /// back to.
+    var posterFallbackURL: URL? { sessionArtwork == nil ? nil : pagePoster }
+
     /// Findings belong to a page — drop them whenever we navigate.
     func clearFindings() {
         foundVideos.removeAll()

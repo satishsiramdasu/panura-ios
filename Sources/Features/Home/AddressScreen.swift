@@ -43,7 +43,6 @@ struct AddressScreen: View {
     @State private var query = ""
     @State private var suggestions: [String] = []
     @State private var section: AddressSection = .mostVisited
-    @State private var confirmClear = false
     @FocusState private var focused: Bool
 
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
@@ -106,16 +105,6 @@ struct AddressScreen: View {
         // Debounced in the fetcher; re-run on each keystroke.
         .task(id: query) {
             suggestions = await SearchSuggestions.fetch(trimmed)
-        }
-        .confirmationDialog(
-            "Clear history?",
-            isPresented: $confirmClear,
-            titleVisibility: .visible
-        ) {
-            Button("Clear", role: .destructive) { store.clearHistory() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("All browsing history will be deleted, and your most-visited websites will be cleared.")
         }
     }
 
@@ -217,7 +206,18 @@ struct AddressScreen: View {
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Button("Clear history") { confirmClear = true }
+                            // On the row it belongs to, not up from the
+                            // bottom of the screen with nothing to say which
+                            // list it was about.
+                            Menu {
+                                Section("History and your most-visited sites are both cleared.") {
+                                    Button(role: .destructive) {
+                                        store.clearHistory()
+                                    } label: { Label("Clear History", systemImage: "trash") }
+                                }
+                            } label: {
+                                Text("Clear history")
+                            }
                                 .font(.caption)
                         }
                         .padding(.horizontal, 16)

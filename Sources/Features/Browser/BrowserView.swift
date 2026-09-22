@@ -193,40 +193,34 @@ struct BrowserView: View {
             glyphLabel: showMenu ? "Close site controls" : "Site controls and browser menu",
             glyphTint: session.privateMode ? PanuraTheme.incognito : nil
         ) {
-            HStack(spacing: 2) {
-                AddressPill(
-                    title: model.pageTitle,
-                    url: model.currentURL?.absoluteString ?? "",
-                    placeholder: "Search or enter website",
-                    // Private browsing colours the whole bar, not just the mark.
-                    // Dropping this was a mistake: the tint is how the session
-                    // announces itself, and one small mark is too quiet for a
-                    // state where nothing is being written down.
-                    background: session.privateMode
-                        ? PanuraTheme.incognito.opacity(0.22)
-                        : PanuraTheme.surfaceVariant,
-                    onTap: { showAddress = true },
-                    // Nothing here now. The bookmark toggle held this cell and is
-                    // in the site panel beside the domain: you bookmark a site once
-                    // ever, and the one cell a pill can spare should belong to
-                    // something done once a visit.
-                    leading: { EmptyView() },
-                    trailing: {
-                        // Back and forward live here now. They were in the options
-                        // panel, which made going back a two-tap affair on the one
-                        // control people reach for most.
-                        HStack(spacing: 0) {
-                            pillNav("chevron.left", "Back", enabled: model.canGoBack) {
-                                model.goBack()
-                            }
-                            pillNav("chevron.right", "Forward", enabled: model.canGoForward) {
-                                model.goForward()
-                            }
-                        }
+            AddressPill(
+                title: model.pageTitle,
+                url: model.currentURL?.absoluteString ?? "",
+                placeholder: "Search or enter website",
+                // Private browsing colours the whole bar, not just the mark.
+                // Dropping this was a mistake: the tint is how the session
+                // announces itself, and one small mark is too quiet for a
+                // state where nothing is being written down.
+                background: session.privateMode
+                    ? PanuraTheme.incognito.opacity(0.22)
+                    : PanuraTheme.surfaceVariant,
+                onTap: { showAddress = true },
+                // Back one side, forward the other, the address between them -
+                // the order they are in. Side by side on the right they were a
+                // pair of chevrons pointing opposite ways with nothing between,
+                // and the left one is pressed many times for every press of the
+                // right.
+                leading: {
+                    pillNav("chevron.left", "Back", enabled: model.canGoBack) {
+                        model.goBack()
                     }
-                )
-                watchLaterButton
-            }
+                },
+                trailing: {
+                    pillNav("chevron.right", "Forward", enabled: model.canGoForward) {
+                        model.goForward()
+                    }
+                }
+            )
         }
         // Anchored to the bar, not to the page.
         //
@@ -248,17 +242,22 @@ struct BrowserView: View {
         }
     }
 
-    /// Sets this page aside, outside the pill rather than in it.
+    /// Sets this page aside.
     ///
-    /// Inside, it would push the title off centre - the pill's text has one
-    /// cell on each side and adding a third makes the middle no longer the
-    /// middle. Out here it sits with the cast mark, which is the other control
-    /// that acts on the page rather than on the address.
+    /// Not in the header. It lived beside the address for a day and was wrong
+    /// there: the header is on every screen and belongs to the app, while
+    /// setting a page aside is something you do at the moment a video is found.
+    /// So it is where the finding is reported - on the found bar beside Play
+    /// and Cast, and in the sheet's header card when several streams mean the
+    /// bar has no room for buttons.
     ///
     /// A clock, because YouTube's Watch Later is a clock and this is the same
     /// promise. The bookmark glyph is taken, by bookmarks.
+    ///
+    /// `boxed` gives it the outline Play and Cast wear, so the three read as
+    /// one row rather than two buttons and a loose glyph.
     @ViewBuilder
-    private var watchLaterButton: some View {
+    private func watchLaterButton(boxed: Bool = false) -> some View {
         let url = model.currentURL?.absoluteString ?? ""
         let saved = store.isWatchLater(url)
         Button {
@@ -277,7 +276,13 @@ struct BrowserView: View {
             Image(systemName: saved ? "clock.fill" : "clock")
                 .font(.system(size: 16))
                 .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
-                .frame(width: 38, height: 38)
+                .frame(width: boxed ? 44 : 38, height: boxed ? 42 : 38)
+                .background {
+                    if boxed {
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(PanuraTheme.outline, lineWidth: 1)
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -989,6 +994,11 @@ struct BrowserView: View {
                 }
             }
             .buttonStyle(.plain)
+
+            // No label. Play and Cast are what the bar is for and have earned
+            // their words; this one is a third option on a row that is already
+            // two buttons wide on a 375pt phone.
+            watchLaterButton(boxed: true)
         }
     }
 
@@ -1082,7 +1092,10 @@ struct BrowserView: View {
             } header: {
                 sheetHeader
                     .textCase(nil)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
+                    // Enough to sit clear of the sheet's grabber, and no more.
+                    // Two grouped sections were far too much and 4 points was
+                    // too little - the card looked stuck to the top edge.
+                    .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 10, trailing: 16))
             }
         }
         .listStyle(.insetGrouped)
@@ -1104,8 +1117,8 @@ struct BrowserView: View {
             // was listed — and every page would then have a header of a
             // different height.
             PosterThumb(
-                url: model.posterURL, fallback: "film",
-                width: 104, height: 60, corner: 10
+                url: model.posterURL, alternate: model.posterFallbackURL,
+                fallback: "film", width: 104, height: 60, corner: 10
             )
 
             VStack(alignment: .leading, spacing: 3) {
@@ -1121,9 +1134,9 @@ struct BrowserView: View {
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
             Spacer(minLength: 0)
-            // The same clock as the address bar, because this sheet covers it.
-            // Several streams on one page are still one page to come back to.
-            watchLaterButton
+            // Several streams on one page are still one page to come back to,
+            // and the found bar has no buttons when it is listing a count.
+            watchLaterButton()
         }
         .padding(10)
         .background(

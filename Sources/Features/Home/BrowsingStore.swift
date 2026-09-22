@@ -42,6 +42,10 @@ struct SiteEntry: Codable, Identifiable, Hashable {
     /// property existed; a non-optional with a default would throw on all of
     /// them and empty every list on first launch after the update.
     var poster: String?
+    /// A video in this phone's library rather than a page on the web, in which
+    /// case `url` is the Photos local identifier. Optional for the same reason
+    /// `poster` is: entries written before this existed must still decode.
+    var isLocal: Bool?
 
     var id: String { url }
 
@@ -291,11 +295,21 @@ final class BrowsingStore: ObservableObject {
 
     /// Newest first: this is a queue of intentions, and the one just added is
     /// the one being thought about.
-    func addWatchLater(url: String, title: String, poster: String? = nil) {
+    func addWatchLater(
+        url: String,
+        title: String,
+        poster: String? = nil,
+        isLocal: Bool = false
+    ) {
         guard !url.isEmpty else { return }
         watchLater.removeAll { $0.url == url }
         watchLater.insert(
-            SiteEntry(url: url, title: title.isEmpty ? url : title, poster: poster),
+            SiteEntry(
+                url: url,
+                title: title.isEmpty ? url : title,
+                poster: poster,
+                isLocal: isLocal ? true : nil
+            ),
             at: 0
         )
         persistWatchLater()

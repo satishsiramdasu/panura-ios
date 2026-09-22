@@ -387,6 +387,12 @@ struct RootTabView: View {
                 )
             }
             layer(.videos) { LocalVideosView() }
+            layer(.watchLater) {
+                WatchLaterView(onOpenBrowser: { address in
+                    pendingAddress = address
+                    select(.web)
+                })
+            }
             layer(.stream) { StreamView() }
         }
     }

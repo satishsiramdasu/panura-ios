@@ -13,16 +13,15 @@ struct HomeView: View {
     @ObservedObject private var session = BrowserSession.shared
 
     @State private var showAddress = false
-    @State private var showWatchLater = false
     @State private var showBookmarksSheet = false
     @State private var editingBookmark: SiteEntry?
-    @State private var confirmClearHistory = false
+
     @State private var showReport = false
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
     /// The card a Remove was asked for — held until it is confirmed.
     @State private var pendingRemove: ResumeEntry?
-    @State private var confirmClearWatching = false
+
     /// Said once, when a card turns out to be dead.
     @State private var resumeToast: String?
 
@@ -76,7 +75,6 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
-        .sheet(isPresented: $showWatchLater) { watchLaterSheet }
         .sheet(item: $editingBookmark) { BookmarkEditor(entry: $0) }
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
         .confirmationDialog(
@@ -94,26 +92,6 @@ struct HomeView: View {
             Button("Cancel", role: .cancel) { pendingRemove = nil }
         } message: {
             Text(pendingRemove.map { "\"\($0.title)\" will stop showing here." } ?? "")
-        }
-        .confirmationDialog(
-            "Clear Continue Watching?",
-            isPresented: $confirmClearWatching,
-            titleVisibility: .visible
-        ) {
-            Button("Clear all", role: .destructive) { store.clearWatching() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Removes all \(store.continueWatching.count) items. The videos stay — only the resume points go.")
-        }
-        .confirmationDialog(
-            "Clear browsing history?",
-            isPresented: $confirmClearHistory,
-            titleVisibility: .visible
-        ) {
-            Button("Clear history", role: .destructive) { store.clearHistory() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Most Visited and recent pages are removed. Bookmarks and Continue Watching are kept.")
         }
     }
 
@@ -149,9 +127,7 @@ struct HomeView: View {
                 sectionCard(.web, title: "Web\nBrowser")
                 sectionCard(.videos, title: "Phone\nVideos")
                 sectionCard(.stream, title: "Network\nStream")
-                card(title: "Watch\nLater", icon: "clock", tint: .purple) {
-                    showWatchLater = true
-                }
+                sectionCard(.watchLater, title: "Watch\nLater")
             }
             .padding(.horizontal, 16)
         }
@@ -216,7 +192,54 @@ struct HomeView: View {
             // it, and still on the drawer for anyone who looks there first.
             optionTile("Settings", systemImage: "gearshape") { onOpenSection(.settings) }
             optionTile("Report Issue", systemImage: "ladybug") { showReport = true }
-            optionTile("Clear History", systemImage: "trash") { confirmClearHistory = true }
+            // A menu rather than a dialog. A confirmation dialog on iOS comes
+            // up from the bottom of the screen, a long way from the tile that
+            // raised it and carrying no trace of which one that was; a menu
+            // opens on the button, so the question stays attached to the thing
+            // being asked about.
+            optionMenu("Clear History", systemImage: "trash") {
+                Section("Most Visited and recent pages go. Bookmarks and Continue Watching stay.") {
+                    Button(role: .destructive) {
+                        store.clearHistory()
+                    } label: { Label("Clear History", systemImage: "trash") }
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    /// The same tile, opening a menu instead of running an action.
+    private func optionMenu<Items: View>(
+        _ title: String,
+        systemImage: String,
+        @ViewBuilder items: () -> Items
+    ) -> some View {
+        Menu {
+            items()
+        } label: {
+            optionTileLabel(title, systemImage: systemImage)
+        }
+    }
+
+    /// The same header, whose action button opens a menu.
+    private func sectionHeaderMenu<Items: View>(
+        _ title: String,
+        actionLabel: String,
+        actionIcon: String,
+        @ViewBuilder items: () -> Items
+    ) -> some View {
+        HStack(spacing: 10) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Spacer()
+            Menu {
+                items()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: actionIcon).font(.system(size: 11))
+                    Text(actionLabel).font(.caption)
+                }
+                .foregroundStyle(PanuraTheme.accent)
+            }
         }
         .padding(.horizontal, 16)
     }
@@ -227,21 +250,27 @@ struct HomeView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            VStack(spacing: 6) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18))
-                    .foregroundStyle(PanuraTheme.accent)
-                Text(title)
-                    .font(.caption2)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.primary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
+            optionTileLabel(title, systemImage: systemImage)
         }
         .buttonStyle(.plain)
+    }
+
+    /// The drawing, shared by the button form and the menu form.
+    private func optionTileLabel(_ title: String, systemImage: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18))
+                .foregroundStyle(PanuraTheme.accent)
+            Text(title)
+                .font(.caption2)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
+        .contentShape(Rectangle())
     }
 
     // MARK: header — address pill, same shape as the browser's top bar
@@ -342,83 +371,6 @@ struct HomeView: View {
             .foregroundStyle(PanuraTheme.accent)
     }
 
-    // MARK: watch later
-
-    /// The pages set aside, newest first.
-    ///
-    /// A row opens the page in the browser rather than playing anything. What
-    /// was saved is the page, not the stream - stream URLs are signed and die
-    /// within hours - so watching it again means detecting it again, which is
-    /// what opening the page does.
-    private var watchLaterSheet: some View {
-        NavigationStack {
-            Group {
-                if store.watchLater.isEmpty {
-                    VStack(spacing: 10) {
-                        Image(systemName: "clock")
-                            .font(.system(size: 34))
-                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        Text("Nothing saved yet")
-                            .font(.subheadline.weight(.semibold))
-                        Text("Tap the clock beside the address bar to set a page aside for later.")
-                            .font(.caption)
-                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    List {
-                        ForEach(store.watchLater) { entry in
-                            Button {
-                                showWatchLater = false
-                                onOpenBrowser(entry.url)
-                            } label: {
-                                HStack(spacing: 12) {
-                                    PosterThumb(
-                                        url: entry.poster.flatMap(URL.init(string:)),
-                                        fallback: "film",
-                                        width: 88, height: 50, corner: 8
-                                    )
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(entry.title)
-                                            .font(.subheadline.weight(.medium))
-                                            .foregroundStyle(.primary)
-                                            .lineLimit(2)
-                                        Text(entry.host)
-                                            .font(.caption2)
-                                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer(minLength: 0)
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .onDelete { offsets in
-                            // By URL, not by index: the store filters on it,
-                            // and removing one row would shift every index
-                            // after it.
-                            for url in offsets.map({ store.watchLater[$0].url }) {
-                                store.removeWatchLater(url: url)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                }
-            }
-            .background(PanuraTheme.background)
-            .navigationTitle("Watch Later")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { showWatchLater = false } label: { Image(systemName: "xmark") }
-                }
-            }
-        }
-    }
-
     // MARK: bookmarks
 
     private var bookmarksSection: some View {
@@ -454,11 +406,15 @@ struct HomeView: View {
 
     private var continueWatchingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader(
-                "Continue Watching",
-                actionLabel: "Clear all",
-                actionIcon: "trash"
-            ) { confirmClearWatching = true }
+            sectionHeaderMenu("Continue Watching", actionLabel: "Clear all", actionIcon: "trash") {
+                Section("The videos stay. Only the resume points go.") {
+                    Button(role: .destructive) {
+                        store.clearWatching()
+                    } label: {
+                        Label("Clear \(store.continueWatching.count) items", systemImage: "trash")
+                    }
+                }
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(store.continueWatching) { entry in

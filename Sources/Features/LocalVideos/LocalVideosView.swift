@@ -231,6 +231,18 @@ struct LocalVideosView: View {
             } label: {
                 Label("Select", systemImage: "checkmark.circle")
             }
+            // The identifier, not a file path: Photos hands out paths that
+            // stop working, and an iCloud video may have no local file at all
+            // until the moment it is played.
+            Button {
+                BrowsingStore.shared.addWatchLater(
+                    url: item.id,
+                    title: item.title,
+                    isLocal: true
+                )
+            } label: {
+                Label("Watch Later", systemImage: "clock")
+            }
             Button { infoItem = item } label: {
                 Label("Info", systemImage: "info.circle")
             }
