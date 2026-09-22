@@ -265,10 +265,16 @@ struct BrowserView: View {
                 store.removeWatchLater(url: url)
                 flash("Removed from Watch Later")
             } else {
+                // Both pictures, not the winner. The winner is whichever
+                // the page ranked first, and on a page that names two the
+                // first is sometimes the one that does not resolve — which is
+                // exactly why the card beside this button asks twice. Saving
+                // only the winner saved the broken one.
                 store.addWatchLater(
                     url: url,
                     title: model.pageTitle.isEmpty ? (model.currentURL?.host ?? url) : model.pageTitle,
-                    poster: model.posterURL?.absoluteString
+                    poster: model.posterURL?.absoluteString,
+                    posterAlt: model.posterFallbackURL?.absoluteString
                 )
                 flash("Saved to Watch Later")
             }
@@ -1092,10 +1098,9 @@ struct BrowserView: View {
             } header: {
                 sheetHeader
                     .textCase(nil)
-                    // Enough to sit clear of the sheet's grabber, and no more.
-                    // Two grouped sections were far too much and 4 points was
-                    // too little - the card looked stuck to the top edge.
-                    .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 10, trailing: 16))
+                    // Clear of the sheet's grabber, which sits in the same
+                    // 20 points the card would otherwise start in.
+                    .listRowInsets(EdgeInsets(top: 22, leading: 16, bottom: 10, trailing: 16))
             }
         }
         .listStyle(.insetGrouped)

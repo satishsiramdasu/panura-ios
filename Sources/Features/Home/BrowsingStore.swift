@@ -42,6 +42,11 @@ struct SiteEntry: Codable, Identifiable, Hashable {
     /// property existed; a non-optional with a default would throw on all of
     /// them and empty every list on first launch after the update.
     var poster: String?
+    /// The second answer, for a page that gave two and whose first one does not
+    /// load. Saved alongside rather than resolved at save time: which of the
+    /// two works is something only a fetch can decide, and the entry is written
+    /// from a tap that must not wait on the network.
+    var posterAlt: String?
     /// A video in this phone's library rather than a page on the web, in which
     /// case `url` is the Photos local identifier. Optional for the same reason
     /// `poster` is: entries written before this existed must still decode.
@@ -299,6 +304,7 @@ final class BrowsingStore: ObservableObject {
         url: String,
         title: String,
         poster: String? = nil,
+        posterAlt: String? = nil,
         isLocal: Bool = false
     ) {
         guard !url.isEmpty else { return }
@@ -308,6 +314,7 @@ final class BrowsingStore: ObservableObject {
                 url: url,
                 title: title.isEmpty ? url : title,
                 poster: poster,
+                posterAlt: posterAlt,
                 isLocal: isLocal ? true : nil
             ),
             at: 0

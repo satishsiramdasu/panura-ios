@@ -77,6 +77,7 @@ struct WatchLaterView: View {
         HStack(spacing: 12) {
             PosterThumb(
                 url: entry.poster.flatMap(URL.init(string:)),
+                alternate: entry.posterAlt.flatMap(URL.init(string:)),
                 fallback: entry.isLocal == true ? "film" : "globe",
                 width: 92, height: 52, corner: 8
             )
