@@ -86,8 +86,6 @@ struct CastMark: View {
 struct CastToolbarButton: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
-    @ObservedObject private var picker = CastPicker.shared
-    @Environment(\.destinationIsActive) private var destinationIsActive
     @State private var showControls = false
 
     private var connected: Bool { cast.isConnected || panura.isTVConnected }
@@ -106,17 +104,6 @@ struct CastToolbarButton: View {
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
         }
         .accessibilityLabel(connected ? "Playing on TV — open controls" : "Play on TV")
-        // The panel hangs off this mark, on whichever screen is showing. Every
-        // destination is composed at once, so the copies on the four hidden
-        // ones must not present anything — hence the environment flag.
-        .panelPopover(
-            isPresented: Binding(
-                get: { destinationIsActive && picker.isShowing },
-                set: { if !$0 { picker.close() } }
-            )
-        ) {
-            CastDevicesView().environmentObject(CastManager.shared)
-        }
         .sheet(isPresented: $showControls) {
             CastSessionView()
         }
@@ -513,12 +500,30 @@ final class CastPicker: ObservableObject {
     @Published var showControls = false
     private init() {}
 
-    func open() { isShowing = true }
-    func close() { isShowing = false }
+    func open() { withAnimation(PanelMetrics.motion) { isShowing = true } }
+    func close() { withAnimation(PanelMetrics.motion) { isShowing = false } }
 
     func openControls() {
         isShowing = false
         showControls = true
+    }
+}
+
+/// The cast panel, hanging from the mark that opens it.
+///
+/// Drawn at the root rather than by each screen, because the mark is in every
+/// header and the panel has to cover whatever is under it. `PanelScaffold` owns
+/// the geometry — below the bar, tight to the right edge, arrow under the mark.
+struct CastPanelOverlay: View {
+    @ObservedObject private var picker = CastPicker.shared
+
+    var body: some View {
+        if picker.isShowing {
+            PanelScaffold(side: .trailing, onDismiss: { picker.close() }) {
+                CastDevicesView().environmentObject(CastManager.shared)
+            }
+            .zIndex(50)
+        }
     }
 }
 

@@ -132,6 +132,15 @@ struct RootTabView: View {
     /// Everything that is not the drawer: the destination you are on, and the
     /// strip naming the television when there is one.
     private var shell: some View {
+        ZStack {
+            content
+            // Above every screen, because the mark that opens it is in every
+            // header and the panel has to cover what it is about.
+            CastPanelOverlay()
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             destinations
 

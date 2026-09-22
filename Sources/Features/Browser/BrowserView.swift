@@ -64,6 +64,10 @@ struct BrowserView: View {
                     .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)")
             }
 
+            if showMenu {
+                PanelScaffold(side: .leading, onDismiss: closeMenu) { panelContent }
+            }
+
         }
         // spacing 0: the default leaves a gap between the page and the bar, and
         // the app background showing through it is the dark strip along the
@@ -214,15 +218,11 @@ struct BrowserView: View {
     /// is allowed to do has no other way in.
     private var header: some View {
         PanuraHeader(
-            onTapGlyph: { showMenu.toggle() },
+            onTapGlyph: { withAnimation(PanelMetrics.motion) { showMenu.toggle() } },
             glyphActive: showMenu,
             glyphMarked: siteLowered,
             glyphLabel: showMenu ? "Close site controls" : "Site controls and browser menu",
-            glyphTint: session.privateMode ? PanuraTheme.incognito : nil,
-            glyphPanel: AnyView(panelContent),
-            glyphPanelShown: $showMenu,
-            // Private browsing repaints the panel, as it repaints the mark.
-            glyphPanelTint: session.privateMode ? PanuraTheme.incognitoSurfaceHigh : nil
+            glyphTint: session.privateMode ? PanuraTheme.incognito : nil
         ) {
             AddressPill(
                 title: model.pageTitle,
@@ -319,18 +319,20 @@ struct BrowserView: View {
 
     // MARK: options panel
 
-    /// The panel that hangs off the Panura mark.
+    private func closeMenu() {
+        withAnimation(PanelMetrics.motion) { showMenu = false }
+    }
+
+    /// The panel that hangs off the Panura mark, pointing back at it.
     ///
-    /// It was a hand-built overlay: a scrim of our own, a corner shape of our
-    /// own, a transition of our own, and a clear strip over the header so the
-    /// address bar underneath could not be pressed while it was open. All of
-    /// that is what a popover is, and a popover also grows out of the mark and
-    /// points back at it — which is what the confirmation dialogs elsewhere in
-    /// the app do, and what this should have been doing all along. So this is
-    /// only the content now; `panelPopover` presents it.
+    /// It was a `.popover` for one round. That is the right idea — a panel
+    /// belonging to a button, with an arrow saying so — and the wrong mechanism
+    /// on a phone: the placement is UIKit's, and UIKit drew this one straight
+    /// over the address bar it was supposed to hang under. `PanelScaffold` puts
+    /// it where it belongs, with the arrow the popover was wanted for.
     ///
-    /// No background of its own either. The system's is lighter than the
-    /// header, which is what separates the two without a shadow.
+    /// No background of its own: the scaffold's is a step lighter than the
+    /// header, which is what separates the two without a line between them.
     private var panelContent: some View {
         VStack(spacing: 0) {
             domainRow
@@ -691,34 +693,34 @@ struct BrowserView: View {
                     expandedVideo = open ? nil : video.id
                 }
             } label: {
-                HStack(spacing: 8) {
-                    // The page's own artwork. Every stream on a page shares it —
-                    // it describes the page, not the variant — but it is the
-                    // picture the person was just looking at, which is what
-                    // makes the sheet recognisably about this video.
-                    PosterThumb(
-                        url: model.posterURL, fallback: "film",
-                        width: 50, height: 30
-                    )
-                    sourceBadge(video.source, fallback: false)
-                    VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 10) {
+                    // A glyph, not a picture. Every stream on a page shares the
+                    // page's poster — it describes the page, not the variant —
+                    // so a column of identical thumbnails told the rows apart
+                    // not at all while taking the width that the facts need.
+                    // The poster is in the header instead, said once.
+                    Image(systemName: "film.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(PanuraTheme.accent)
+                        .frame(width: 34, height: 34)
+                        .background(
+                            PanuraTheme.surfaceVariant,
+                            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        )
+
+                    VStack(alignment: .leading, spacing: 5) {
                         Text(video.fileLabel)
                             .font(.subheadline.weight(.medium))
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        // The facts the choice is made on. They were carried by
-                        // the probe badge alone, which says nothing at all for a
-                        // stream the probe skips — and it skips every stream a
-                        // site rule claimed, because those hosts hand out
-                        // single-use tokens. So the commonest rows were the
-                        // blank ones.
-                        Text(streamMeta(video))
-                            .font(.caption2)
-                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                            .lineLimit(1)
+                        // The facts the choice is made on, each one its own
+                        // badge: how it was found, how big, how good, and how it
+                        // is delivered. They were a run-on caption before, where
+                        // the eye has to parse a sentence to compare two rows.
+                        streamBadges(video)
                     }
+
                     Spacer(minLength: 4)
-                    probeBadge(video)
                     Image(systemName: "chevron.down")
                         .font(.caption2)
                         .rotationEffect(.degrees(open ? 180 : 0))
@@ -839,6 +841,69 @@ struct BrowserView: View {
     /// bar has one glyph there and cannot leave it blank, while a sheet row can
     /// simply not draw a badge, which is what Android does.
     @ViewBuilder
+    /// Everything known about one stream, as badges.
+    ///
+    /// Android says it this way and it is the right way: four short facts that
+    /// can be compared down a column at a glance, rather than a sentence per
+    /// row that has to be read. What is missing is simply absent — a probe that
+    /// was skipped says nothing rather than saying "unknown".
+    @ViewBuilder
+    private func streamBadges(_ video: ExtractedVideo) -> some View {
+        HStack(spacing: 5) {
+            if video.source != .unknown {
+                badge(video.source.label, systemImage: video.source.icon)
+            }
+            if let tag = video.probeResult?.qualityTag {
+                badge(tag, tint: PanuraTheme.accent)
+            }
+            if let size = video.probeResult?.fileSize {
+                badge(size, tint: PanuraTheme.tertiary)
+            }
+            if let kind = deliveryLabel(video) {
+                badge(kind)
+            }
+            switch video.probeState {
+            case .pending:
+                badge("Checking")
+            case .inactive:
+                badge("Dead", tint: PanuraTheme.error)
+            default:
+                EmptyView()
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    /// Adaptive or progressive — the one fact that decides whether a quality
+    /// can be chosen at all.
+    private func deliveryLabel(_ video: ExtractedVideo) -> String? {
+        if let kind = video.probeResult?.hlsType { return kind }
+        switch (video.contentType ?? video.url.pathExtension).lowercased() {
+        case "hls", "m3u8", "dash", "mpd": return "Adaptive"
+        case "mp4", "m4v", "mov": return "Progressive"
+        case "webm": return "WebM"
+        default: return nil
+        }
+    }
+
+    private func badge(
+        _ text: String,
+        systemImage: String? = nil,
+        tint: Color = PanuraTheme.onSurfaceVariant
+    ) -> some View {
+        HStack(spacing: 3) {
+            if let systemImage {
+                Image(systemName: systemImage).font(.system(size: 9, weight: .semibold))
+            }
+            Text(text).font(.caption2.weight(.medium))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(tint.opacity(0.16), in: Capsule())
+        .lineLimit(1)
+    }
+
     private func sourceBadge(_ source: DetectionSource, fallback: Bool = true) -> some View {
         if source == .unknown {
             if fallback {
@@ -966,8 +1031,15 @@ struct BrowserView: View {
     }
 
     private var foundSheet: some View {
-        NavigationStack {
-            List {
+        List {
+            Section {
+                sheetHeader
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
+            Section {
                 ForEach(model.orderedVideos) { video in
                     foundSheetRow(video)
                         .swipeActions {
@@ -977,24 +1049,43 @@ struct BrowserView: View {
                         }
                 }
             }
-            // The page is named once, here, instead of on every row. Each
-            // stream came from this page; repeating its title as a heading for
-            // each one said nothing and cost two lines apiece.
-            .navigationTitle(model.pageTitle.isEmpty ? "Detected videos" : model.pageTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        model.refreshProbes()
-                    } label: { Image(systemName: "arrow.clockwise") }
-                        .disabled(model.foundVideos.isEmpty)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { showFoundSheet = false }
-                }
+        }
+        .listStyle(.insetGrouped)
+        .presentationDetents([.medium, .large])
+    }
+
+    /// What this page is, as a picture and a name.
+    ///
+    /// It was a navigation bar with the page title squeezed into one inline
+    /// line, a reload button and a Done button. None of the three earned its
+    /// place: a sheet is dismissed by pulling it down, the probes refresh
+    /// themselves, and a title that has to fit between two buttons cannot say
+    /// what an hour-long film is called. The poster does more than all of it.
+    private var sheetHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if model.posterURL != nil {
+                PosterThumb(
+                    url: model.posterURL, fallback: "film",
+                    width: PanelMetrics.posterWidth,
+                    height: PanelMetrics.posterWidth * 9 / 16,
+                    corner: 14
+                )
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.pageTitle.isEmpty ? "Detected videos" : model.pageTitle)
+                    .font(.headline)
+                    .lineLimit(2)
+                Text(
+                    model.foundVideos.count == 1
+                        ? "1 video found"
+                        : "\(model.foundVideos.count) videos found"
+                )
+                .font(.caption)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
         }
-        .presentationDetents([.medium, .large])
     }
 
     /// Resolution, size and kind, in that order, and only what is known.
