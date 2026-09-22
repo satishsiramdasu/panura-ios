@@ -217,6 +217,44 @@ change the other.
 Advertising Data, mark Device ID as used for tracking, flip `NSPrivacyTracking`
 to `true`, and make the ATT prompt mandatory. Do not ship ads without all four.
 
+## Availability — the EU is out for 1.0
+
+**Decided 2026-09-22: ship everywhere except the 27 EU member states, and add
+them once a business is registered.**
+
+The Digital Services Act requires Apple to verify *and publicly display* a
+trader's contact details on the product page in EU storefronts: legal entity
+name, address, phone and email, visible to anyone with no sign-in, on both the
+App Store app and the indexable `apps.apple.com` pages. The developer account is
+an individual registered at a home address, so declaring trader today would put
+that address on a public, searchable page for as long as the app is listed in
+the EU.
+
+The identification documents and payment details Apple collects are *not*
+displayed — only the four fields above. That distinction is the whole of the
+decision: the problem is not that Apple holds the address, it is that the store
+shows it.
+
+Not shipping to the EU removes the requirement rather than answering it. Nothing
+else is affected: availability is per-region and editable at any time, no new
+build or version is needed to change it, and the rest of the listing is
+unaffected.
+
+**To do it:** App Store Connect → the app → Pricing and Availability →
+Availability → deselect the 27 EU member states. The UK is not in the EU and
+stays selected. Check Norway, Iceland and Liechtenstein against Apple's own list
+rather than assuming — EEA membership is not EU membership and the two are
+treated differently.
+
+**To undo it later:** register the business, complete the DSA trader declaration
+with the business address, then re-select the regions. The trader verification
+has to be finished first, or the regions cannot be added back.
+
+⚠️ Check before the first external TestFlight round whether any tester is in the
+EU. Trader requirements have been extended in ways that reach beyond the public
+store, and an EU tester may be blocked by the same declaration this decision
+defers.
+
 ## Age rating
 
 **Answered 2026-09-22. Apple calculated 16+, accepted without override.**
