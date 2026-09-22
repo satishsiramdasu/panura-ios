@@ -64,7 +64,6 @@ struct BrowserView: View {
                     .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)")
             }
 
-            if showMenu { menuPanel }
         }
         // spacing 0: the default leaves a gap between the page and the bar, and
         // the app background showing through it is the dark strip along the
@@ -215,11 +214,15 @@ struct BrowserView: View {
     /// is allowed to do has no other way in.
     private var header: some View {
         PanuraHeader(
-            onTapGlyph: { withAnimation(.easeOut(duration: 0.18)) { showMenu.toggle() } },
+            onTapGlyph: { showMenu.toggle() },
             glyphActive: showMenu,
             glyphMarked: siteLowered,
             glyphLabel: showMenu ? "Close site controls" : "Site controls and browser menu",
-            glyphTint: session.privateMode ? PanuraTheme.incognito : nil
+            glyphTint: session.privateMode ? PanuraTheme.incognito : nil,
+            glyphPanel: AnyView(panelContent),
+            glyphPanelShown: $showMenu,
+            // Private browsing repaints the panel, as it repaints the mark.
+            glyphPanelTint: session.privateMode ? PanuraTheme.incognitoSurfaceHigh : nil
         ) {
             AddressPill(
                 title: model.pageTitle,
@@ -316,55 +319,26 @@ struct BrowserView: View {
 
     // MARK: options panel
 
-    /// Hangs from the mark that opens it: square where it meets the bar,
-    /// rounded where it ends, and about three quarters of the width rather
-    /// than all of it — a panel that spans the screen reads as a new screen,
-    /// where this is a thing attached to one button.
+    /// The panel that hangs off the Panura mark.
     ///
-    /// The scrim starts BELOW the header, because the mark is also the close.
-    /// The header is not left live, though: it keeps its colour, but every
-    /// control in it — the cast mark, the address, back and forward — closes
-    /// the panel instead of firing, because a panel is a question and answering
-    /// something else while it is open is never what was meant.
-    private var menuPanel: some View {
+    /// It was a hand-built overlay: a scrim of our own, a corner shape of our
+    /// own, a transition of our own, and a clear strip over the header so the
+    /// address bar underneath could not be pressed while it was open. All of
+    /// that is what a popover is, and a popover also grows out of the mark and
+    /// points back at it — which is what the confirmation dialogs elsewhere in
+    /// the app do, and what this should have been doing all along. So this is
+    /// only the content now; `panelPopover` presents it.
+    ///
+    /// No background of its own either. The system's is lighter than the
+    /// header, which is what separates the two without a shadow.
+    private var panelContent: some View {
         VStack(spacing: 0) {
-            // Clear rather than dimmed, and tappable rather than inert: dimming
-            // the bar would cut the panel loose from the mark it hangs off.
-            Color.black.opacity(0.001)
-                .frame(height: PanuraHeader<AnyView>.height)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { showMenu = false } }
-
-            ZStack(alignment: .topLeading) {
-                Color.black.opacity(0.32)
-                    .ignoresSafeArea(edges: .bottom)
-                    .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { showMenu = false } }
-
-                GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        domainRow
-                        actionRow
-                        advancedSection
-                        globalControlsRow
-                    }
-                    // Capped as well as proportional: three quarters of an iPad
-                    // is a panel wide enough to lose the mark it belongs to.
-                    .frame(width: min(geo.size.width * 0.78, 400))
-                    .background(
-                        PanelShape(corners: [.topRight, .bottomLeft, .bottomRight], radius: 20)
-                            .fill(panelSurface)
-                    )
-                    .shadow(color: .black.opacity(0.35), radius: 22, y: 10)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
+            domainRow
+            actionRow
+            advancedSection
+            Divider().padding(.horizontal, 16)
+            globalControlsRow
         }
-    }
-
-    /// Private browsing repaints this too. The mark says a session is private;
-    /// anything opening from the mark should agree with it.
-    private var panelSurface: Color {
-        session.privateMode ? PanuraTheme.incognitoSurfaceHigh : PanuraTheme.surfaceContainer
     }
 
     /// The site the panel is about, given room to be read.
@@ -547,7 +521,6 @@ struct BrowserView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(PanuraTheme.surfaceVariant.opacity(session.privateMode ? 0.25 : 0.5))
     }
 
     /// Back and forward, in the pill's last cell — the slot the options menu
@@ -1064,30 +1037,5 @@ struct BrowserView: View {
         case .skipped:
             Text("Page").font(.caption2).foregroundStyle(.secondary)
         }
-    }
-}
-
-/// A panel that hangs from the header, rounded everywhere except the one corner
-/// tucked into the top of the screen.
-///
-/// Three rounded corners, not two. Squaring the top edge is what makes the panel
-/// read as attached to the bar, but squaring the far top corner as well left it
-/// looking like a page that had failed to finish drawing — the corner where the
-/// panel leaves the bar is out in the open, and an open corner is round.
-///
-/// Both panels in the app use it, mirrored: the browser's hangs from the mark on
-/// the left, casting's from the mark on the right.
-struct PanelShape: Shape {
-    let corners: UIRectCorner
-    let radius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        Path(
-            UIBezierPath(
-                roundedRect: rect,
-                byRoundingCorners: corners,
-                cornerRadii: CGSize(width: radius, height: radius)
-            ).cgPath
-        )
     }
 }

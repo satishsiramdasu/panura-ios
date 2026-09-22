@@ -33,6 +33,13 @@ struct PanuraHeader<Content: View>: View {
     /// look at. Colouring the mark says the same thing in the place the eye
     /// already goes, and leaves the page's own chrome alone.
     var glyphTint: Color?
+    /// A panel belonging to the glyph — the browser's site controls. Presented
+    /// as a popover from the mark itself, so it grows out of the button and
+    /// points back at it; see `panelPopover`.
+    var glyphPanel: AnyView?
+    var glyphPanelShown: Binding<Bool>?
+    /// Private browsing repaints the panel too.
+    var glyphPanelTint: Color?
     @ViewBuilder var content: Content
 
     static var height: CGFloat { 52 }
@@ -88,9 +95,16 @@ struct PanuraHeader<Content: View>: View {
                 }
             }
         if let onTapGlyph {
-            Button(action: onTapGlyph) { icon }
+            let button = Button(action: onTapGlyph) { icon }
                 .buttonStyle(.plain)
                 .accessibilityLabel(glyphLabel)
+            if let glyphPanelShown, let glyphPanel {
+                button.panelPopover(isPresented: glyphPanelShown, tint: glyphPanelTint) {
+                    glyphPanel
+                }
+            } else {
+                button
+            }
         } else {
             icon
         }

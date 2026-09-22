@@ -50,6 +50,7 @@ struct RootTabView: View {
     @State private var showReport = false
     @State private var showFAQ = false
     @ObservedObject private var castFlow = CastFlow.shared
+    @ObservedObject private var castPicker = CastPicker.shared
     /// Which Settings screen to land on, when something asked for one.
     @State private var settingsDeepLink: SettingsScreen?
 
@@ -74,15 +75,7 @@ struct RootTabView: View {
                 // the opposite. Nothing on the phone shows it at all, which is
                 // what earns a permanent strip.
                 if isCasting {
-                    castBar
-                        // Inset on every edge it can reach. With the app bar
-                        // hidden — which is most of a scrolled browser page —
-                        // this is the bottom-most thing on the screen, and flush
-                        // to the edges it was being eaten by the display's
-                        // rounded corners.
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, barVisible ? 6 : AppBarRow.bottomInset)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    castBar.transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 if barVisible {
@@ -114,10 +107,6 @@ struct RootTabView: View {
                     .padding(.bottom, AppBarRow.totalHeight)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-
-            // Above the bar, the panel and the scrim alike: it is opened from
-            // a mark in the header, and it has to cover what it is about.
-            CastPanelOverlay()
         }
         // One bottom edge for everything in the stack — the screen's, not the
         // safe area's. Applied here rather than to the bar and the panel
@@ -147,6 +136,13 @@ struct RootTabView: View {
         .onChange(of: castFlow.showing) { showing in
             if showing { showCastControls = true }
         }
+        // The cast panel cannot present the remote itself — it is closing as it
+        // asks — so it asks here, where the sheet outlives it.
+        .onChange(of: castPicker.showControls) { wants in
+            guard wants else { return }
+            castPicker.showControls = false
+            showCastControls = true
+        }
         .onChange(of: showCastControls) { showing in
             // Dismissing the screen clears a finished attempt, but never stops
             // a conversion — Cancel is what does that, and it is on the screen.
@@ -163,6 +159,11 @@ struct RootTabView: View {
     /// socket — but they are the same fact to a user: the video is on a
     /// television, and this is what it is and how to stop it.
     private var isCasting: Bool { panuraCast.isCasting || chromecast.isCasting }
+
+    /// With the app bar away — most of a scrolled browser page — this is the
+    /// bottom-most thing on screen, and its own ground has to reach the bottom
+    /// of the display or the rounded corners cut the strip in half.
+    private var castBarInset: CGFloat { barVisible ? 0 : AppBarRow.bottomInset }
 
     @ViewBuilder
     private var castBar: some View {
@@ -189,7 +190,8 @@ struct RootTabView: View {
                 // PanuraCast's full teardown -- server, advertising and the
                 // link -- while the Chromecast branch beside it stopped only
                 // the media, so the same button meant two different things.
-                onStop: { CastFlow.shared.stopCasting() }
+                onStop: { CastFlow.shared.stopCasting() },
+                bottomInset: castBarInset
             )
         } else if chromecast.isCasting {
             NowPlayingBar(
@@ -200,7 +202,8 @@ struct RootTabView: View {
                 isPlaying: chromecast.isRemotePlaying,
                 onTap: { showCastControls = true },
                 onPlayPause: { chromecast.toggleRemotePlay() },
-                onStop: { CastFlow.shared.stopCasting() }
+                onStop: { CastFlow.shared.stopCasting() },
+                bottomInset: castBarInset
             )
         }
     }
@@ -248,6 +251,7 @@ struct RootTabView: View {
     ) -> some View {
         let active = selection == destination
         content()
+            .environment(\.destinationIsActive, active)
             .opacity(active ? 1 : 0)
             // A hidden layer must not eat taps meant for the visible one, and an
             // invisible screen should not be reachable by VoiceOver either.

@@ -34,6 +34,11 @@ struct NowPlayingBar: View {
     /// finished with the television" are different intentions and an X reads as
     /// the second.
     let onStop: () -> Void
+    /// Extra ground below the row, for when nothing sits under this bar. It
+    /// pads the content inside the background rather than moving the bar up,
+    /// so the dark strip still reaches the bottom of the display while the row
+    /// itself clears the home indicator and the rounded corners.
+    var bottomInset: CGFloat = 0
 
     var body: some View {
         HStack(spacing: 10) {
@@ -84,24 +89,17 @@ struct NowPlayingBar: View {
         .padding(.leading, 10)
         .padding(.trailing, 2)
         .padding(.vertical, 6)
-        // A card rather than a full-width strip. It was a strip because it
-        // always had the app bar underneath it to sit on; in the browser that
-        // bar hides on a scroll, and the strip was then the last thing on the
-        // screen — square corners running into the display's round ones, and
-        // its bottom edge under the home indicator. A card with its own edges
-        // is the shape that is correct in both places.
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(PanuraTheme.surfaceContainerHigh)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(.white.opacity(0.06), lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.28), radius: 12, y: 4)
+        .padding(.bottom, bottomInset)
+        // Flat, edge to edge, in the app's own dark. It was briefly a floating
+        // card with corners and a shadow, which made a permanent strip look
+        // like something that had just popped up.
+        .background(PanuraTheme.surfaceContainerHigh)
         // The whole strip returns to the player, except where a button already
         // claimed the tap.
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
+        .overlay(alignment: .top) {
+            Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+        }
     }
 }

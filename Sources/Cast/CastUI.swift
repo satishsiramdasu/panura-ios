@@ -86,6 +86,8 @@ struct CastMark: View {
 struct CastToolbarButton: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
+    @ObservedObject private var picker = CastPicker.shared
+    @Environment(\.destinationIsActive) private var destinationIsActive
     @State private var showControls = false
 
     private var connected: Bool { cast.isConnected || panura.isTVConnected }
@@ -104,6 +106,17 @@ struct CastToolbarButton: View {
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
         }
         .accessibilityLabel(connected ? "Playing on TV — open controls" : "Play on TV")
+        // The panel hangs off this mark, on whichever screen is showing. Every
+        // destination is composed at once, so the copies on the four hidden
+        // ones must not present anything — hence the environment flag.
+        .panelPopover(
+            isPresented: Binding(
+                get: { destinationIsActive && picker.isShowing },
+                set: { if !$0 { picker.close() } }
+            )
+        ) {
+            CastDevicesView().environmentObject(CastManager.shared)
+        }
         .sheet(isPresented: $showControls) {
             CastSessionView()
         }
@@ -128,7 +141,6 @@ struct CastToolbarButton: View {
 struct CastDevicesView: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
-    @State private var showControls = false
     /// Scanning starts on a tap, never on arrival. Discovery is a live multicast
     /// on the local network, and someone opening this to reach their Panura TV
     /// has no reason to pay for a Chromecast sweep.
@@ -157,16 +169,8 @@ struct CastDevicesView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 18)
         }
-        // Wide enough to read a device name, narrow enough to stay a panel
-        // hanging off the mark rather than a screen that has taken over.
-        .frame(width: min(UIScreen.main.bounds.width * 0.86, 400))
-        // Mirrors the browser's panel: square where it meets the bar and the
-        // edge of the screen, round on the three corners out in the open.
-        .background(
-            PanelShape(corners: [.topLeft, .bottomLeft, .bottomRight], radius: 20)
-                .fill(PanuraTheme.surfaceContainer)
-        )
-        .sheet(isPresented: $showControls) { CastSessionView() }
+        // No width, no background, no corners: it is a popover's content now,
+        // and the popover owns all three.
         // Whatever the way out — dismissing, connecting — the scan ends with the
         // screen. An idle scan costs battery and the SDK will not stop one on
         // its own.
@@ -186,14 +190,6 @@ struct CastDevicesView: View {
             Text(cast.isConnected || panura.isTVConnected ? "Connected" : "Cast to TV")
                 .font(.headline)
             Spacer(minLength: 0)
-            Button { CastPicker.shared.close() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 18)
         .padding(.top, 18)
@@ -337,28 +333,18 @@ struct CastDevicesView: View {
             }
 
             if panura.isCasting || cast.isCasting {
-                wideButton("Open controls", icon: "slider.horizontal.3") { showControls = true }
+                wideButton("Open controls", icon: "slider.horizontal.3") {
+                    CastPicker.shared.openControls()
+                }
             } else {
                 notice("Ready — play a video to send it over.", tone: .good)
             }
 
+            // Disconnect ends whichever path is actually up. It used to call
+            // PanuraCast's teardown unconditionally, which does nothing at all
+            // to a Cast session — so on a Chromecast the button left the device
+            // connected.
             HStack(spacing: 10) {
-                Button { CastPicker.shared.close() } label: {
-                    Text("Close")
-                        .font(.subheadline.weight(.medium))
-                        .foregroundStyle(.primary)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 44)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.surfaceVariant)
-                        )
-                }
-                .buttonStyle(.plain)
-
-                // Disconnect ends whichever path is actually up. It used to call
-                // PanuraCast's teardown unconditionally, which does nothing at
-                // all to a Cast session — so on a Chromecast the button left the
-                // device connected.
                 Button {
                     if cast.isConnected { cast.endSession() }
                     if panura.isTVConnected || panura.isAdvertising { panura.stop() }
@@ -521,60 +507,18 @@ private struct ScanPulse: View {
 final class CastPicker: ObservableObject {
     static let shared = CastPicker()
     @Published var isShowing = false
+    /// Asks whoever owns the sheet to open the remote. The panel cannot present
+    /// it: the panel is going away in the same breath, and a sheet presented by
+    /// a view that is being torn down never appears.
+    @Published var showControls = false
     private init() {}
 
-    func open() { withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) { isShowing = true } }
-    func close() { withAnimation(.easeOut(duration: 0.18)) { isShowing = false } }
-}
+    func open() { isShowing = true }
+    func close() { isShowing = false }
 
-/// The cast panel, hanging from the mark that opens it.
-///
-/// It was a sheet pretending to be a dialog for three rounds — clear
-/// background, hidden grabber, a centred card, an availability fork — and it
-/// still came up on a dark slab, because a sheet's dimming is not ours to
-/// control and `presentationBackground` is fought over by the system.
-///
-/// A panel has none of those questions. It is a view in a stack: the scrim, the
-/// corner radius, the anchor and the animation are all ours, on every version
-/// of iOS. And it matches what the app already does — the Panura mark opens a
-/// panel from the top left in the browser, the cast mark lives at the top
-/// right, and a control should open next to itself rather than float in the
-/// middle of the screen with no connection to what was pressed.
-struct CastPanelOverlay: View {
-    @ObservedObject private var picker = CastPicker.shared
-
-    var body: some View {
-        if picker.isShowing {
-            VStack(spacing: 0) {
-                // The header keeps its colour — the mark that opened this is in
-                // it — but nothing in it fires while the panel is open. The bar
-                // holds the address, back, forward and the cast mark itself, and
-                // any of them going off under an open panel is an accident.
-                Color.black.opacity(0.001)
-                    .frame(height: PanuraHeader<AnyView>.height)
-                    .contentShape(Rectangle())
-                    .onTapGesture { picker.close() }
-
-                ZStack(alignment: .topTrailing) {
-                    // Dismisses on a tap anywhere off the panel. Lighter than a
-                    // sheet's dimming, because the screen behind is still the
-                    // subject — this is a control, not a destination.
-                    Color.black.opacity(0.32)
-                        .ignoresSafeArea(edges: .bottom)
-                        .onTapGesture { picker.close() }
-
-                    CastDevicesView()
-                        .shadow(color: .black.opacity(0.35), radius: 22, y: 10)
-                        // Drops out of the bar, like the browser's panel on the
-                        // other side. It was a floating card before, which is
-                        // the shape of a dialog — something the app is asking —
-                        // when this is a drawer belonging to one button.
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .zIndex(50)
-        }
+    func openControls() {
+        isShowing = false
+        showControls = true
     }
 }
 
