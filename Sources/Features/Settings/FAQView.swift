@@ -156,7 +156,7 @@ struct FAQView: View {
         Entry(
             question: "What leaves my phone?",
             answer: """
-            Browsing stays on the device — history, shortcuts and what you were \
+            Browsing stays on the device — history, bookmarks and what you were \
             watching are never uploaded.
 
             Panura sends anonymous crash reports and basic usage analytics, and \

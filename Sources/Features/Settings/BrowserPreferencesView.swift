@@ -132,7 +132,7 @@ struct BrowserPreferencesView: View {
             } header: {
                 Text("Clear Data")
             } footer: {
-                Text("Shortcuts and Continue Watching are never touched by these.")
+                Text("Bookmarks and Continue Watching are never touched by these.")
             }
         }
         .scrollContentBackground(.hidden)

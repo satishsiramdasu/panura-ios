@@ -2,7 +2,7 @@ import UIKit
 import SwiftUI
 
 /// Which list a blank search box browses.
-/// Two lists, not three. Shortcuts were a third tab, which put the sites you
+/// Two lists, not three. Bookmarks were a third tab, which put the sites you
 /// chose to keep behind the same tap as the ones the app counted for you — and
 /// hid them behind it. They are a row of their own now, above the tabs.
 enum AddressSection: String, CaseIterable, Identifiable {
@@ -70,7 +70,7 @@ struct AddressScreen: View {
         incognito ? PanuraTheme.incognito.opacity(0.22) : PanuraTheme.accentSoft
     }
 
-    /// All three, always. Hiding an empty section hid Shortcuts on any install
+    /// All three, always. Hiding an empty section hid Bookmarks on any install
     /// that had not saved one yet — which is exactly the install that needs to
     /// be told the section exists. Each empty state says what belongs there.
     private var chips: [AddressSection] { AddressSection.allCases }
@@ -207,8 +207,8 @@ struct AddressScreen: View {
                 } else {
                     // The sites you kept, before the ones the app counted for
                     // you: a row of faces rather than a list of addresses,
-                    // because a shortcut is recognised rather than read.
-                    shortcutsRow
+                    // because a bookmark is recognised rather than read.
+                    bookmarksRow
                     chipRow
                     let rows = entries(for: section)
                     if section == .history, !rows.isEmpty {
@@ -230,7 +230,7 @@ struct AddressScreen: View {
                             row(
                                 entry,
                                 // Only a Most Visited tile can be dismissed:
-                                // shortcuts are removed where they are made, and
+                                // bookmarks are removed where they are made, and
                                 // a history row is not a thing you curate.
                                 removableHost: section == .mostVisited ? entry.host : nil
                             )
@@ -333,11 +333,11 @@ struct AddressScreen: View {
     /// Horizontal, because this list is short by definition and a row of icons
     /// is read in one glance where five stacked rows of URL text are not.
     @ViewBuilder
-    private var shortcutsRow: some View {
-        if !store.shortcuts.isEmpty {
+    private var bookmarksRow: some View {
+        if !store.bookmarks.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 6) {
-                    ForEach(store.shortcuts) { entry in
+                    ForEach(store.bookmarks) { entry in
                         Button { onNavigate(entry.url) } label: {
                             VStack(spacing: 6) {
                                 Favicon(entry: entry, size: 30)
@@ -355,8 +355,8 @@ struct AddressScreen: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button(role: .destructive) {
-                                store.removeShortcut(url: entry.url)
-                            } label: { Label("Remove shortcut", systemImage: "trash") }
+                                store.removeBookmark(url: entry.url)
+                            } label: { Label("Remove bookmark", systemImage: "trash") }
                         }
                     }
                 }

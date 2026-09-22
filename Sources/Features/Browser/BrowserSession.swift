@@ -25,7 +25,7 @@ final class BrowserSession: ObservableObject {
     func setPrivateMode(_ on: Bool) {
         guard privateMode != on else { return }
         privateMode = on
-        // Shortcuts and resume points are explicit user actions and still
+        // Bookmarks and resume points are explicit user actions and still
         // persist; only the passive record stops.
         BrowsingStore.shared.recordHistory = !on
     }

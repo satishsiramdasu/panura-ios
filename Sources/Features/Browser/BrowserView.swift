@@ -209,10 +209,10 @@ struct BrowserView: View {
                     // Same slot Android gives it: first cell inside the pill.
                     Button {
                         guard let url = model.currentURL?.absoluteString else { return }
-                        if store.isShortcut(url) {
-                            store.removeShortcut(url: url)
+                        if store.isBookmark(url) {
+                            store.removeBookmark(url: url)
                         } else {
-                            store.addShortcut(
+                            store.addBookmark(
                                 url: url,
                                 title: model.pageTitle.isEmpty
                                     ? (model.currentURL?.host ?? url)
@@ -220,7 +220,7 @@ struct BrowserView: View {
                             )
                         }
                     } label: {
-                        let saved = store.isShortcut(model.currentURL?.absoluteString ?? "")
+                        let saved = store.isBookmark(model.currentURL?.absoluteString ?? "")
                         Image(systemName: saved ? "star.fill" : "star")
                             .font(.system(size: 15))
                             .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
@@ -228,7 +228,7 @@ struct BrowserView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(!pageUsable)
-                    .accessibilityLabel("Add to shortcuts")
+                    .accessibilityLabel("Add to bookmarks")
                 },
                 trailing: {
                     // Back and forward live here now. They were in the options

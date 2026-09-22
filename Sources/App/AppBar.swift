@@ -30,7 +30,7 @@ enum AppDestination: Hashable, CaseIterable {
     /// guessing at.
     var detail: String {
         switch self {
-        case .home: return "Shortcuts, history and what you were watching"
+        case .home: return "Bookmarks, history and what you were watching"
         case .web: return "Find and cast videos on any site"
         case .videos: return "Everything in this phone's library"
         case .stream: return "Play a link straight from its address"

@@ -29,7 +29,7 @@ enum ResumeThumbnails {
     }
 }
 
-/// A site the user pinned (shortcut) or visited (history). One shape for both —
+/// A site the user pinned (bookmark) or visited (history). One shape for both —
 /// the two lists differ only in how they are ordered and trimmed.
 struct SiteEntry: Codable, Identifiable, Hashable {
     var url: String
@@ -142,14 +142,14 @@ struct ResumeEntry: Codable, Identifiable, Hashable {
     }
 }
 
-/// Home-screen state that outlives a launch: shortcuts, visit history (which
+/// Home-screen state that outlives a launch: bookmarks, visit history (which
 /// feeds Most Visited) and continue-watching. Mirrors what Android keeps in Room
 /// — small enough here that UserDefaults JSON is the whole storage layer.
 @MainActor
 final class BrowsingStore: ObservableObject {
     static let shared = BrowsingStore()
 
-    @Published private(set) var shortcuts: [SiteEntry] = []
+    @Published private(set) var bookmarks: [SiteEntry] = []
     /// Per-URL, as a browser's history is: every distinct page is its own row.
     @Published private(set) var history: [SiteEntry] = []
     /// Per-host, feeding Most Visited. Deliberately not capped to the history
@@ -158,10 +158,13 @@ final class BrowsingStore: ObservableObject {
     @Published private(set) var resumes: [ResumeEntry] = []
 
     /// Off (incognito, or the user cleared it) suppresses history writes only —
-    /// shortcuts and resume points are explicit user actions and still persist.
+    /// bookmarks and resume points are explicit user actions and still persist.
     @Published var recordHistory = true
 
-    private let shortcutsKey = "home_shortcuts"
+    // The stored key keeps its old spelling on purpose: it is data, not a
+    // name. Renaming it would orphan every saved site on every device that
+    // already has one, which is a silent loss - the list would simply be empty.
+    private let bookmarksKey = "home_shortcuts"
     private let historyKey = "home_history"
     private let hostVisitsKey = "home_host_visits"
     private let resumeKey = "home_resume"
@@ -175,7 +178,7 @@ final class BrowsingStore: ObservableObject {
     private var lastRecordedURL: String?
 
     private init() {
-        shortcuts = Self.load(shortcutsKey) ?? []
+        bookmarks = Self.load(bookmarksKey) ?? []
         history = Self.load(historyKey) ?? []
         resumes = Self.load(resumeKey) ?? []
         hostVisits = Self.load(hostVisitsKey) ?? Self.seedHostVisits(from: history)
@@ -227,33 +230,33 @@ final class BrowsingStore: ObservableObject {
         resumes.sorted { $0.updated > $1.updated }
     }
 
-    // MARK: shortcuts
+    // MARK: bookmarks
 
-    func isShortcut(_ url: String) -> Bool {
-        shortcuts.contains { $0.url == url }
+    func isBookmark(_ url: String) -> Bool {
+        bookmarks.contains { $0.url == url }
     }
 
-    func addShortcut(url: String, title: String) {
-        guard !url.isEmpty, !isShortcut(url) else { return }
-        shortcuts.append(SiteEntry(url: url, title: title.isEmpty ? url : title))
-        persistShortcuts()
+    func addBookmark(url: String, title: String) {
+        guard !url.isEmpty, !isBookmark(url) else { return }
+        bookmarks.append(SiteEntry(url: url, title: title.isEmpty ? url : title))
+        persistBookmarks()
     }
 
-    func removeShortcut(url: String) {
-        shortcuts.removeAll { $0.url == url }
-        persistShortcuts()
+    func removeBookmark(url: String) {
+        bookmarks.removeAll { $0.url == url }
+        persistBookmarks()
     }
 
-    func updateShortcut(original: String, title: String, url: String) {
-        guard let i = shortcuts.firstIndex(where: { $0.url == original }) else { return }
-        shortcuts[i].title = title
-        shortcuts[i].url = url
-        persistShortcuts()
+    func updateBookmark(original: String, title: String, url: String) {
+        guard let i = bookmarks.firstIndex(where: { $0.url == original }) else { return }
+        bookmarks[i].title = title
+        bookmarks[i].url = url
+        persistBookmarks()
     }
 
-    func moveShortcuts(from source: IndexSet, to destination: Int) {
-        shortcuts.move(fromOffsets: source, toOffset: destination)
-        persistShortcuts()
+    func moveBookmarks(from source: IndexSet, to destination: Int) {
+        bookmarks.move(fromOffsets: source, toOffset: destination)
+        persistBookmarks()
     }
 
     // MARK: history
@@ -490,7 +493,7 @@ final class BrowsingStore: ObservableObject {
 
     // MARK: storage
 
-    private func persistShortcuts() { Self.save(shortcuts, shortcutsKey) }
+    private func persistBookmarks() { Self.save(bookmarks, bookmarksKey) }
     private func persistHistory() { Self.save(history, historyKey) }
     private func persistHostVisits() { Self.save(hostVisits, hostVisitsKey) }
     private func persistResumes() { Self.save(resumes, resumeKey) }

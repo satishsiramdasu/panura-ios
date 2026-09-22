@@ -75,7 +75,7 @@ enum ScreenshotMode {
             HostVisit(host: "wikipedia.org", label: "Wikipedia", visits: 7, lastVisit: ago(hours: 20)),
             HostVisit(host: "panura.app", label: "Panura", visits: 5, lastVisit: ago(hours: 26)),
         ]
-        let shortcuts: [SiteEntry] = [
+        let bookmarks: [SiteEntry] = [
             SiteEntry(url: "https://archive.org/details/movies", title: "Internet Archive"),
             SiteEntry(url: "https://vimeo.com/watch", title: "Vimeo"),
             SiteEntry(url: "https://panura.app", title: "Panura"),
@@ -97,11 +97,11 @@ enum ScreenshotMode {
         ]
 
         write(visits, "home_host_visits")
-        write(shortcuts, "home_shortcuts")
+        write(bookmarks, "home_shortcuts")
         write(resumes, "home_resume")
         // Recents is per-page where the tally above is per-host; both grids are
         // on Home, and one of them being empty is as obvious as both.
-        write(shortcuts, "home_history")
+        write(bookmarks, "home_history")
     }
 
     /// The streams the found-bar reports on the browser shot.

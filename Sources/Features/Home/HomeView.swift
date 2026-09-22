@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Home tab. Mirrors Android's `HomeTab`: address pill header, brand block with
-/// version + action links, then Shortcuts · Continue Watching · Most Visited.
+/// version + action links, then Bookmarks · Continue Watching · Most Visited.
 struct HomeView: View {
     /// Hands a raw address-bar string (URL or search terms) to the Browser tab.
     var onOpenBrowser: (String) -> Void
@@ -16,8 +16,8 @@ struct HomeView: View {
     /// Which list the address screen opens on. Search lands on Most Visited;
     /// the History card lands on History.
     @State private var addressStart: AddressSection = .mostVisited
-    @State private var showShortcutsSheet = false
-    @State private var editingShortcut: SiteEntry?
+    @State private var showBookmarksSheet = false
+    @State private var editingBookmark: SiteEntry?
     @State private var confirmClearHistory = false
     @State private var showReport = false
     /// URL of the resume card being checked, so it can show it is working.
@@ -37,10 +37,10 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
                     brandBlock
-                    shortcutsSection
+                    bookmarksSection
                     if !store.continueWatching.isEmpty { continueWatchingSection }
                     quickAccessSection
-                    // After the destinations, not before them. Shortcuts and
+                    // After the destinations, not before them. Bookmarks and
                     // Continue Watching are what someone opening the app came
                     // for, and Quick Access is where they go if neither was it;
                     // casting is what they reach for once they have picked
@@ -78,8 +78,8 @@ struct HomeView: View {
                 onDismiss: { showAddress = false }
             )
         }
-        .sheet(isPresented: $showShortcutsSheet) { shortcutsSheet }
-        .sheet(item: $editingShortcut) { ShortcutEditor(entry: $0) }
+        .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
+        .sheet(item: $editingBookmark) { BookmarkEditor(entry: $0) }
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
         .confirmationDialog(
             "Remove from Continue Watching?",
@@ -115,7 +115,7 @@ struct HomeView: View {
             Button("Clear history", role: .destructive) { store.clearHistory() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Most Visited and recent pages are removed. Shortcuts and Continue Watching are kept.")
+            Text("Most Visited and recent pages are removed. Bookmarks and Continue Watching are kept.")
         }
     }
 
@@ -128,16 +128,16 @@ struct HomeView: View {
     /// so these four are the whole of the app's navigation on this screen and
     /// have to be found at a glance rather than read.
     ///
-    /// Headed "Go to", not "Quick access". Quick access is what the Shortcuts
+    /// Headed "Go to", not "Quick access". Quick access is what the Bookmarks
     /// row directly above it is: sites the user put there to reach in one tap.
     /// These are the app's own places, and every one of them is where you go
-    /// when a shortcut was not what you wanted.
+    /// when a bookmark was not what you wanted.
     ///
     /// Which is why Settings is no longer among them. It is not a place you go
     /// to watch something; it is something you adjust, and it sits with the
     /// other two of those at the bottom of the screen. History took the fourth
     /// seat because it is the one thing here that answers "the one I had
-    /// yesterday" - the question Shortcuts and Continue Watching between them
+    /// yesterday" - the question Bookmarks and Continue Watching between them
     /// do not.
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -346,27 +346,27 @@ struct HomeView: View {
             .foregroundStyle(PanuraTheme.accent)
     }
 
-    // MARK: shortcuts
+    // MARK: bookmarks
 
-    private var shortcutsSection: some View {
+    private var bookmarksSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Shortcuts", showAll: !store.shortcuts.isEmpty) {
-                showShortcutsSheet = true
+            sectionHeader("Bookmarks", showAll: !store.bookmarks.isEmpty) {
+                showBookmarksSheet = true
             }
-            if store.shortcuts.isEmpty {
-                emptyHint("Add any website as a shortcut to show here.")
+            if store.bookmarks.isEmpty {
+                emptyHint("Add any website as a bookmark to show here.")
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(store.shortcuts.prefix(10)) { item in
-                            ShortcutTile(entry: item)
+                        ForEach(store.bookmarks.prefix(10)) { item in
+                            BookmarkTile(entry: item)
                                 .onTapGesture { onOpenBrowser(item.url) }
                                 .contextMenu {
-                                    Button { editingShortcut = item } label: {
+                                    Button { editingBookmark = item } label: {
                                         Label("Edit", systemImage: "pencil")
                                     }
                                     Button(role: .destructive) {
-                                        store.removeShortcut(url: item.url)
+                                        store.removeBookmark(url: item.url)
                                     } label: { Label("Delete", systemImage: "trash") }
                                 }
                         }
@@ -438,25 +438,25 @@ struct HomeView: View {
 
     // MARK: sheets
 
-    private var shortcutsSheet: some View {
+    private var bookmarksSheet: some View {
         NavigationStack {
             List {
-                ForEach(store.shortcuts) { item in
+                ForEach(store.bookmarks) { item in
                     Button {
-                        showShortcutsSheet = false
+                        showBookmarksSheet = false
                         onOpenBrowser(item.url)
                     } label: { SiteRow(entry: item) }
                         .buttonStyle(.plain)
                 }
-                .onDelete { store.removeShortcut(url: store.shortcuts[$0.first ?? 0].url) }
-                .onMove { store.moveShortcuts(from: $0, to: $1) }
+                .onDelete { store.removeBookmark(url: store.bookmarks[$0.first ?? 0].url) }
+                .onMove { store.moveBookmarks(from: $0, to: $1) }
             }
-            .navigationTitle("Shortcuts")
+            .navigationTitle("Bookmarks")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { EditButton() }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { showShortcutsSheet = false }
+                    Button("Done") { showBookmarksSheet = false }
                 }
             }
         }
@@ -514,7 +514,7 @@ struct HomeView: View {
 
 // MARK: - tiles
 
-private struct ShortcutTile: View {
+private struct BookmarkTile: View {
     let entry: SiteEntry
 
     var body: some View {
@@ -604,8 +604,8 @@ private struct ContinueWatchingCard: View {
     }
 }
 
-/// Title/URL editor for a pinned shortcut.
-private struct ShortcutEditor: View {
+/// Title/URL editor for a pinned bookmark.
+private struct BookmarkEditor: View {
     let entry: SiteEntry
 
     @ObservedObject private var store = BrowsingStore.shared
@@ -627,7 +627,7 @@ private struct ShortcutEditor: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
             }
-            .navigationTitle("Edit Shortcut")
+            .navigationTitle("Edit Bookmark")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -635,7 +635,7 @@ private struct ShortcutEditor: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
-                        store.updateShortcut(
+                        store.updateBookmark(
                             original: entry.url,
                             title: title.trimmingCharacters(in: .whitespaces),
                             url: url.trimmingCharacters(in: .whitespaces)

@@ -189,7 +189,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Data")
                 } footer: {
-                    Text("Shortcuts, history and Continue Watching are kept — this resets preferences only.")
+                    Text("Bookmarks, history and Continue Watching are kept — this resets preferences only.")
                 }
             }
             .navigationDestination(for: SettingsScreen.self) { screen in
@@ -234,7 +234,7 @@ struct SettingsView: View {
         }
     }
 
-    /// Preferences only. Shortcuts, history and resume points are things the
+    /// Preferences only. Bookmarks, history and resume points are things the
     /// user made rather than settings, and Android's reset leaves them alone
     /// too.
     private func reset() {
