@@ -113,7 +113,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     private var rateBeforeBoost: Float = 1.0
     private var sleepTask: Task<Void, Never>?
     private var thumbnailCaptured = false
+    private var thumbnailAttempts = 0
     private var videoOutput: AVPlayerItemVideoOutput?
+    private weak var videoOutputItem: AVPlayerItem?
 
     private var audibleGroup: AVMediaSelectionGroup?
     private var legibleGroup: AVMediaSelectionGroup?
@@ -201,6 +203,8 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         pendingResumeSeconds = nil; resumeApplied = false
         relayRetryUsed = false; forceRelay = false
         thumbnailCaptured = false
+        thumbnailAttempts = 0
+        detachVideoOutput()
         userPaused = false
         clearSidecar()
         // Offered at once: the page's subtitle files are known before the
@@ -253,7 +257,6 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         let asset = AVURLAsset(url: playURL, options: options)
         let playerItem = AVPlayerItem(asset: asset)
 
-        attachVideoOutput(to: playerItem)
         applySubtitleStyle(to: playerItem)
         applyQualityCap(to: playerItem)
         observeItem(playerItem)
@@ -307,6 +310,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         for token in lifecycleObservers { NotificationCenter.default.removeObserver(token) }
         lifecycleObservers.removeAll()
         removeRemoteCommands()
+        detachVideoOutput()
         player.replaceCurrentItem(with: nil)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -1054,22 +1058,58 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
 
     // MARK: thumbnail
 
-    private func attachVideoOutput(to playerItem: AVPlayerItem) {
-        let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-        ])
-        playerItem.add(output)
-        videoOutput = output
+    /// Takes the output away again. Nothing else may hold it: see below for why
+    /// an attached output is not free.
+    private func detachVideoOutput() {
+        // The item it was added to, not whatever is current: by teardown the
+        // player may already hold a different one, and removing an output from
+        // an item that never had it is not what this is for.
+        if let videoOutput, let videoOutputItem { videoOutputItem.remove(videoOutput) }
+        videoOutput = nil
+        videoOutputItem = nil
     }
 
     /// One frame per played item for the Continue Watching card, taken from the
     /// decoder's own output — a snapshot of the layer comes back black.
+    ///
+    /// The output is attached when the frame is due and removed the moment it
+    /// arrives. It used to be added to every item at creation and left there for
+    /// the whole film, which washed HDR video out: an iPhone recording is Dolby
+    /// Vision over HLG, and an output asking for `32BGRA` makes the item produce
+    /// 8-bit SDR-range frames — highlights clip, and a sunlit floor plays back
+    /// pure white. Thirty seconds of decoding in a second format, all to take
+    /// one 280-point still.
+    ///
+    /// It asks for no format at all now, so frames arrive however the decoder
+    /// already had them.
     private func captureThumbnailIfNeeded() {
         guard !thumbnailCaptured, let item, isPlaying, elapsedSeconds > 15,
-              let output = videoOutput else { return }
+              let playerItem = player.currentItem else { return }
+
+        guard let output = videoOutput else {
+            // Attached on this pass, read on the next: there is no frame in an
+            // output the instant it is added.
+            let output = AVPlayerItemVideoOutput(outputSettings: nil)
+            playerItem.add(output)
+            videoOutput = output
+            videoOutputItem = playerItem
+            return
+        }
+
         let time = output.itemTime(forHostTime: CACurrentMediaTime())
-        guard let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else { return }
+        guard let buffer = output.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else {
+            thumbnailAttempts += 1
+            // A format the copy cannot serve, or a stream that never fills it.
+            // Give up rather than leave an output on the item for the rest of
+            // the film, which is the whole bug this is written around.
+            if thumbnailAttempts > 4 {
+                thumbnailCaptured = true
+                detachVideoOutput()
+            }
+            return
+        }
         thumbnailCaptured = true
+        detachVideoOutput()
 
         let image = CIImage(cvPixelBuffer: buffer)
         let scale = 280 / max(1, image.extent.width)
