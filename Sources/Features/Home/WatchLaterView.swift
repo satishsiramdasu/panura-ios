@@ -32,10 +32,14 @@ struct WatchLaterView: View {
                         .padding(.leading, 4)
                     Spacer(minLength: 8)
                     if !store.watchLater.isEmpty {
-                        // A menu, so the question is asked where the finger
-                        // already is. A dialog for this arrives in the middle
-                        // of the screen having lost every trace of what it is
-                        // about.
+                        // A bin, not three dots. Three dots promise a menu of
+                        // things to choose between, and there is only ever one
+                        // thing here — a button that says what it does is not
+                        // improved by hiding it behind a glyph that does not.
+                        //
+                        // Still a menu underneath, so the one thing is asked
+                        // before it is done, and asked next to the button
+                        // rather than in the middle of the screen.
                         Menu {
                             Section("Everything here is removed. Nothing is deleted from the phone.") {
                                 Button(role: .destructive) {
@@ -43,12 +47,13 @@ struct WatchLaterView: View {
                                 } label: { Label("Clear Watch Later", systemImage: "trash") }
                             }
                         } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.system(size: 17))
+                            Image(systemName: "trash")
+                                .font(.system(size: 16))
                                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
                                 .frame(width: 38, height: 38)
                                 .contentShape(Rectangle())
                         }
+                        .accessibilityLabel("Clear Watch Later")
                     }
                 }
             }
