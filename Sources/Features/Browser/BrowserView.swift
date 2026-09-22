@@ -460,6 +460,7 @@ struct BrowserView: View {
                     else { leavePrivateMode(keepPage: false) }
                 } else {
                     model.setPrivateMode(true)
+                    flash("Private browsing on")
                 }
             } label: {
                 gridCellLabel(
@@ -691,6 +692,10 @@ struct BrowserView: View {
     private func leavePrivateMode(keepPage: Bool) {
         let current = model.currentURL?.absoluteString
         model.setPrivateMode(false)
+        // Said here rather than at the button, because leaving happens from two
+        // places: the button when there is no page to lose, and the dialog when
+        // there is.
+        flash("Private browsing off")
         guard keepPage, let current else { return }
         pendingAddress = current
     }
