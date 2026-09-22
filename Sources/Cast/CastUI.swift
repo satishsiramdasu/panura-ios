@@ -239,12 +239,14 @@ struct CastDevicesView: View {
                 }
             } else if cast.devices.isEmpty {
                 scanStatus
-                wideButton("Scan again", icon: "arrow.clockwise") { cast.startDiscovery() }
+                if !cast.isScanning {
+                    wideButton("Scan again", icon: "arrow.clockwise") { cast.startDiscovery() }
+                }
             } else {
                 ForEach(cast.devices) { device in
                     deviceCard(
                         title: device.name,
-                        subtitle: (device.model?.isEmpty == false) ? device.model! : "Chromecast",
+                        subtitle: chromecastSubtitle(device),
                         busy: cast.connecting == device.id,
                         icon: { CastMark() }
                     ) {
@@ -277,22 +279,36 @@ struct CastDevicesView: View {
     }
 
     private var scanStatus: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 10) {
             if cast.isScanning {
-                ProgressView().controlSize(.small)
+                // Something to watch while nothing is happening. A scan takes
+                // seconds and a still label reads as a screen that has hung.
+                ScanPulse()
             } else {
                 Image(systemName: "questionmark.circle")
+                    .font(.system(size: 22))
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .frame(height: 54)
             }
             Text(cast.isScanning ? "Looking for TVs…" : "Nothing found on this network")
                 .font(.footnote)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
-            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 14)
+        .padding(.vertical, 16)
         .frame(maxWidth: .infinity)
         .background(RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.surfaceVariant))
+    }
+
+    /// What a Chromecast row says under its name.
+    ///
+    /// The SDK reports a model that is very often the device's own name back
+    /// again — "VU TV", under "VU TV" — which tells nobody anything. The line
+    /// is for the protocol, which is the fact that decides what will play.
+    private func chromecastSubtitle(_ device: CastManager.CastDevice) -> String {
+        guard let model = device.model, !model.isEmpty,
+              model.caseInsensitiveCompare(device.name) != .orderedSame
+        else { return "Chromecast" }
+        return "Chromecast · " + model
     }
 
     // MARK: connected
@@ -457,6 +473,38 @@ struct CastDevicesView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10).fill(colour.opacity(0.12)))
+    }
+}
+
+/// Rings going out from an aerial, while the network is being swept.
+///
+/// Android's cast screen has the same thing, and it earns its place for a
+/// reason that is not decoration: discovery takes seconds and answers nothing
+/// in the meantime, so a still label reads as a screen that has stopped. A
+/// pulse says the phone is still listening.
+private struct ScanPulse: View {
+    @State private var phase: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<3, id: \.self) { ring in
+                let offset = (phase + CGFloat(ring) / 3).truncatingRemainder(dividingBy: 1)
+                Circle()
+                    .stroke(PanuraTheme.accent.opacity(0.55 * Double(1 - offset)), lineWidth: 1.5)
+                    .frame(width: 22 + offset * 34, height: 22 + offset * 34)
+            }
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(PanuraTheme.accent)
+        }
+        .frame(height: 54)
+        .onAppear {
+            // One driver for all three rings. Three independent repeating
+            // animations drift out of phase with each other within seconds.
+            withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) {
+                phase = 1
+            }
+        }
     }
 }
 
