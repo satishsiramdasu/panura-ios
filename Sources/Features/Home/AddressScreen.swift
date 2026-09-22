@@ -1,8 +1,11 @@
+import UIKit
 import SwiftUI
 
 /// Which list a blank search box browses.
+/// Two lists, not three. Shortcuts were a third tab, which put the sites you
+/// chose to keep behind the same tap as the ones the app counted for you — and
+/// hid them behind it. They are a row of their own now, above the tabs.
 enum AddressSection: String, CaseIterable, Identifiable {
-    case shortcuts = "Shortcuts"
     case mostVisited = "Most visited"
     case history = "History"
 
@@ -10,7 +13,6 @@ enum AddressSection: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .shortcuts: return "star.fill"
         case .mostVisited: return "chart.line.uptrend.xyaxis"
         case .history: return "clock.arrow.circlepath"
         }
@@ -75,7 +77,6 @@ struct AddressScreen: View {
 
     private func entries(for section: AddressSection) -> [SiteEntry] {
         switch section {
-        case .shortcuts: return store.shortcuts
         case .mostVisited: return store.mostVisited
         case .history: return Array(store.recentlyVisited.prefix(30))
         }
@@ -196,14 +197,18 @@ struct AddressScreen: View {
                     let mv = matches(store.mostVisited, limit: 4)
                     if !mv.isEmpty {
                         sectionHeader("Most Visited:")
-                        ForEach(mv) { row($0, icon: AddressSection.mostVisited.icon) }
+                        ForEach(mv) { row($0) }
                     }
                     let hist = matches(store.recentlyVisited, limit: 5)
                     if !hist.isEmpty {
                         sectionHeader("From History:")
-                        ForEach(hist) { row($0, icon: AddressSection.history.icon) }
+                        ForEach(hist) { row($0) }
                     }
                 } else {
+                    // The sites you kept, before the ones the app counted for
+                    // you: a row of faces rather than a list of addresses,
+                    // because a shortcut is recognised rather than read.
+                    shortcutsRow
                     chipRow
                     let rows = entries(for: section)
                     if section == .history, !rows.isEmpty {
@@ -224,8 +229,6 @@ struct AddressScreen: View {
                         ForEach(rows) { entry in
                             row(
                                 entry,
-                                icon: section.icon,
-                                accent: section == .shortcuts,
                                 // Only a Most Visited tile can be dismissed:
                                 // shortcuts are removed where they are made, and
                                 // a history row is not a thing you curate.
@@ -265,38 +268,108 @@ struct AddressScreen: View {
         }
     }
 
+    /// The page you are on, and the three things anyone opens this screen to do
+    /// to it: send it somewhere, copy it, or edit it into a different address.
+    ///
+    /// They are what an address bar is for other than typing, and each was
+    /// previously several taps away — share through the site panel, copy by
+    /// selecting text in a field, edit by retyping the whole URL.
     private var currentPageCard: some View {
-        Button { onNavigate(currentURL) } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "doc.text")
-                    .foregroundStyle(tint)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(currentTitle.isEmpty ? currentURL : currentTitle)
-                        .font(.subheadline.weight(.medium)).lineLimit(1)
-                    Text(currentURL).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+        let entry = SiteEntry(url: currentURL, title: currentTitle)
+        return HStack(spacing: 10) {
+            Button { onNavigate(currentURL) } label: {
+                HStack(spacing: 10) {
+                    Favicon(entry: entry, size: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(currentTitle.isEmpty ? currentURL : currentTitle)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Text(currentURL)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: 4)
                 }
-                Spacer(minLength: 4)
-                // Fills the box instead of navigating — the way to edit the URL
-                // you are on rather than retype it.
-                Button { query = currentURL } label: {
-                    Image(systemName: "arrow.up.left").font(.footnote)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .contentShape(Rectangle())
             }
-            .padding(12)
-            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            .buttonStyle(.plain)
+
+            if let url = URL(string: currentURL) {
+                ShareLink(item: url) { cardGlyph("square.and.arrow.up") }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Share")
+            }
+            Button {
+                UIPasteboard.general.string = currentURL
+            } label: { cardGlyph("doc.on.doc") }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Copy address")
+
+            // Fills the box instead of navigating — the way to edit the URL you
+            // are on rather than retype it.
+            Button { query = currentURL } label: { cardGlyph("pencil") }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit address")
         }
-        .buttonStyle(.plain)
+        .padding(10)
+        .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+    }
+
+    private func cardGlyph(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 15))
+            .foregroundStyle(.secondary)
+            .frame(width: 34, height: 34)
+            .contentShape(Rectangle())
+    }
+
+    /// The saved sites, as faces.
+    ///
+    /// Horizontal, because this list is short by definition and a row of icons
+    /// is read in one glance where five stacked rows of URL text are not.
+    @ViewBuilder
+    private var shortcutsRow: some View {
+        if !store.shortcuts.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 6) {
+                    ForEach(store.shortcuts) { entry in
+                        Button { onNavigate(entry.url) } label: {
+                            VStack(spacing: 6) {
+                                Favicon(entry: entry, size: 30)
+                                    .padding(13)
+                                    .background(PanuraTheme.surfaceVariant, in: Circle())
+                                Text(entry.title.isEmpty ? entry.host : entry.title)
+                                    .font(.caption2)
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                            .frame(width: 78)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                store.removeShortcut(url: entry.url)
+                            } label: { Label("Remove shortcut", systemImage: "trash") }
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+            }
+            .padding(.bottom, 6)
+        }
     }
 
     private var emptySection: some View {
         Text(
             {
                 switch section {
-                case .shortcuts: return "Websites you save as shortcuts show here."
                 case .mostVisited: return "Sites you open often show here."
                 case .history: return "Type to search or enter a URL"
                 }
@@ -338,18 +411,18 @@ struct AddressScreen: View {
         .contextMenu { Button("Edit in search box") { query = text } }
     }
 
+    /// Every row wears the site's own icon.
+    ///
+    /// They wore the section's glyph before — a clock on every history row, a
+    /// chart on every most-visited one — which says where the row came from,
+    /// which you already know, and nothing about which site it is.
     private func row(
         _ entry: SiteEntry,
-        icon: String,
-        accent: Bool = false,
         removableHost: String? = nil
     ) -> some View {
         Button { onNavigate(entry.url) } label: {
             HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundStyle(accent ? tint : Color.secondary)
-                    .frame(width: 22)
+                Favicon(entry: entry, size: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.title.isEmpty ? entry.url : entry.title)
                         .font(.subheadline).lineLimit(1)
