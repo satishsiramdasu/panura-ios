@@ -320,7 +320,13 @@ struct HomeView: View {
             VStack(alignment: .trailing, spacing: 10) {
                 ShareLink(
                     item: URL(string: "https://panura.app")!,
-                    message: Text("Panura Player — browse, play, download & cast web videos.")
+                    // No "download". There is no download feature on iOS — the
+                    // code was deleted rather than gated, because saving media
+                    // from third-party sites is what Review 5.2.3 names — and
+                    // the FAQ two screens away says so outright. This was the
+                    // one string in the app promising the opposite, in the one
+                    // place users forward to other people.
+                    message: Text("Panura Player — browse, play & cast web videos.")
                 ) {
                     linkLabel("Share App", systemImage: "square.and.arrow.up")
                 }
