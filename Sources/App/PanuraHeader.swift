@@ -44,8 +44,11 @@ struct PanuraHeader<Content: View>: View {
 
     static var height: CGFloat { 52 }
 
+    @ObservedObject private var drawer = DrawerState.shared
+
     var body: some View {
         HStack(spacing: 4) {
+            menuButton
             glyph
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -55,6 +58,25 @@ struct PanuraHeader<Content: View>: View {
         .padding(.horizontal, 6)
         .frame(height: Self.height)
         .background(PanuraTheme.surfaceContainer)
+    }
+
+    /// Opens the navigation drawer, and closes it again.
+    ///
+    /// Left of the mark, where the app's own controls live, and on every screen
+    /// in the same place — it replaces a bottom bar, so it has to be as findable
+    /// as one. While the drawer is open the app is pushed aside and this button
+    /// goes with it, wearing a cross: whatever is under your thumb is the way
+    /// back out.
+    private var menuButton: some View {
+        Button { drawer.toggle() } label: {
+            Image(systemName: drawer.isOpen ? "xmark" : "line.3.horizontal")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .frame(width: 38, height: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(drawer.isOpen ? "Close menu" : "Menu")
     }
 
     @ViewBuilder

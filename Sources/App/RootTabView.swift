@@ -35,7 +35,6 @@ struct RootTabView: View {
         #endif
         return .home
     }()
-    @State private var showMenu = false
     /// Address typed on Home, waiting for the Browser to pick it up. The browser
     /// owns its WebView across switches, so the hand-off has to be state here
     /// rather than a fresh `BrowserView(url:)`.
@@ -54,65 +53,43 @@ struct RootTabView: View {
     /// Which Settings screen to land on, when something asked for one.
     @State private var settingsDeepLink: SettingsScreen?
 
+    @ObservedObject private var drawer = DrawerState.shared
+
     var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
-                destinations
-                // Hidden while the browser is scrolled down, and only there: the
-                // page needs the height, and every other destination is a list
-                // that can reach its own end. The height animates away in place
-                // rather than the bar sliding over the content, so nothing it
-                // covers can end up unreachable.
-                // Above the app bar, below everything else: the television
-                // that has the video.
-                //
-                // Only a television. Picture in Picture had a bar here too, and
-                // it was redundant every single time it appeared: `minimized`
-                // is set by exactly one thing, the PiP hand-off, so the bar
-                // could never be on screen without iOS already floating the
-                // video above it — with pause, close and restore on the window
-                // itself, closer to hand than a strip at the bottom. Casting is
-                // the opposite. Nothing on the phone shows it at all, which is
-                // what earns a permanent strip.
-                if isCasting {
-                    castBar.transition(.move(edge: .bottom).combined(with: .opacity))
-                }
-
-                if barVisible {
-                    AppBarRow(
-                        selection: selection,
-                        menuOpen: showMenu,
-                        onSelect: select,
-                        onToggleMenu: {
-                            withAnimation(.easeOut(duration: 0.2)) { showMenu.toggle() }
-                        }
-                    )
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+        ZStack(alignment: .leading) {
+            // Underneath, revealed by the app moving off it. A drawer that
+            // slides over the app hides how to get back; one the app slides off
+            // keeps the way out under the thumb that opened it.
+            if drawer.isOpen {
+                AppDrawerPanel(destinations: drawerDestinations, actions: drawerActions)
+                    .frame(width: DrawerState.width)
+                    .transition(.move(edge: .leading))
             }
-            .animation(.easeOut(duration: 0.2), value: barVisible)
 
-            if showMenu {
-                // Scrim first: dismisses on tap without stealing the panel's own
-                // taps. It stops at the bar, so the control that opened the panel
-                // is the one that closes it.
-                Color.black.opacity(0.32)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
-                    .onTapGesture { withAnimation(.easeOut(duration: 0.2)) { showMenu = false } }
-
-                // Rests on the bar: the whole stack shares one bottom edge (see
-                // below), so the panel only has to clear the bar's own height.
-                AppMenuPanel(items: menuItems, current: selection)
-                    .padding(.bottom, AppBarRow.totalHeight)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
+            shell
+                .offset(x: drawer.isOpen ? DrawerState.width : 0)
+                // Rounded and lifted only while it is aside, so the app reads as
+                // a card resting on the drawer rather than a screen cut in half.
+                .clipShape(
+                    RoundedRectangle(cornerRadius: drawer.isOpen ? 22 : 0, style: .continuous)
+                )
+                .shadow(color: .black.opacity(drawer.isOpen ? 0.45 : 0), radius: 22, x: -6)
+                .overlay {
+                    if drawer.isOpen {
+                        // Anywhere on the app goes back to the app, the cross in
+                        // the header included — the app is half off screen and
+                        // nothing on it should be operated from here.
+                        Color.black.opacity(0.001)
+                            .contentShape(Rectangle())
+                            .onTapGesture { drawer.close() }
+                    }
+                }
         }
+        .background(PanuraTheme.surfaceContainer.ignoresSafeArea())
         // One bottom edge for everything in the stack — the screen's, not the
-        // safe area's. Applied here rather than to the bar and the panel
-        // separately: two views each ignoring the safe area on their own end up
-        // measured against different bottoms, which is exactly how the panel
-        // came to float an indicator's height above the bar.
+        // safe area's. The cast bar's own ground has to reach the bottom of the
+        // display, and it is the last thing on the screen now that the bottom
+        // bar is gone.
         .ignoresSafeArea(.container, edges: .bottom)
         // The one player presenter in the app. It used to be five — every
         // screen that could start a video owned its own cover — and none of
@@ -152,6 +129,26 @@ struct RootTabView: View {
         .screenshotPlayer()
     }
 
+    /// Everything that is not the drawer: the destination you are on, and the
+    /// strip naming the television when there is one.
+    private var shell: some View {
+        VStack(spacing: 0) {
+            destinations
+
+            // Only a television. Picture in Picture had a bar here too, and it
+            // was redundant every single time it appeared: `minimized` is set
+            // by exactly one thing, the PiP hand-off, so the bar could never be
+            // on screen without iOS already floating the video above it — with
+            // pause, close and restore on the window itself, closer to hand
+            // than a strip at the bottom. Casting is the opposite. Nothing on
+            // the phone shows it at all, which is what earns a permanent strip.
+            if isCasting {
+                castBar.transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .background(PanuraTheme.background)
+    }
+
     /// The bar for whichever TV has the video, or nil.
     ///
     /// Both cast paths end up here. They have nothing in common in the code —
@@ -160,10 +157,10 @@ struct RootTabView: View {
     /// television, and this is what it is and how to stop it.
     private var isCasting: Bool { panuraCast.isCasting || chromecast.isCasting }
 
-    /// With the app bar away — most of a scrolled browser page — this is the
-    /// bottom-most thing on screen, and its own ground has to reach the bottom
-    /// of the display or the rounded corners cut the strip in half.
-    private var castBarInset: CGFloat { barVisible ? 0 : AppBarRow.bottomInset }
+    /// It is the bottom-most thing on screen now that the bar is gone, so its
+    /// own ground has to reach the bottom of the display or the rounded corners
+    /// cut the strip in half.
+    private var castBarInset: CGFloat { AppChrome.bottomInset }
 
     @ViewBuilder
     private var castBar: some View {
@@ -251,6 +248,14 @@ struct RootTabView: View {
     ) -> some View {
         let active = selection == destination
         content()
+            // The bottom bar used to hold this strip for everyone. The browser
+            // is the exception: it owns its own bottom edge, because the
+            // found-video bar lives there and pads itself.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if destination != .web {
+                    Color.clear.frame(height: AppChrome.bottomInset)
+                }
+            }
             .environment(\.destinationIsActive, active)
             .opacity(active ? 1 : 0)
             // A hidden layer must not eat taps meant for the visible one, and an
@@ -260,72 +265,69 @@ struct RootTabView: View {
             .zIndex(active ? 1 : 0)
     }
 
-    /// The bar can only be hidden by the browser, and only while you are in it
-    /// — leaving the Web tab must never strand it off screen.
-    private var barVisible: Bool {
-        selection != .web || session.barVisible || showMenu
-    }
-
     private func select(_ destination: AppDestination) {
         session.showBar()
+        drawer.close()
         withAnimation(.easeInOut(duration: 0.22)) {
             selection = destination
-            showMenu = false
         }
     }
 
-    /// What the grid holds: the destinations with no seat in the bar.
+    /// The five places you can be, in one list.
     ///
-    /// Cast is deliberately NOT here. It is a control rather than a place, it
-    /// has to be reachable from whatever screen you are on, and it now lives
-    /// top-right in the header of every one of them — same slot as Android's.
-    /// Everything without a seat in the bar.
+    /// All of them, including the three that used to have seats in a bottom
+    /// bar. Splitting destinations across a bar and a grid meant the split was
+    /// by how often a place is visited rather than by what it is, and left
+    /// Settings and Stream reachable only through a button that named neither.
+    private var drawerDestinations: [AppDrawerPanel.Item] {
+        AppDestination.allCases.map { destination in
+            let here = selection == destination
+            return AppDrawerPanel.Item(
+                icon: destination.icon(selected: here),
+                label: destination.title,
+                detail: destination.detail,
+                tint: destination.tint,
+                isCurrent: here
+            ) { select(destination) }
+        }
+    }
+
+    /// Everything that is not a place.
     ///
-    /// Deliberately not Browser and Videos as well: they have seats two
-    /// centimetres below this panel, and a menu that repeats the bar teaches
-    /// people the bar is not to be trusted. What belongs here is what has
-    /// nowhere else to be.
-    private var menuItems: [AppMenuPanel.Item] {
-        var items: [AppMenuPanel.Item] = [
-            AppMenuPanel.Item(
+    /// Cast is here as well as in every header: the header mark is the control,
+    /// this row is the signpost — it says which television, which the mark
+    /// cannot.
+    private var drawerActions: [AppDrawerPanel.Item] {
+        var items: [AppDrawerPanel.Item] = [
+            AppDrawerPanel.Item(
                 icon: "tv.badge.wifi", label: "Cast to TV",
                 detail: isCasting ? "Playing on \(castDeviceName ?? "your TV")" : "Find a television",
                 tint: PanuraTheme.accent
             ) {
-                showMenu = false
+                drawer.close()
                 if isCasting { showCastControls = true } else { CastPicker.shared.open() }
             },
-            AppMenuPanel.Item(
-                icon: "link", label: "Network Stream",
-                detail: "Play a link straight from its address",
-                tint: .cyan
-            ) { select(.stream) },
-            AppMenuPanel.Item(
-                icon: "gearshape.fill", label: "Settings",
-                detail: "Playback, browser, subtitles, gestures",
-                tint: .gray
-            ) { select(.settings) },
-            AppMenuPanel.Item(
+            AppDrawerPanel.Item(
                 icon: "questionmark.circle.fill", label: "Help",
                 detail: "Answers, and how to reach us",
                 tint: .blue
-            ) { showMenu = false; showFAQ = true },
-            AppMenuPanel.Item(
+            ) { drawer.close(); showFAQ = true },
+            AppDrawerPanel.Item(
                 icon: "exclamationmark.bubble.fill", label: "Report a problem",
                 detail: "A site that will not play, or anything broken",
                 tint: .orange
-            ) { showMenu = false; showReport = true },
+            ) { drawer.close(); showReport = true },
         ]
         // Only once there is a listing to open. A Rate row that goes nowhere is
         // worse than no Rate row.
         if VersionStore.storeLinkReady {
             items.append(
-                AppMenuPanel.Item(
+                AppDrawerPanel.Item(
                     icon: "star.fill", label: "Rate Panura",
                     detail: "Leave a review on the App Store",
                     tint: .yellow
                 ) {
-                    showMenu = false
+                    drawer.close()
                     UIApplication.shared.open(VersionStore.storeURL)
                 }
             )

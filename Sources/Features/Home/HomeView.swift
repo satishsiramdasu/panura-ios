@@ -42,7 +42,8 @@ struct HomeView: View {
                     // something, and it sits with the other places to go rather
                     // than in front of the places they were going.
                     CastHomeCard().padding(.horizontal, 16)
-                    optionsSection
+                    quickAccessSection
+                    housekeepingRow
                 }
                 .padding(.vertical, 20)
             }
@@ -114,22 +115,79 @@ struct HomeView: View {
         }
     }
 
-    // MARK: options
+    // MARK: quick access
 
-    /// The destinations and housekeeping actions that have no seat in the bar.
-    /// Home is where they live now, which is what lets the bar stay down to the
-    /// three places you actually switch between.
-    private var optionsSection: some View {
+    /// The four places worth going, as cards.
+    ///
+    /// They were four small square tiles in a row of glyphs — a caption apiece
+    /// and no room to say more, which is fine for Settings and useless for
+    /// Network Stream, the one nobody can guess at. Two columns of rectangles
+    /// have room for a sentence, and Home is now where the destinations are
+    /// reached from as well as the drawer: the bottom bar that used to carry
+    /// Browser and Videos is gone.
+    private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Options")
-            HStack(spacing: 10) {
-                optionTile("Settings", systemImage: "gearshape.fill") { onOpenSection(.settings) }
-                optionTile("Network Stream", systemImage: "link") { onOpenSection(.stream) }
-                optionTile("Report Issue", systemImage: "ladybug") { showReport = true }
-                optionTile("Clear History", systemImage: "trash") { confirmClearHistory = true }
+            sectionHeader("Quick access")
+            LazyVGrid(
+                columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                spacing: 10
+            ) {
+                sectionCard(.web, title: "Web Browser", detail: "Find & cast online videos")
+                sectionCard(.videos, title: "Phone Videos", detail: "Cast from your library")
+                sectionCard(.stream, title: "Network Stream", detail: "Play a link by address")
+                sectionCard(.settings, title: "Settings", detail: "Playback, browser, gestures")
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    private func sectionCard(
+        _ destination: AppDestination,
+        title: String,
+        detail: String
+    ) -> some View {
+        Button { onOpenSection(destination) } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Image(systemName: destination.icon(selected: true))
+                    .font(.system(size: 19, weight: .medium))
+                    .foregroundStyle(destination.tint)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        destination.tint.opacity(0.16),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+
+                Spacer(minLength: 18)
+
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 148, alignment: .topLeading)
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(PanuraTheme.surfaceVariant)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The two that are actions rather than places, kept small because that is
+    /// what they are.
+    private var housekeepingRow: some View {
+        HStack(spacing: 10) {
+            optionTile("Report Issue", systemImage: "ladybug") { showReport = true }
+            optionTile("Clear History", systemImage: "trash") { confirmClearHistory = true }
+        }
+        .padding(.horizontal, 16)
     }
 
     private func optionTile(
