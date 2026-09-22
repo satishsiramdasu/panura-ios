@@ -178,67 +178,60 @@ struct CastSessionView: View {
 /// trust would be a slider that fights the TV.
 struct ChromecastControlView: View {
     @ObservedObject private var cast = CastManager.shared
+    @ObservedObject private var flow = CastFlow.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var showQueue = false
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(cast.castingTitle ?? "Video")
-                            .font(.subheadline.weight(.medium))
-                            .lineLimit(2)
-                        HStack(spacing: 6) {
-                            CastMark(connected: true).frame(width: 14, height: 14)
-                            Text(cast.connectedDeviceName ?? "Chromecast")
-                            if !cast.remoteTimeLeft.isEmpty {
-                                Text("·")
-                                Text(cast.remoteTimeLeft)
-                            }
-                        }
+        VStack(spacing: 0) {
+            CastControlBar(
+                queueCount: flow.queue.count,
+                onQueue: { showQueue = true },
+                onDone: { dismiss() }
+            )
+
+            ScrollView {
+                VStack(spacing: 26) {
+                    CastHero(
+                        title: cast.castingTitle ?? "Video",
+                        device: cast.connectedDeviceName ?? "Chromecast",
+                        note: cast.remoteTimeLeft.isEmpty ? nil : cast.remoteTimeLeft
+                    )
+
+                    // The one control the receiver answers for. No scrubber and
+                    // no skips: a position this screen cannot trust would be a
+                    // slider that fights the TV.
+                    Button { cast.toggleRemotePlay() } label: {
+                        Image(systemName: cast.isRemotePlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundStyle(PanuraTheme.onAccent)
+                            .frame(width: 74, height: 74)
+                            .background(Circle().fill(PanuraTheme.accent))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(cast.isRemotePlaying ? "Pause" : "Play")
+
+                    Text("This television is a Chromecast, so play and pause are all it reports back.")
                         .font(.caption)
                         .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    }
-                } header: { Text("Playing on TV") }
-
-                Section {
-                    Button {
-                        cast.toggleRemotePlay()
-                    } label: {
-                        Label(
-                            cast.isRemotePlaying ? "Pause" : "Play",
-                            systemImage: cast.isRemotePlaying ? "pause.fill" : "play.fill"
-                        )
-                    }
-                } header: { Text("Controls") }
-
-                if !CastFlow.shared.queue.isEmpty {
-                    Section {
-                        NavigationLink {
-                            CastQueueView()
-                        } label: {
-                            Label(
-                                "Queue · \(CastFlow.shared.queue.count) waiting",
-                                systemImage: "list.bullet"
-                            )
-                        }
-                    }
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Section {
-                    Button("Stop casting", role: .destructive) {
-                        cast.stopRemote()
-                        dismiss()
-                    }
-                }
+                .padding(.horizontal, 22)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
-            .navigationTitle("Playing on TV")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+
+            CastStopButton(title: "Stop casting") {
+                cast.stopRemote()
+                dismiss()
             }
+            .padding(.horizontal, 22)
+            .padding(.bottom, 8)
+        }
+        .background(PanuraTheme.background)
+        .sheet(isPresented: $showQueue) {
+            NavigationStack { CastQueueView() }
         }
     }
 }
