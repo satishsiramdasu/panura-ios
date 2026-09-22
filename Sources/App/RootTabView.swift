@@ -74,16 +74,25 @@ struct RootTabView: View {
                     RoundedRectangle(cornerRadius: drawer.isOpen ? 22 : 0, style: .continuous)
                 )
                 .shadow(color: .black.opacity(drawer.isOpen ? 0.45 : 0), radius: 22, x: -6)
-                .overlay {
-                    if drawer.isOpen {
-                        // Anywhere on the app goes back to the app, the cross in
-                        // the header included — the app is half off screen and
-                        // nothing on it should be operated from here.
-                        Color.black.opacity(0.001)
-                            .contentShape(Rectangle())
-                            .onTapGesture { drawer.close() }
-                    }
-                }
+                // Nothing on a screen that is half off the screen should be
+                // operable. This used to be an overlay carrying the tap that
+                // closes the drawer, and the overlay was hit-tested against the
+                // shell's *unoffset* frame — the whole screen — so it sat on top
+                // of the drawer and swallowed every tap meant for a row. The
+                // drawer looked dead. The tap-to-close is its own view below,
+                // inset past the drawer, where it can only cover the app.
+                // `disabled` would not be enough: it stops SwiftUI controls
+                // and says nothing to a UIKit view, so the web page underneath
+                // would still scroll under a finger.
+                .allowsHitTesting(!drawer.isOpen)
+
+            if drawer.isOpen {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .onTapGesture { drawer.close() }
+                    .padding(.leading, DrawerState.width)
+                    .ignoresSafeArea()
+            }
         }
         .background(PanuraTheme.surfaceContainer.ignoresSafeArea())
         // One bottom edge for everything in the stack — the screen's, not the
@@ -152,7 +161,39 @@ struct RootTabView: View {
             // than a strip at the bottom. Casting is the opposite. Nothing on
             // the phone shows it at all, which is what earns a permanent strip.
             if isCasting {
-                castBar.transition(.move(edge: .bottom).combined(with: .opacity))
+                castBar
+                    // Replace what is on the TV, or line this up behind it —
+                    // asked on the bar, which is what the question is about. It
+                    // used to hang off the browser's own view, so dismissing the
+                    // found-video sheet was followed by a dialog growing out of
+                    // the middle of a web page that knows nothing of any
+                    // television.
+                    .confirmationDialog(
+                        "Something is already on the TV",
+                        isPresented: Binding(
+                            get: { castFlow.pendingQueue != nil },
+                            set: { if !$0 { castFlow.pendingQueue = nil } }
+                        ),
+                        titleVisibility: .visible
+                    ) {
+                        Button("Play this instead") {
+                            if let item = castFlow.pendingQueue {
+                                castFlow.replace(with: [item])
+                                showCastControls = true
+                            }
+                            castFlow.pendingQueue = nil
+                        }
+                        Button("Add to the queue") {
+                            if let item = castFlow.pendingQueue {
+                                castFlow.enqueue([item])
+                            }
+                            castFlow.pendingQueue = nil
+                        }
+                        Button("Cancel", role: .cancel) { castFlow.pendingQueue = nil }
+                    } message: {
+                        Text(castFlow.pendingQueue?.title ?? "")
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .background(PanuraTheme.background)
@@ -303,19 +344,11 @@ struct RootTabView: View {
 
     /// Everything that is not a place.
     ///
-    /// Cast is here as well as in every header: the header mark is the control,
-    /// this row is the signpost — it says which television, which the mark
-    /// cannot.
+    /// No Cast row: the mark for it is in the header of every screen, two
+    /// centimetres above this list, and a drawer that repeats what the bar
+    /// already offers teaches people the bar is not to be trusted.
     private var drawerActions: [AppDrawerPanel.Item] {
         var items: [AppDrawerPanel.Item] = [
-            AppDrawerPanel.Item(
-                icon: "tv.badge.wifi", label: "Cast to TV",
-                detail: isCasting ? "Playing on \(castDeviceName ?? "your TV")" : "Find a television",
-                tint: PanuraTheme.accent
-            ) {
-                drawer.close()
-                if isCasting { showCastControls = true } else { CastPicker.shared.open() }
-            },
             AppDrawerPanel.Item(
                 icon: "questionmark.circle.fill", label: "Help",
                 detail: "Answers, and how to reach us",
@@ -344,7 +377,7 @@ struct RootTabView: View {
         return items
     }
 
-    /// The TV in use, for the menu row that says so.
+    /// The TV in use, for the bar and the dialog that names it.
     private var castDeviceName: String? {
         if panuraCast.isTVConnected, !panuraCast.connectedTVName.isEmpty {
             return panuraCast.connectedTVName

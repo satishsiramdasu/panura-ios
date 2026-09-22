@@ -28,22 +28,26 @@ struct PanuraCastControlView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            CastControlBar(onDone: { dismiss() })
+            CastControlBar(
+                device: cast.connectedTVName.isEmpty ? "TV" : cast.connectedTVName,
+                note: modeNote,
+                onDone: { dismiss() }
+            )
 
             ScrollView {
                 VStack(spacing: 26) {
                     CastHero(
                         title: cast.streamTitle.isEmpty ? "Video" : cast.streamTitle,
-                        device: cast.connectedTVName.isEmpty ? "Panura TV" : cast.connectedTVName,
-                        note: modeNote,
                         isLive: playback.isLive,
                         posterURL: flow.nowPlaying?.posterURL,
                         posterImage: flow.nowPlaying?.posterImage
                     )
                     if !playback.isLive { scrubber }
                     transport
-                    volume
-                    tracks
+                    // Audio, subtitles and volume in one row: three controls
+                    // that each change one thing about the sound or the words,
+                    // and none of which needs a row of its own.
+                    secondaryControls
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 8)
@@ -145,21 +149,70 @@ struct PanuraCastControlView: View {
 
     // MARK: volume
 
-    private var volume: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "speaker.fill")
-            Slider(
-                value: Binding(
-                    get: { Double(playback.volume) },
-                    set: { cast.setVolume(Float($0)) }
-                ),
-                in: 0...1
-            )
-            .tint(PanuraTheme.accent)
-            Image(systemName: "speaker.wave.3.fill")
+    /// Two buttons, not a slider.
+    ///
+    /// A slider asks for a value; nobody wants a *value* for the volume of a
+    /// television across the room — they want it a bit louder, and then a bit
+    /// louder again. Two taps do that without looking at the phone, where a
+    /// slider needs a thumb found and dragged, and it is also what every
+    /// physical remote in the house does.
+    private var volumePill: some View {
+        HStack(spacing: 0) {
+            volumeStep("minus", to: playback.volume - 0.05, label: "Quieter")
+
+            VStack(spacing: 1) {
+                Image(systemName: speakerGlyph)
+                    .font(.system(size: 12))
+                    .foregroundStyle(PanuraTheme.accent)
+                Text("\(Int((playback.volume * 100).rounded()))%")
+                    .font(.caption2.weight(.medium).monospacedDigit())
+                    .foregroundStyle(.primary)
+            }
+            .frame(maxWidth: .infinity)
+
+            volumeStep("plus", to: playback.volume + 0.05, label: "Louder")
         }
-        .font(.caption)
-        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        .frame(maxWidth: .infinity)
+        .frame(height: PanuraCastControlView.pillHeight)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(PanuraTheme.surfaceVariant)
+        )
+    }
+
+    private func volumeStep(_ glyph: String, to value: Float, label: String) -> some View {
+        Button {
+            cast.setVolume(min(1, max(0, value)))
+        } label: {
+            Image(systemName: glyph)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .frame(width: 40, height: PanuraCastControlView.pillHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var speakerGlyph: String {
+        if playback.volume <= 0.001 { return "speaker.slash.fill" }
+        if playback.volume < 0.34 { return "speaker.fill" }
+        if playback.volume < 0.67 { return "speaker.wave.1.fill" }
+        return "speaker.wave.3.fill"
+    }
+
+    /// Whatever the stream carries, plus the volume, on one line. Two controls
+    /// when there are no subtitles, three when there are.
+    private var secondaryControls: some View {
+        HStack(spacing: 10) {
+            if !playback.audioTracks.isEmpty {
+                audioPill
+            }
+            if !playback.subtitleTracks.isEmpty {
+                subtitlePill
+            }
+            volumePill
+        }
     }
 
     // MARK: tracks
@@ -168,49 +221,43 @@ struct PanuraCastControlView: View {
     /// actually carries — a file with one audio track has nothing to choose
     /// between, and a row that always says "Default" teaches people to stop
     /// reading this part of the screen.
-    @ViewBuilder
-    private var tracks: some View {
-        if !playback.audioTracks.isEmpty || !playback.subtitleTracks.isEmpty {
-            HStack(spacing: 10) {
-                if !playback.audioTracks.isEmpty {
-                    Menu {
-                        ForEach(playback.audioTracks) { track in
-                            Button {
-                                cast.selectAudioTrack(track.id)
-                            } label: {
-                                Label(track.label, systemImage: track.selected ? "checkmark" : "")
-                            }
-                        }
-                    } label: {
-                        trackPill(
-                            "Audio", systemImage: "waveform",
-                            value: playback.audioTracks.first { $0.selected }?.label ?? "Default"
-                        )
-                    }
-                }
-                if !playback.subtitleTracks.isEmpty {
-                    Menu {
-                        Button { cast.disableSubtitles() } label: {
-                            Label(
-                                "Off",
-                                systemImage: playback.subtitleTracks.contains { $0.selected } ? "" : "checkmark"
-                            )
-                        }
-                        ForEach(playback.subtitleTracks) { track in
-                            Button {
-                                cast.selectSubtitleTrack(track.id)
-                            } label: {
-                                Label(track.label, systemImage: track.selected ? "checkmark" : "")
-                            }
-                        }
-                    } label: {
-                        trackPill(
-                            "Subtitles", systemImage: "captions.bubble",
-                            value: playback.subtitleTracks.first { $0.selected }?.label ?? "Off"
-                        )
-                    }
+    private var audioPill: some View {
+        Menu {
+            ForEach(playback.audioTracks) { track in
+                Button {
+                    cast.selectAudioTrack(track.id)
+                } label: {
+                    Label(track.label, systemImage: track.selected ? "checkmark" : "")
                 }
             }
+        } label: {
+            trackPill(
+                "Audio", systemImage: "waveform",
+                value: playback.audioTracks.first { $0.selected }?.label ?? "Default"
+            )
+        }
+    }
+
+    private var subtitlePill: some View {
+        Menu {
+            Button { cast.disableSubtitles() } label: {
+                Label(
+                    "Off",
+                    systemImage: playback.subtitleTracks.contains { $0.selected } ? "" : "checkmark"
+                )
+            }
+            ForEach(playback.subtitleTracks) { track in
+                Button {
+                    cast.selectSubtitleTrack(track.id)
+                } label: {
+                    Label(track.label, systemImage: track.selected ? "checkmark" : "")
+                }
+            }
+        } label: {
+            trackPill(
+                "Subtitles", systemImage: "captions.bubble",
+                value: playback.subtitleTracks.first { $0.selected }?.label ?? "Off"
+            )
         }
     }
 
@@ -233,14 +280,18 @@ struct PanuraCastControlView: View {
                 .font(.caption2)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
         .frame(maxWidth: .infinity)
+        .frame(height: PanuraCastControlView.pillHeight)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(PanuraTheme.surfaceVariant)
         )
     }
+
+    /// One height for every control on that row, so three different things
+    /// still read as one row.
+    static let pillHeight: CGFloat = 46
 
     private static func clock(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds > 0 else { return "0:00" }
@@ -260,6 +311,13 @@ struct PanuraCastControlView: View {
 /// A button leading to a list that is already visible is a button that has to
 /// be explained.
 struct CastControlBar: View {
+    /// The television. Named here rather than under the poster, because the
+    /// first question this screen answers is where the video went, and a screen
+    /// that says "Playing on TV" at the top and names the TV three lines lower
+    /// answers it twice and badly.
+    var device: String?
+    /// Direct, or through this phone.
+    var note: String?
     let onDone: () -> Void
 
     var body: some View {
@@ -274,10 +332,26 @@ struct CastControlBar: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Done")
 
-            Spacer()
-            Text("Playing on TV")
-                .font(.subheadline.weight(.semibold))
-            Spacer()
+            Spacer(minLength: 6)
+            HStack(spacing: 5) {
+                Text("Playing on")
+                    .font(.caption)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                CastMark(connected: true)
+                    .frame(width: 13, height: 13)
+                    .foregroundStyle(PanuraTheme.accent)
+                Text(device ?? "TV")
+                    .font(.subheadline.weight(.semibold))
+                if let note {
+                    Text("·")
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                }
+            }
+            .lineLimit(1)
+            Spacer(minLength: 6)
             // Balances Done, so the title sits in the middle of the bar rather
             // than in the middle of what is left of it.
             Color.clear.frame(width: 38, height: 38)
@@ -295,8 +369,6 @@ struct CastControlBar: View {
 /// matter: what is playing, and where.
 struct CastHero: View {
     let title: String
-    let device: String
-    var note: String?
     var isLive = false
     /// The page's poster, or a library thumbnail. There is no frame to take
     /// from the video itself — it is playing on a television — so this is the
@@ -336,20 +408,11 @@ struct CastHero: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
 
-                HStack(spacing: 6) {
-                    CastMark(connected: true).frame(width: 13, height: 13)
-                    Text(device)
-                    if let note {
-                        Text("·")
-                        Text(note)
-                    }
-                    if isLive {
-                        Text("·")
-                        Text("LIVE").foregroundStyle(.red)
-                    }
+                if isLive {
+                    Text("LIVE")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.red)
                 }
-                .font(.caption)
-                .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
         }
         .frame(maxWidth: .infinity)
@@ -399,11 +462,14 @@ struct CastQueueInline: View {
 
     var body: some View {
         if !flow.queue.isEmpty {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 header
                 list
             }
-            .padding(.top, 4)
+            // Clear of the row above it: without this the first queued row sat
+            // against the audio and subtitle controls as though it were part of
+            // them.
+            .padding(.top, 18)
         }
     }
 

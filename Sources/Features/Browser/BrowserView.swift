@@ -29,7 +29,6 @@ struct BrowserView: View {
     @ObservedObject private var castPicker = CastPicker.shared
     @State private var pendingCast: MediaItem?
     /// A stream found while the TV is already busy, waiting on replace-or-queue.
-    @State private var pendingQueue: MediaItem?
     @State private var showMenu = false
     @ObservedObject private var siteSettings = SiteSettings.shared
     @State private var showAddress = false
@@ -105,28 +104,6 @@ struct BrowserView: View {
         .sheet(isPresented: $showPanuraControls) {
             CastSessionView()
         }
-        .confirmationDialog(
-            "Something is already on the TV",
-            isPresented: pendingQueueBinding,
-            titleVisibility: .visible
-        ) {
-            Button("Play this instead") {
-                if let item = pendingQueue {
-                    CastFlow.shared.replace(with: [CastFlow.item(for: item)])
-                    showPanuraControls = true
-                }
-                pendingQueue = nil
-            }
-            Button("Add to the queue") {
-                if let item = pendingQueue {
-                    CastFlow.shared.enqueue([CastFlow.item(for: item)])
-                }
-                pendingQueue = nil
-            }
-            Button("Cancel", role: .cancel) { pendingQueue = nil }
-        } message: {
-            Text(pendingQueue?.title ?? "")
-        }
         // The video that asked for a TV goes as soon as one answers. The panel
         // is drawn at the root, so this only watches it close.
         .onChange(of: castPicker.isShowing) { shown in
@@ -175,14 +152,6 @@ struct BrowserView: View {
     /// A cast that had to wait for a TV. Sending it on dismissal rather than
     /// making the user find the button again is the whole point of remembering
     /// which video asked.
-    /// A stream found while the TV is busy, waiting on replace-or-queue.
-    private var pendingQueueBinding: Binding<Bool> {
-        Binding(
-            get: { pendingQueue != nil },
-            set: { if !$0 { pendingQueue = nil } }
-        )
-    }
-
     private func castPendingIfConnected() {
         guard let item = pendingCast else { return }
         pendingCast = nil
@@ -313,6 +282,10 @@ struct BrowserView: View {
     /// be struck through. The brand mark wins anyway: it was already in the bar
     /// doing nothing a second control could not do, and one button always in
     /// the same place beats a clearer glyph in a crowded pill.
+    /// The television strip is directly under this bar, so this one stops
+    /// short of the screen's bottom edge.
+    private var castBarShowing: Bool { panuraCast.isCasting || cast.isCasting }
+
     private var siteLowered: Bool {
         siteSettings.isLowered(host: SiteSettings.key(for: model.currentURL))
     }
@@ -660,11 +633,14 @@ struct BrowserView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.top, 10)
+        .padding(.top, 8)
         // Nothing sits under this any more — the bottom bar is gone — so it is
         // the bottom of the screen and keeps the home-indicator strip itself, or
-        // its buttons sit under the indicator.
-        .padding(.bottom, 12 + AppChrome.bottomInset)
+        // its buttons sit under the indicator. Unless the cast bar is there, in
+        // which case that strip is its job and this one sits straight on top of
+        // it: two bars with a gap of app background between them read as two
+        // unrelated things.
+        .padding(.bottom, castBarShowing ? 8 : 10 + AppChrome.bottomInset)
         .background(PanuraTheme.surfaceContainer)
     }
 
@@ -823,11 +799,10 @@ struct BrowserView: View {
             if !model.foundSubtitles.isEmpty {
                 countBadge(systemImage: "captions.bubble.fill", count: model.foundSubtitles.count)
             }
-            Image(systemName: "chevron.up")
-                .font(.footnote)
-                .foregroundStyle(PanuraTheme.onSurfaceVariant)
         }
-        .frame(height: 30)
+        // Nothing to disclose and nothing to tap: the chevron went with the
+        // button this row used to be, and the row shrank with it.
+        .frame(height: 26)
         .contentShape(Rectangle())
     }
 
@@ -850,7 +825,11 @@ struct BrowserView: View {
     private func streamBadges(_ video: ExtractedVideo) -> some View {
         HStack(spacing: 5) {
             if video.source != .unknown {
-                badge(video.source.label, systemImage: video.source.icon)
+                // The glyph alone. Spelling out "Network request" or "Page
+                // source" beside it doubled the width of the busiest badge to
+                // explain a distinction nobody acts on — the icon is there to
+                // tell two rows apart, not to teach how detection works.
+                badge(nil, systemImage: video.source.icon, label: video.source.label)
             }
             if let tag = video.probeResult?.qualityTag {
                 badge(tag, tint: PanuraTheme.accent)
@@ -886,21 +865,26 @@ struct BrowserView: View {
     }
 
     private func badge(
-        _ text: String,
+        _ text: String?,
         systemImage: String? = nil,
-        tint: Color = PanuraTheme.onSurfaceVariant
+        tint: Color = PanuraTheme.onSurfaceVariant,
+        label: String? = nil
     ) -> some View {
         HStack(spacing: 3) {
             if let systemImage {
-                Image(systemName: systemImage).font(.system(size: 9, weight: .semibold))
+                Image(systemName: systemImage).font(.system(size: 10, weight: .semibold))
             }
-            Text(text).font(.caption2.weight(.medium))
+            if let text {
+                Text(text).font(.caption2.weight(.medium))
+            }
         }
         .foregroundStyle(tint)
-        .padding(.horizontal, 6)
+        .padding(.horizontal, text == nil ? 5 : 6)
         .padding(.vertical, 3)
         .background(tint.opacity(0.16), in: Capsule())
         .lineLimit(1)
+        // A glyph-only badge still has to say what it means to VoiceOver.
+        .accessibilityLabel(label ?? text ?? "")
     }
 
     @ViewBuilder
@@ -1023,7 +1007,9 @@ struct BrowserView: View {
         // another is playing is as often the next thing to watch as it is a
         // correction.
         if panuraCast.isCasting || cast.isCasting {
-            pendingQueue = item
+            // Asked on the cast bar, not here: by the time the question is put,
+            // the sheet this came from has closed.
+            CastFlow.shared.pendingQueue = CastFlow.item(for: item)
         } else {
             CastFlow.shared.replace(with: [CastFlow.item(for: item)])
             showPanuraControls = true
@@ -1062,20 +1048,20 @@ struct BrowserView: View {
     /// themselves, and a title that has to fit between two buttons cannot say
     /// what an hour-long film is called. The poster does more than all of it.
     private var sheetHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if model.posterURL != nil {
-                PosterThumb(
-                    url: model.posterURL, fallback: "film",
-                    width: PanelMetrics.posterWidth,
-                    height: PanelMetrics.posterWidth * 9 / 16,
-                    corner: 14
-                )
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
+        HStack(spacing: 12) {
+            // Beside the title, not above it, and at a fixed size. A poster
+            // given the width of the sheet is as tall as the site published it,
+            // which on some pages was most of the screen before a single stream
+            // was listed — and every page would then have a header of a
+            // different height.
+            PosterThumb(
+                url: model.posterURL, fallback: "film",
+                width: 104, height: 60, corner: 10
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(model.pageTitle.isEmpty ? "Detected videos" : model.pageTitle)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
                 Text(
                     model.foundVideos.count == 1
@@ -1085,7 +1071,13 @@ struct BrowserView: View {
                 .font(.caption)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
+            Spacer(minLength: 0)
         }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(PanuraTheme.surfaceVariant)
+        )
     }
 
     /// Resolution, size and kind, in that order, and only what is known.

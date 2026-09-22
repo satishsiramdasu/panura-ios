@@ -47,16 +47,24 @@ struct AnchoredPanel<Content: View>: View {
         .shadow(color: .black.opacity(0.42), radius: 20, y: 8)
     }
 
-    /// Kept clear of the rounded corners: an arrow growing out of a curve reads
-    /// as a drawing mistake rather than as a pointer.
+    /// Kept fully clear of the rounded corners.
+    ///
+    /// Overlapping one put the arrow's base against the corner's curve, and the
+    /// sliver between the two showed the page through the panel — a pinprick of
+    /// daylight in the corner of the cast panel. The base has to sit entirely on
+    /// the card's straight top edge, so the inset can never be less than the
+    /// corner radius plus half the arrow.
     private var pointer: some View {
-        let inset = max(pointerInset, PanelMetrics.corner + 6)
+        let inset = max(pointerInset, PanelMetrics.corner + PanelMetrics.pointerWidth / 2)
         return HStack(spacing: 0) {
             if side == .trailing { Spacer(minLength: 0) }
             PointerShape()
                 .fill(PanelMetrics.surface)
-                .frame(width: 22, height: 10)
-                .padding(side.edge, inset - 11)
+                .frame(width: PanelMetrics.pointerWidth, height: 9)
+                // A point of overlap: two shapes meeting exactly leave a hairline
+                // of background between them once anti-aliasing has had its say.
+                .padding(.bottom, -1)
+                .padding(side.edge, inset - PanelMetrics.pointerWidth / 2)
             if side == .leading { Spacer(minLength: 0) }
         }
     }
@@ -67,7 +75,8 @@ enum PanelMetrics {
     /// Wide enough for a device name or a site's controls, never the width of
     /// the screen: a panel that spans the screen reads as a new screen.
     static var width: CGFloat { min(UIScreen.main.bounds.width * 0.82, 360) }
-    static let corner: CGFloat = 16
+    static let corner: CGFloat = 14
+    static let pointerWidth: CGFloat = 20
     /// A step lighter than the header it hangs from — that difference is what
     /// separates the two without a line between them.
     static var surface: Color { PanuraTheme.surfaceContainerHigh }
@@ -79,8 +88,9 @@ enum PanelMetrics {
     static let glyphCentre: CGFloat = 70
     /// The middle of the cast mark, from the right edge.
     static let castCentre: CGFloat = 28
-    /// What the panel keeps between itself and the side of the screen.
-    static let margin: CGFloat = 8
+    /// What the panel keeps between itself and the side of the screen. Small,
+    /// because the arrow has to reach a button that is itself near the edge.
+    static let margin: CGFloat = 6
 
     static var motion: Animation { .spring(response: 0.3, dampingFraction: 0.82) }
 
@@ -89,16 +99,16 @@ enum PanelMetrics {
     static var posterWidth: CGFloat { min(UIScreen.main.bounds.width - 72, 320) }
 }
 
-/// The arrow. A triangle with its tip rounded off, because a needle-sharp point
-/// looks broken at this size on a retina screen.
+/// The arrow: a triangle, with straight edges.
+///
+/// It was drawn with a quadratic curve, which made a dome rather than a point —
+/// the shape of a speech bubble's tail, not of something indicating a button.
 private struct PointerShape: Shape {
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: 0, y: rect.maxY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: rect.maxY),
-            control: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.35)
-        )
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
         path.closeSubpath()
         return path
     }

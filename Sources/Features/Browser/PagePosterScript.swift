@@ -61,6 +61,51 @@ enum PagePosterScript {
         } catch (e) {}
         return '';
       }
+      // WordPress names its featured image in the markup, and a great many
+      // video sites are WordPress underneath. `wp-post-image` is the class it
+      // puts on that image, and it is the picture the page itself considers to
+      // be what the post is about.
+      function fromArticle(){
+        try {
+          var picks = [
+            'img.wp-post-image', '.post-thumbnail img', '.entry-content img',
+            'article img', '.video-thumb img', '.thumb img'
+          ];
+          for (var i = 0; i < picks.length; i++) {
+            var el = document.querySelector(picks[i]);
+            if (!el) continue;
+            var src = el.currentSrc || el.getAttribute('src') || '';
+            if (src && !tooSmall(el)) return abs(src);
+          }
+        } catch (e) {}
+        return '';
+      }
+      // The biggest picture on the page, as a last resort. A poster is always
+      // one of the largest things a page draws, and a logo or an icon never is.
+      function fromLargest(){
+        try {
+          var imgs = document.images || [], best = null, bestArea = 0;
+          for (var i = 0; i < imgs.length && i < 120; i++) {
+            var el = imgs[i];
+            var w = el.naturalWidth || el.width || 0;
+            var h = el.naturalHeight || el.height || 0;
+            var area = w * h;
+            // Wider than tall, and big enough to be content: a poster, not a
+            // sidebar avatar or a sponsor's badge.
+            if (w < 240 || h < 120 || area <= bestArea) continue;
+            best = el; bestArea = area;
+          }
+          if (best) {
+            var src = best.currentSrc || best.getAttribute('src') || '';
+            if (src) return abs(src);
+          }
+        } catch (e) {}
+        return '';
+      }
+      function tooSmall(el){
+        var w = el.naturalWidth || el.width || 0;
+        return w > 0 && w < 160;
+      }
       function fromVideo(){
         try {
           var v = document.querySelector('video[poster]');
@@ -70,7 +115,8 @@ enum PagePosterScript {
       }
       function report(){
         try {
-          var url = fromMeta() || fromJSONLD() || fromVideo();
+          var url = fromMeta() || fromJSONLD() || fromVideo()
+                    || fromArticle() || fromLargest();
           // Data URIs are usually a placeholder pixel, and a poster worth
           // showing is never one.
           if (!url || url.indexOf('data:') === 0 || url === last) return;
@@ -81,6 +127,10 @@ enum PagePosterScript {
       report();
       setTimeout(report, 1200);
       setTimeout(report, 3000);
+      // Images decode after the document is done, and `naturalWidth` is 0 until
+      // they do — the size-based fallbacks are blind before that.
+      setTimeout(report, 6000);
+      window.addEventListener('load', function(){ setTimeout(report, 400); });
       // A single-page app changes the page without reloading it, and the poster
       // changes with it.
       window.addEventListener('popstate', function(){ last = ''; setTimeout(report, 800); });

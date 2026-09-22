@@ -92,6 +92,11 @@ final class CastFlow: ObservableObject {
     /// What the TV has now, so the screen can name it while the queue shows
     /// what follows.
     @Published private(set) var nowPlaying: CastQueueItem?
+    /// Something was chosen while the TV is busy, and the question of what to do
+    /// about it has not been answered yet. It lives here rather than on the
+    /// screen that asked, because the dialog belongs to the cast bar — the
+    /// screen that started it is often gone by the time the question is put.
+    @Published var pendingQueue: CastQueueItem?
 
     private var work: Task<Void, Never>?
     private var watchers: Set<AnyCancellable> = []

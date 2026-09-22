@@ -182,14 +182,16 @@ struct ChromecastControlView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            CastControlBar(onDone: { dismiss() })
+            CastControlBar(
+                device: cast.connectedDeviceName ?? "Chromecast",
+                note: cast.remoteTimeLeft.isEmpty ? nil : cast.remoteTimeLeft,
+                onDone: { dismiss() }
+            )
 
             ScrollView {
                 VStack(spacing: 26) {
                     CastHero(
                         title: cast.castingTitle ?? "Video",
-                        device: cast.connectedDeviceName ?? "Chromecast",
-                        note: cast.remoteTimeLeft.isEmpty ? nil : cast.remoteTimeLeft,
                         posterURL: CastFlow.shared.nowPlaying?.posterURL,
                         posterImage: CastFlow.shared.nowPlaying?.posterImage
                     )
