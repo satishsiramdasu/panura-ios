@@ -62,15 +62,41 @@ struct RootTabView: View {
 
     @ObservedObject private var drawer = DrawerState.shared
 
+    /// Push the drawer back where it came from.
+    ///
+    /// The way it opened, reversed - which is how a drawer is expected to close,
+    /// and a tap on the sliver of app showing beside it was the only way to do
+    /// it. 24 points before it counts, so it never fires on the little sideways
+    /// drift of a finger that meant to press a row.
+    private var closeDrag: some Gesture {
+        DragGesture(minimumDistance: 24)
+            .onEnded { value in
+                guard value.translation.width < -40 else { return }
+                drawer.close()
+            }
+    }
+
     var body: some View {
         ZStack(alignment: .leading) {
             // Underneath, revealed by the app moving off it. A drawer that
             // slides over the app hides how to get back; one the app slides off
             // keeps the way out under the thumb that opened it.
             if drawer.isOpen {
-                AppDrawerPanel(destinations: drawerDestinations, actions: drawerActions)
-                    .frame(width: DrawerState.width)
-                    .transition(.move(edge: .leading))
+                AppDrawerPanel(
+                    destinations: drawerDestinations,
+                    actions: drawerActions,
+                    onAbout: {
+                        drawer.close()
+                        settingsDeepLink = .about
+                        showSettings = true
+                    }
+                )
+                .frame(width: DrawerState.width)
+                .transition(.move(edge: .leading))
+                // Alongside the rows rather than instead of them: a drag that
+                // starts on a row still closes the drawer, and a tap on the same
+                // row still opens what it names.
+                .simultaneousGesture(closeDrag)
             }
 
             shell
@@ -97,6 +123,7 @@ struct RootTabView: View {
                 Color.black.opacity(0.001)
                     .contentShape(Rectangle())
                     .onTapGesture { drawer.close() }
+                    .gesture(closeDrag)
                     .padding(.leading, DrawerState.width)
                     .ignoresSafeArea()
             }

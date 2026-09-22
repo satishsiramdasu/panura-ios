@@ -54,6 +54,8 @@ struct AppDrawerPanel: View {
     let destinations: [Item]
     /// Everything else: casting, help, and the App Store.
     let actions: [Item]
+    /// Opens About, from the card that already names the version.
+    let onAbout: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -79,37 +81,54 @@ struct AppDrawerPanel: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 12)
             }
-
-            Divider().overlay(PanuraTheme.surfaceVariant)
-            Text(Self.versionLine)
-                .font(.caption2)
-                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
         }
         .frame(maxHeight: .infinity, alignment: .top)
         .background(PanuraTheme.surfaceContainer.ignoresSafeArea())
     }
 
-    /// Who this is. The drawer is the one place in the app that names itself.
+    /// Who this is - the same card About opens with, doing both jobs at once.
+    ///
+    /// The version used to be a line along the bottom edge, which is where a
+    /// drawer usually puts it; the card states it anyway, so the footer was the
+    /// same sentence twice with the height of the list between them. The info
+    /// button goes straight to About rather than through Settings, because the
+    /// card is what makes anyone want About in the first place.
     private var identity: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             Image("AppLogo")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 38, height: 38)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Panura").font(.headline)
-                Text("Web video, and your TV")
-                    .font(.caption)
+                .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Panura").font(.title3.weight(.semibold))
+                Text(Self.versionLine)
+                    .font(.caption2)
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
+            Button(action: onAbout) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 19))
+                    .foregroundStyle(PanuraTheme.accent)
+                    .frame(width: 38, height: 38)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("About Panura")
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 14)
-        .padding(.bottom, 14)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .background(
+            LinearGradient(
+                colors: [PanuraTheme.accentContainer, PanuraTheme.surfaceContainer],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: PanuraTheme.cornerMedium)
+        )
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
     }
 
     private func row(_ item: Item) -> some View {

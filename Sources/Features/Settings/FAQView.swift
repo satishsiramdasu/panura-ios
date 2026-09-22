@@ -186,7 +186,10 @@ struct FAQView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+                    // The same cross as Report and Settings. "Done" claims
+                    // something was finished, and reading an answer is not a
+                    // task with a state to commit.
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
                 }
             }
             .sheet(isPresented: $showReport) {

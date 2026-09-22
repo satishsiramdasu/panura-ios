@@ -69,6 +69,11 @@ struct SettingsHeader: View {
         .background(PanuraTheme.background)
     }
 
+    /// Drawn as a navigation bar's own buttons are: the glyph in the accent
+    /// colour and nothing behind it. Settings is a sheet and has no bar to put
+    /// them in, but it was the only screen in the app inventing a different look
+    /// for Back and Close - Help and Report, which are sheets too, have worn the
+    /// plain accent glyph all along.
     private func circle(
         _ glyph: String,
         label: String,
@@ -76,10 +81,10 @@ struct SettingsHeader: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: glyph)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.primary)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(PanuraTheme.accent)
                 .frame(width: 38, height: 38)
-                .background(Circle().fill(PanuraTheme.surfaceVariant))
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

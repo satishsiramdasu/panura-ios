@@ -1018,13 +1018,10 @@ struct BrowserView: View {
 
     private var foundSheet: some View {
         List {
-            Section {
-                sheetHeader
-                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 12, trailing: 16))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
-
+            // The card is this section's header, not a section of its own. Two
+            // sections in a grouped list are set apart by the spacing that says
+            // "different subject", and the card and the list under it are the
+            // same subject: this page, and what was found on it.
             Section {
                 ForEach(model.orderedVideos) { video in
                     foundSheetRow(video)
@@ -1034,6 +1031,10 @@ struct BrowserView: View {
                             }
                         }
                 }
+            } header: {
+                sheetHeader
+                    .textCase(nil)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 8, trailing: 16))
             }
         }
         .listStyle(.insetGrouped)

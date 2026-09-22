@@ -36,13 +36,13 @@ struct HomeView: View {
                     brandBlock
                     shortcutsSection
                     if !store.continueWatching.isEmpty { continueWatchingSection }
-                    // Above Options rather than under the brand. Shortcuts and
-                    // Continue Watching are what someone opening the app came
-                    // for; casting is what they reach for once they have picked
-                    // something, and it sits with the other places to go rather
-                    // than in front of the places they were going.
-                    CastHomeCard().padding(.horizontal, 16)
                     quickAccessSection
+                    // After the destinations, not before them. Shortcuts and
+                    // Continue Watching are what someone opening the app came
+                    // for, and Quick Access is where they go if neither was it;
+                    // casting is what they reach for once they have picked
+                    // something, which is later than all three.
+                    CastHomeCard().padding(.horizontal, 16)
                     housekeepingRow
                 }
                 .padding(.vertical, 20)
@@ -119,12 +119,10 @@ struct HomeView: View {
 
     /// The four places worth going, as cards.
     ///
-    /// They were four small square tiles in a row of glyphs — a caption apiece
-    /// and no room to say more, which is fine for Settings and useless for
-    /// Network Stream, the one nobody can guess at. Two columns of rectangles
-    /// have room for a sentence, and Home is now where the destinations are
-    /// reached from as well as the drawer: the bottom bar that used to carry
-    /// Browser and Videos is gone.
+    /// Home is now where the destinations are reached from as well as the
+    /// drawer - the bottom bar that used to carry Browser and Videos is gone -
+    /// so these four are the whole of the app's navigation on this screen and
+    /// have to be found at a glance rather than read.
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("Quick access")
@@ -132,45 +130,42 @@ struct HomeView: View {
                 columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                 spacing: 10
             ) {
-                sectionCard(.web, title: "Web Browser", detail: "Find & cast online videos")
-                sectionCard(.videos, title: "Phone Videos", detail: "Cast from your library")
-                sectionCard(.stream, title: "Network Stream", detail: "Play a link by address")
-                sectionCard(.settings, title: "Settings", detail: "Playback, browser, gestures")
+                sectionCard(.web, title: "Web\nBrowser")
+                sectionCard(.videos, title: "Phone\nVideos")
+                sectionCard(.stream, title: "Network\nStream")
+                sectionCard(.settings, title: "Settings")
             }
             .padding(.horizontal, 16)
         }
     }
 
+    /// Name at the top left, mark at the bottom right, and wider than it is
+    /// tall.
+    ///
+    /// The caption is gone with the height. Stacked - glyph, gap, name, sentence
+    /// - the card had to be 148 tall, and four of those filled a screen on their
+    /// own and pushed everything Home is actually for below the fold. Set the
+    /// two diagonally instead and the same card is 92: the name reads first at
+    /// the corner the eye starts from, and the mark fills the space left over
+    /// rather than costing a row of its own.
     private func sectionCard(
         _ destination: AppDestination,
-        title: String,
-        detail: String
+        title: String
     ) -> some View {
         Button { onOpenSection(destination) } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                Image(systemName: destination.icon(selected: true))
-                    .font(.system(size: 19, weight: .medium))
-                    .foregroundStyle(destination.tint)
-                    .frame(width: 44, height: 44)
-                    .background(
-                        destination.tint.opacity(0.16),
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    )
-
-                Spacer(minLength: 18)
-
+            ZStack(alignment: .bottomTrailing) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.primary)
-                Text(detail)
-                    .font(.caption2)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .lineLimit(2)
                     .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                Image(systemName: destination.icon(selected: true))
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(destination.tint)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 148, alignment: .topLeading)
+            .frame(height: 92)
             .padding(14)
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)

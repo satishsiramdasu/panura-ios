@@ -116,7 +116,8 @@ struct ReportIssueSheet: View {
                 .background(.ultraThinMaterial)
             }
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
+                // Right, where every other sheet in the app closes.
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button { dismiss() } label: { Image(systemName: "xmark") }
                 }
             }
