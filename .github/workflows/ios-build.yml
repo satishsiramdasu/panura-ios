@@ -11,6 +11,9 @@ on:
       - '**/*.md'
       - '.gitignore'
       - 'docs/**'
+      # Nothing under tools/ is in the app target — a change there cannot break
+      # a build, and a macOS runner bills at 10x for finding that out.
+      - 'tools/**'
 
 # A second push supersedes the first instead of paying for both.
 concurrency:
