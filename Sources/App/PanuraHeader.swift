@@ -62,9 +62,15 @@ struct PanuraHeader<Content: View>: View {
     /// back out.
     private var menuButton: some View {
         Button { drawer.toggle() } label: {
-            Image(systemName: drawer.isOpen ? "xmark" : "line.3.horizontal")
-                .font(.system(size: 17, weight: .semibold))
+            // Three lines of unequal length, in a circle of its own. Equal lines
+            // are the older drawing and read as a list; the stagger is what says
+            // menu, and the circle gives it the same weight as the cast mark
+            // facing it across the bar.
+            Image(systemName: drawer.isOpen ? "xmark" : "line.3.horizontal.decrease")
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(PanuraTheme.surfaceVariant))
                 .frame(width: 38, height: 38)
                 .contentShape(Rectangle())
         }
