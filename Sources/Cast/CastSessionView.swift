@@ -47,23 +47,7 @@ struct CastSessionView: View {
                 failure(message)
             }
         }
-        // The picker is a dialog wherever it appears, including here.
-        //
-        // This screen is presented as an ordinary sheet, and when nothing is
-        // casting it falls through to the picker — so the card arrived pinned
-        // to the top of a full-height sheet with a grabber above it and a dead
-        // half below, which is the one shape it was redesigned not to be.
-        .presentationDragIndicator(showingPicker ? .hidden : .visible)
-        .castDialogChrome(showingPicker)
-    }
-
-    /// True when this screen is really just the picker.
-    private var showingPicker: Bool {
-        guard !panura.isCasting, !chromecast.isCasting, flow.queue.isEmpty else { return false }
-        switch flow.stage {
-        case .idle, .playing: return true
-        default: return false
-        }
+        .presentationDragIndicator(.visible)
     }
 
     /// Whichever receiver has the video. Nothing playing anywhere falls through
@@ -79,13 +63,26 @@ struct CastSessionView: View {
             // the whole story, so it gets the screen to itself.
             NavigationStack { CastQueueView() }
         } else {
-            // Centred, so it reads as a dialog rather than as a panel that has
-            // slid up and stopped short.
-            VStack {
-                Spacer(minLength: 0)
-                CastDevicesView().padding(.horizontal, 16)
-                Spacer(minLength: 0)
+            // Nothing on any television. The picker is a panel at the root now
+            // and cannot be drawn above this sheet, so this closes and opens it
+            // — which is also the honest order of events: there is nothing to
+            // control until a TV has been chosen.
+            VStack(spacing: 14) {
+                CastMark()
+                    .frame(width: 34, height: 34)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                Text("Nothing is on a TV").font(.headline)
+                Button("Choose a television") {
+                    dismiss()
+                    CastPicker.shared.open()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(PanuraTheme.accent)
             }
+            .padding(28)
+            .frame(maxWidth: .infinity)
+            .background(PanuraTheme.surface)
+            .presentationDetents([.height(240)])
         }
     }
 

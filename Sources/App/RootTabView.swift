@@ -106,6 +106,10 @@ struct RootTabView: View {
                     .padding(.bottom, AppBarRow.totalHeight)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+
+            // Above the bar, the panel and the scrim alike: it is opened from
+            // a mark in the header, and it has to cover what it is about.
+            CastPanelOverlay()
         }
         // One bottom edge for everything in the stack — the screen's, not the
         // safe area's. Applied here rather than to the bar and the panel
@@ -275,7 +279,10 @@ struct RootTabView: View {
                 icon: "tv.badge.wifi", label: "Cast to TV",
                 detail: isCasting ? "Playing on \(castDeviceName ?? "your TV")" : "Find a television",
                 tint: PanuraTheme.accent
-            ) { showMenu = false; showCastControls = true },
+            ) {
+                showMenu = false
+                if isCasting { showCastControls = true } else { CastPicker.shared.open() }
+            },
             AppMenuPanel.Item(
                 icon: "link", label: "Network Stream",
                 detail: "Play a link straight from its address",

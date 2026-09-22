@@ -86,7 +86,6 @@ struct CastMark: View {
 struct CastToolbarButton: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
-    @State private var showPicker = false
     @State private var showControls = false
 
     private var connected: Bool { cast.isConnected || panura.isTVConnected }
@@ -95,7 +94,7 @@ struct CastToolbarButton: View {
 
     var body: some View {
         Button {
-            if playing { showControls = true } else { showPicker = true }
+            if playing { showControls = true } else { CastPicker.shared.open() }
         } label: {
             CastMark(connected: connected)
                 .frame(width: 23, height: 23)
@@ -105,7 +104,6 @@ struct CastToolbarButton: View {
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
         }
         .accessibilityLabel(connected ? "Playing on TV — open controls" : "Play on TV")
-        .castPicker(isPresented: $showPicker)
         .sheet(isPresented: $showControls) {
             CastSessionView()
         }
@@ -130,7 +128,6 @@ struct CastToolbarButton: View {
 struct CastDevicesView: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
-    @Environment(\.dismiss) private var dismiss
     @State private var showControls = false
     /// Scanning starts on a tap, never on arrival. Discovery is a live multicast
     /// on the local network, and someone opening this to reach their Panura TV
@@ -160,8 +157,10 @@ struct CastDevicesView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 18)
         }
-        .frame(maxWidth: 460)
-        .background(RoundedRectangle(cornerRadius: 22).fill(PanuraTheme.surfaceContainer))
+        // Wide enough to read a device name, narrow enough to stay a panel
+        // hanging off the mark rather than a screen that has taken over.
+        .frame(width: min(UIScreen.main.bounds.width * 0.86, 400))
+        .background(RoundedRectangle(cornerRadius: 20).fill(PanuraTheme.surfaceContainer))
         .sheet(isPresented: $showControls) { CastSessionView() }
         // Whatever the way out — dismissing, connecting — the scan ends with the
         // screen. An idle scan costs battery and the SDK will not stop one on
@@ -182,7 +181,7 @@ struct CastDevicesView: View {
             Text(cast.isConnected || panura.isTVConnected ? "Connected" : "Cast to TV")
                 .font(.headline)
             Spacer(minLength: 0)
-            Button { dismiss() } label: {
+            Button { CastPicker.shared.close() } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
@@ -339,7 +338,7 @@ struct CastDevicesView: View {
             }
 
             HStack(spacing: 10) {
-                Button { dismiss() } label: {
+                Button { CastPicker.shared.close() } label: {
                     Text("Close")
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
@@ -508,59 +507,62 @@ private struct ScanPulse: View {
     }
 }
 
-/// Presents the cast picker as a centred dialog rather than a bottom sheet.
+/// Whether the cast panel is open, for the whole app.
 ///
-/// A sheet is for a task you work through; this is a question with two answers,
-/// and Android's own cast picker is a dialog for the same reason. The clear
-/// presentation background is iOS 16.4, so on anything older it stays an
-/// ordinary sheet — the card inside is identical either way, and no one is left
-/// without a way to pick a television.
-struct CastPickerDialog: ViewModifier {
-    @Binding var isPresented: Bool
+/// One flag rather than a `@State` on each screen, because the panel is drawn
+/// once at the root: the browser, the Videos tab, the Home card and the toolbar
+/// mark all open the same thing, and only the root sits above every screen.
+@MainActor
+final class CastPicker: ObservableObject {
+    static let shared = CastPicker()
+    @Published var isShowing = false
+    private init() {}
 
-    func body(content: Content) -> some View {
-        content.sheet(isPresented: $isPresented) {
-            dialog
-                .presentationDragIndicator(.hidden)
-                .castDialogChrome(true)
-        }
-    }
+    func open() { withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) { isShowing = true } }
+    func close() { withAnimation(.easeOut(duration: 0.18)) { isShowing = false } }
+}
 
-    private var dialog: some View {
-        ZStack {
-            Color.black.opacity(0.001)
-                .ignoresSafeArea()
-                .onTapGesture { isPresented = false }
-            CastDevicesView()
-                .padding(.horizontal, 16)
-                .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
+/// The cast panel, hanging from the mark that opens it.
+///
+/// It was a sheet pretending to be a dialog for three rounds — clear
+/// background, hidden grabber, a centred card, an availability fork — and it
+/// still came up on a dark slab, because a sheet's dimming is not ours to
+/// control and `presentationBackground` is fought over by the system.
+///
+/// A panel has none of those questions. It is a view in a stack: the scrim, the
+/// corner radius, the anchor and the animation are all ours, on every version
+/// of iOS. And it matches what the app already does — the Panura mark opens a
+/// panel from the top left in the browser, the cast mark lives at the top
+/// right, and a control should open next to itself rather than float in the
+/// middle of the screen with no connection to what was pressed.
+struct CastPanelOverlay: View {
+    @ObservedObject private var picker = CastPicker.shared
+
+    var body: some View {
+        if picker.isShowing {
+            ZStack(alignment: .topTrailing) {
+                // Dismisses on a tap anywhere off the panel. Lighter than a
+                // sheet's dimming, because the screen behind is still the
+                // subject — this is a control, not a destination.
+                Color.black.opacity(0.42)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .onTapGesture { picker.close() }
+
+                CastDevicesView()
+                    .shadow(color: .black.opacity(0.4), radius: 26, y: 12)
+                    .padding(.trailing, 10)
+                    .padding(.top, 6)
+                    // Grows out of the top-right corner, where the mark is.
+                    .transition(.scale(scale: 0.92, anchor: .topTrailing)
+                        .combined(with: .opacity))
+            }
+            .zIndex(50)
         }
     }
 }
 
-extension View {
-    /// Makes a sheet look like a dialog: no background of its own, so what is
-    /// inside it floats over the app.
-    ///
-    /// `presentationBackground` is iOS 16.4 and the app ships to 16.0, so below
-    /// that it stays an ordinary sheet. The card inside is identical either way.
-    @ViewBuilder
-    func castDialogChrome(_ enabled: Bool) -> some View {
-        if enabled, #available(iOS 16.4, *) {
-            self.presentationBackground(.clear)
-        } else {
-            self
-        }
-    }
-
-    /// The one way the cast picker is presented, everywhere it is presented.
-    func castPicker(isPresented: Binding<Bool>) -> some View {
-        modifier(CastPickerDialog(isPresented: isPresented))
-    }
-}
-
-
-/// The cast card on Home.
+/// The cast card on Home./// The cast card on Home.
 ///
 /// Casting was reachable only from the mark in a header — a 23-point glyph that
 /// says nothing about what it does until you already know. It is one of the two
@@ -573,7 +575,6 @@ extension View {
 struct CastHomeCard: View {
     @ObservedObject private var cast = CastManager.shared
     @ObservedObject private var panura = PanuraCastManager.shared
-    @State private var showPicker = false
     @State private var showControls = false
 
     private var connected: Bool { cast.isConnected || panura.isTVConnected }
@@ -606,7 +607,7 @@ struct CastHomeCard: View {
 
     var body: some View {
         Button {
-            if casting { showControls = true } else { showPicker = true }
+            if casting { showControls = true } else { CastPicker.shared.open() }
         } label: {
             HStack(spacing: 12) {
                 CastMark(connected: connected)
@@ -640,7 +641,6 @@ struct CastHomeCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(connected ? "Casting to \(title)" : "Cast to TV")
-        .castPicker(isPresented: $showPicker)
         .sheet(isPresented: $showControls) {
             CastSessionView()
         }

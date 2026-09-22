@@ -34,7 +34,6 @@ struct LocalVideosView: View {
     /// A whole selection waiting on "here or on TV?".
     @State private var pendingBatch: [LocalVideoAsset]?
 
-    @State private var showCastPicker = false
     /// One line, said once — casting gives no other sign from this screen.
     @State private var toast: String?
     @State private var toastTask: Task<Void, Never>?
@@ -95,7 +94,6 @@ struct LocalVideosView: View {
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
         .sheet(isPresented: $showAlbums) { albumsSheet }
-        .castPicker(isPresented: $showCastPicker)
         // A selection has no cell to point at, so unlike the per-video dialogs
         // this one belongs to the screen.
         .confirmationDialog(
@@ -682,7 +680,7 @@ struct LocalVideosView: View {
         guard tvConnected else {
             // Nothing to send it to yet: the cast picker is the next step, and
             // the videos can be chosen again once a TV answers.
-            showCastPicker = true
+            CastPicker.shared.open()
             return
         }
         // Only ask when there is something to lose. An idle TV just plays them.

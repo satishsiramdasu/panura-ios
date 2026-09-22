@@ -26,7 +26,7 @@ struct BrowserView: View {
     @State private var showPanuraControls = false
     /// The cast picker, opened by a Cast tap with no TV connected. The video
     /// that asked for it waits here and goes as soon as one is.
-    @State private var showCastPicker = false
+    @ObservedObject private var castPicker = CastPicker.shared
     @State private var pendingCast: MediaItem?
     /// A stream found while the TV is already busy, waiting on replace-or-queue.
     @State private var pendingQueue: MediaItem?
@@ -124,9 +124,9 @@ struct BrowserView: View {
         } message: {
             Text(pendingQueue?.title ?? "")
         }
-        .castPicker(isPresented: $showCastPicker)
-        // The video that asked for a TV goes as soon as one answers.
-        .onChange(of: showCastPicker) { shown in
+        // The video that asked for a TV goes as soon as one answers. The panel
+        // is drawn at the root, so this only watches it close.
+        .onChange(of: castPicker.isShowing) { shown in
             if !shown { castPendingIfConnected() }
         }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
@@ -953,7 +953,7 @@ struct BrowserView: View {
         let item = model.playable(video)
         guard panuraCast.isTVConnected || cast.isConnected else {
             pendingCast = item
-            showCastPicker = true
+            CastPicker.shared.open()
             return
         }
         // Something already on the TV is worth a question: a stream found while
