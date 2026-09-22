@@ -123,9 +123,14 @@ struct HomeView: View {
     /// drawer - the bottom bar that used to carry Browser and Videos is gone -
     /// so these four are the whole of the app's navigation on this screen and
     /// have to be found at a glance rather than read.
+    ///
+    /// Headed "Go to", not "Quick access". Quick access is what the Shortcuts
+    /// row directly above it is: sites the user put there to reach in one tap.
+    /// These are the app's own places, and every one of them is where you go
+    /// when a shortcut was not what you wanted.
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Quick access")
+            sectionHeader("Go to")
             LazyVGrid(
                 columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                 spacing: 10
