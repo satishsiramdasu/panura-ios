@@ -61,6 +61,13 @@ struct BrowserView: View {
                     // modes means. The auto-click flag rides along for the same
                     // reason: user scripts are registered once, at creation.
                     .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)")
+                    // On the page, under the bar. It hung off the bottom of the
+                    // whole screen with 90 points of padding - a number that
+                    // cleared the bottom navigation bar, which no longer exists,
+                    // and did not clear the found-video bar, which does. Here
+                    // there is nothing to measure: the page starts under the
+                    // header and the toast starts with it.
+                    .overlay(alignment: .top) { toastView }
             }
 
             if showMenu {
@@ -83,7 +90,6 @@ struct BrowserView: View {
             }
         }
         .animation(.spring(response: 0.42, dampingFraction: 0.72), value: model.foundVideos.count)
-        .overlay(alignment: .bottom) { toastView }
         // The page must go quiet while its video plays in ours, and start
         // again when the player closes — including a close that happens from
         // the Now Playing bar, long after this screen stopped presenting it.
@@ -367,6 +373,7 @@ struct BrowserView: View {
                 guard let url = model.currentURL?.absoluteString, !url.isEmpty else { return }
                 if store.isBookmark(url) {
                     store.removeBookmark(url: url)
+                    flash("Bookmark removed")
                 } else {
                     store.addBookmark(
                         url: url,
@@ -374,7 +381,9 @@ struct BrowserView: View {
                             ? (model.currentURL?.host ?? url)
                             : model.pageTitle
                     )
+                    flash("Bookmarked")
                 }
+                closeMenu()
             } label: {
                 let saved = store.isBookmark(model.currentURL?.absoluteString ?? "")
                 Image(systemName: saved ? "bookmark.fill" : "bookmark")
@@ -627,7 +636,8 @@ struct BrowserView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
-                .padding(.bottom, 90)
+                .shadow(color: .black.opacity(0.3), radius: 10, y: 3)
+                .padding(.top, 12)
                 .transition(.opacity)
         }
     }
@@ -1105,6 +1115,9 @@ struct BrowserView: View {
         }
         .listStyle(.insetGrouped)
         .presentationDetents([.medium, .large])
+        // The browser's copy is under this sheet, where nobody can see it, so
+        // the sheet shows the same message itself.
+        .overlay(alignment: .top) { toastView }
     }
 
     /// What this page is, as a picture and a name.
