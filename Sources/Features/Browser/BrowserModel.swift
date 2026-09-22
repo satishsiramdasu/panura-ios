@@ -124,11 +124,24 @@ final class BrowserModel: ObservableObject {
         }
     }
 
+    /// The page's own artwork, from its meta tags — see `PagePosterScript`.
+    @Published var pagePoster: URL?
+    /// Artwork the site set on the MediaSession, which describes the item
+    /// playing rather than the page around it.
+    @Published var sessionArtwork: URL?
+
+    /// The picture to show beside a stream found here. The item beats the page:
+    /// a series page's og:image is the series, while MediaSession artwork is the
+    /// episode.
+    var posterURL: URL? { sessionArtwork ?? pagePoster }
+
     /// Findings belong to a page — drop them whenever we navigate.
     func clearFindings() {
         foundVideos.removeAll()
         foundSubtitles.removeAll()
         mediaSessionTitle = ""
+        pagePoster = nil
+        sessionArtwork = nil
         seen.removeAll()
         seenSubs.removeAll()
     }
@@ -243,6 +256,7 @@ final class BrowserModel: ObservableObject {
         MediaItem(
             title: video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title,
             url: video.url,
+            thumbnailURL: posterURL,
             headers: video.headers,
             castHeaders: video.castHeaders,
             subtitles: foundSubtitles,

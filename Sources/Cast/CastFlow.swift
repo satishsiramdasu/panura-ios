@@ -27,6 +27,12 @@ struct CastQueueItem: Identifiable, Equatable {
     let id: String
     let title: String
     let payload: Payload
+    /// The page's poster, for a stream. Fetched where it is shown.
+    var posterURL: URL?
+    /// Already in memory, for a video in the library: the Videos tab has its
+    /// thumbnail by the time anything can be queued, and re-reading it from
+    /// Photos to draw a 54-point picture would be work for nothing.
+    var posterImage: UIImage?
 
     /// The two kinds of thing that can be cast, which reach the TV by
     /// completely different routes: a stream is a URL the TV fetches for
@@ -350,6 +356,9 @@ extension CastFlow {
     /// over. A queue the TV knew about would be a queue that needed the TV's
     /// agreement to change.
     static func item(for media: MediaItem) -> CastQueueItem {
-        CastQueueItem(id: media.id, title: media.title, payload: .stream(media))
+        CastQueueItem(
+            id: media.id, title: media.title, payload: .stream(media),
+            posterURL: media.thumbnailURL
+        )
     }
 }

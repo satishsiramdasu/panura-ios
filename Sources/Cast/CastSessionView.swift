@@ -189,7 +189,9 @@ struct ChromecastControlView: View {
                     CastHero(
                         title: cast.castingTitle ?? "Video",
                         device: cast.connectedDeviceName ?? "Chromecast",
-                        note: cast.remoteTimeLeft.isEmpty ? nil : cast.remoteTimeLeft
+                        note: cast.remoteTimeLeft.isEmpty ? nil : cast.remoteTimeLeft,
+                        posterURL: CastFlow.shared.nowPlaying?.posterURL,
+                        posterImage: CastFlow.shared.nowPlaying?.posterImage
                     )
 
                     // The one control the receiver answers for. No scrubber and

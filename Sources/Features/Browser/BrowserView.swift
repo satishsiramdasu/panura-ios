@@ -649,8 +649,11 @@ struct BrowserView: View {
                 Button { showFoundSheet = true } label: { manyRow }
                     .buttonStyle(.plain)
             } else if let primary {
-                Button { showFoundSheet = true } label: { infoRow(primary) }
-                    .buttonStyle(.plain)
+                // Not a button. It used to open the sheet, and the sheet then
+                // showed one row saying exactly what is already on this bar —
+                // the same filename, the same quality, the same two actions.
+                // The only stream there is has nothing to disclose.
+                infoRow(primary)
                 actionRow(primary)
             }
         }
@@ -689,6 +692,14 @@ struct BrowserView: View {
                 }
             } label: {
                 HStack(spacing: 8) {
+                    // The page's own artwork. Every stream on a page shares it —
+                    // it describes the page, not the variant — but it is the
+                    // picture the person was just looking at, which is what
+                    // makes the sheet recognisably about this video.
+                    PosterThumb(
+                        url: model.posterURL, fallback: "film",
+                        width: 50, height: 30
+                    )
                     sourceBadge(video.source, fallback: false)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(video.fileLabel)

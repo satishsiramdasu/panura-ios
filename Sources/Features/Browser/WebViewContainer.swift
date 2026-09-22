@@ -97,6 +97,15 @@ struct WebViewContainer: UIViewRepresentable {
             forMainFrameOnly: false
         ))
 
+        // The page's own poster, for the found-video sheet and the cast
+        // screen. Document end: it reads meta tags and JSON-LD, which is a head
+        // that has finished parsing.
+        contentController.addUserScript(WKUserScript(
+            source: PagePosterScript.source,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
+
         // Tidies up after the page: font-measuring nodes a site meant to take
         // away and left behind. Document end, main frame only — it reads the
         // body's own children, and there is nothing to read before there is a
@@ -596,6 +605,17 @@ struct WebViewContainer: UIViewRepresentable {
             case "meta":
                 if let t = dict["title"] as? String, !t.isEmpty {
                     model.mediaSessionTitle = t
+                }
+                // Artwork the site set for the item that is playing. Better than
+                // anything the page says about itself, and it has been arriving
+                // unread since the sniffer was written.
+                if let a = dict["artwork"] as? String, let u = URL(string: a) {
+                    model.sessionArtwork = u
+                }
+                return
+            case "poster":
+                if let s = dict["url"] as? String, let u = URL(string: s) {
+                    model.pagePoster = u
                 }
                 return
             case "confirm":

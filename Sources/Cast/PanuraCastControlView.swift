@@ -15,6 +15,7 @@ import SwiftUI
 /// scrubber, then transport, and everything else small.
 struct PanuraCastControlView: View {
     @ObservedObject private var cast = PanuraCastManager.shared
+    @ObservedObject private var flow = CastFlow.shared
     @Environment(\.dismiss) private var dismiss
 
     /// Position being dragged. While non-nil the slider shows this instead of the
@@ -35,7 +36,9 @@ struct PanuraCastControlView: View {
                         title: cast.streamTitle.isEmpty ? "Video" : cast.streamTitle,
                         device: cast.connectedTVName.isEmpty ? "Panura TV" : cast.connectedTVName,
                         note: modeNote,
-                        isLive: playback.isLive
+                        isLive: playback.isLive,
+                        posterURL: flow.nowPlaying?.posterURL,
+                        posterImage: flow.nowPlaying?.posterImage
                     )
                     if !playback.isLive { scrubber }
                     transport
@@ -295,16 +298,35 @@ struct CastHero: View {
     let device: String
     var note: String?
     var isLive = false
+    /// The page's poster, or a library thumbnail. There is no frame to take
+    /// from the video itself — it is playing on a television — so this is the
+    /// only picture there is, and a screen with one is a different screen.
+    var posterURL: URL?
+    var posterImage: UIImage?
+
+    private var hasPoster: Bool { posterURL != nil || posterImage != nil }
 
     var body: some View {
         VStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 26, style: .continuous)
-                    .fill(PanuraTheme.surfaceVariant)
-                    .frame(width: 128, height: 128)
-                Image(systemName: "tv.fill")
-                    .font(.system(size: 52))
-                    .foregroundStyle(PanuraTheme.accent)
+            Group {
+                if hasPoster {
+                    // Sixteen by nine, because that is the shape of what is on
+                    // the TV. The square tile is for the glyph, which is a mark
+                    // rather than a picture.
+                    PosterThumb(
+                        url: posterURL, image: posterImage, fallback: "tv.fill",
+                        width: 208, height: 117, corner: 18
+                    )
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 26, style: .continuous)
+                            .fill(PanuraTheme.surfaceVariant)
+                            .frame(width: 128, height: 128)
+                        Image(systemName: "tv.fill")
+                            .font(.system(size: 52))
+                            .foregroundStyle(PanuraTheme.accent)
+                    }
+                }
             }
             .padding(.top, 6)
 
@@ -411,10 +433,11 @@ struct CastQueueInline: View {
                     flow.replace(with: [item] + flow.queue.filter { $0.id != item.id })
                 } label: {
                     HStack(spacing: 10) {
-                        Image(systemName: item.isStream ? "globe" : "film")
-                            .font(.system(size: 13))
-                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                            .frame(width: 20)
+                        PosterThumb(
+                            url: item.posterURL, image: item.posterImage,
+                            fallback: item.isStream ? "globe" : "film",
+                            width: 48, height: 28
+                        )
                         Text(item.title)
                             .font(.footnote)
                             .foregroundStyle(.primary)

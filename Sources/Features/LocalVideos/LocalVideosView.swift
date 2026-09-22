@@ -715,7 +715,8 @@ struct LocalVideosView: View {
         CastQueueItem(
             id: asset.id,
             title: asset.displayTitle(showExtension: showExtension),
-            payload: .photo(localIdentifier: asset.id)
+            payload: .photo(localIdentifier: asset.id),
+            posterImage: asset.thumbnail
         )
     }
 
