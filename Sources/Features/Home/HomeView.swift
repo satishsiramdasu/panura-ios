@@ -104,7 +104,7 @@ struct HomeView: View {
     /// so these four are the whole of the app's navigation on this screen and
     /// have to be found at a glance rather than read.
     ///
-    /// Headed "Go to", not "Quick access". Quick access is what the Bookmarks
+    /// Headed "Explore", not "Quick access". Quick access is what the Bookmarks
     /// row directly above it is: sites the user put there to reach in one tap.
     /// These are the app's own places, and every one of them is where you go
     /// when a bookmark was not what you wanted.
@@ -119,7 +119,7 @@ struct HomeView: View {
     /// thing to lose in a browser.
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Go to")
+            sectionHeader("Explore")
             LazyVGrid(
                 columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                 spacing: 10
@@ -160,24 +160,35 @@ struct HomeView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            ZStack(alignment: .bottomTrailing) {
+            HStack(spacing: 6) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline.weight(.bold))
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .fixedSize(horizontal: false, vertical: true)
 
+                Spacer(minLength: 0)
+
+                // Large, and pushed into the corner far enough to be cropped by
+                // it. A mark sized to sit politely inside the box reads as an
+                // icon labelling the card; one that runs off the edge reads as
+                // artwork the card is made of, which is what gives these their
+                // weight at this size.
                 Image(systemName: icon)
-                    .font(.system(size: 30, weight: .regular))
+                    .font(.system(size: 44, weight: .regular))
                     .foregroundStyle(tint)
+                    .offset(x: 10, y: 6)
             }
-            .frame(height: 92)
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(PanuraTheme.surfaceVariant)
-            )
+            .padding(.leading, 14)
+            .padding(.vertical, 12)
+            .frame(height: 84)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Each card in its own colour, faintly. Four grey boxes had to be
+            // read one at a time; four colours are told apart before they are
+            // read, which is the whole job of a grid you use every day.
+            .background(tint.opacity(0.14))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
     }
