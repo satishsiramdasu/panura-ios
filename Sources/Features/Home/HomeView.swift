@@ -13,6 +13,9 @@ struct HomeView: View {
     @ObservedObject private var session = BrowserSession.shared
 
     @State private var showAddress = false
+    /// Which list the address screen opens on. Search lands on Most Visited;
+    /// the History card lands on History.
+    @State private var addressStart: AddressSection = .mostVisited
     @State private var showShortcutsSheet = false
     @State private var editingShortcut: SiteEntry?
     @State private var confirmClearHistory = false
@@ -67,6 +70,7 @@ struct HomeView: View {
         .task { await store.pruneDeadResumes() }
         .fullScreenCover(isPresented: $showAddress) {
             AddressScreen(
+                startSection: addressStart,
                 onNavigate: { text in
                     showAddress = false
                     onOpenBrowser(text)
@@ -128,6 +132,13 @@ struct HomeView: View {
     /// row directly above it is: sites the user put there to reach in one tap.
     /// These are the app's own places, and every one of them is where you go
     /// when a shortcut was not what you wanted.
+    ///
+    /// Which is why Settings is no longer among them. It is not a place you go
+    /// to watch something; it is something you adjust, and it sits with the
+    /// other two of those at the bottom of the screen. History took the fourth
+    /// seat because it is the one thing here that answers "the one I had
+    /// yesterday" - the question Shortcuts and Continue Watching between them
+    /// do not.
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("Go to")
@@ -138,10 +149,27 @@ struct HomeView: View {
                 sectionCard(.web, title: "Web\nBrowser")
                 sectionCard(.videos, title: "Phone\nVideos")
                 sectionCard(.stream, title: "Network\nStream")
-                sectionCard(.settings, title: "Settings")
+                // Not a destination of its own: the address screen already
+                // draws history, with favicons and a search box over it, and
+                // opening it on that tab is the whole of the feature.
+                card(title: "History", icon: "clock.arrow.circlepath", tint: .purple) {
+                    addressStart = .history
+                    showAddress = true
+                }
             }
             .padding(.horizontal, 16)
         }
+    }
+
+    private func sectionCard(
+        _ destination: AppDestination,
+        title: String
+    ) -> some View {
+        card(
+            title: title,
+            icon: destination.icon(selected: true),
+            tint: destination.tint
+        ) { onOpenSection(destination) }
     }
 
     /// Name at the top left, mark at the bottom right, and wider than it is
@@ -153,11 +181,13 @@ struct HomeView: View {
     /// two diagonally instead and the same card is 92: the name reads first at
     /// the corner the eye starts from, and the mark fills the space left over
     /// rather than costing a row of its own.
-    private func sectionCard(
-        _ destination: AppDestination,
-        title: String
+    private func card(
+        title: String,
+        icon: String,
+        tint: Color,
+        action: @escaping () -> Void
     ) -> some View {
-        Button { onOpenSection(destination) } label: {
+        Button(action: action) {
             ZStack(alignment: .bottomTrailing) {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
@@ -166,9 +196,9 @@ struct HomeView: View {
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-                Image(systemName: destination.icon(selected: true))
+                Image(systemName: icon)
                     .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle(destination.tint)
+                    .foregroundStyle(tint)
             }
             .frame(height: 92)
             .padding(14)
@@ -184,6 +214,11 @@ struct HomeView: View {
     /// what they are.
     private var housekeepingRow: some View {
         HStack(spacing: 10) {
+            // Settings is not somewhere you go, it is something you adjust, and
+            // it was taking a quarter of the navigation grid to say so. Down
+            // here with the other two things you do to the app rather than with
+            // it, and still on the drawer for anyone who looks there first.
+            optionTile("Settings", systemImage: "gearshape") { onOpenSection(.settings) }
             optionTile("Report Issue", systemImage: "ladybug") { showReport = true }
             optionTile("Clear History", systemImage: "trash") { confirmClearHistory = true }
         }
@@ -228,7 +263,7 @@ struct HomeView: View {
                 background: session.privateMode
                     ? PanuraTheme.incognito.opacity(0.22)
                     : PanuraTheme.surfaceVariant,
-                onTap: { showAddress = true },
+                onTap: { addressStart = .mostVisited; showAddress = true },
                 leading: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 15))
