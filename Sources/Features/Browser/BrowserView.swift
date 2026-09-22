@@ -44,9 +44,6 @@ struct BrowserView: View {
     /// Same reason: content-blocker lists are attached to a configuration, so
     /// turning the ad blocker on or off means a new web view.
     @AppStorage("ad_block") private var adBlock = true
-    /// Same reason again: the no-callout CSS is a user script, and
-    /// `allowsLinkPreview` is fixed on the web view when it is built.
-    @AppStorage("block_long_press") private var blockLongPress = true
 
     private var pageUsable: Bool {
         guard let url = model.currentURL?.absoluteString else { return false }
@@ -64,7 +61,7 @@ struct BrowserView: View {
                     // list and the cookie jar, which is exactly what switching
                     // modes means. The auto-click flag rides along for the same
                     // reason: user scripts are registered once, at creation.
-                    .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)-\(blockLongPress)")
+                    .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)")
             }
 
             if showMenu { menuPanel }
@@ -1002,8 +999,6 @@ struct BrowserView: View {
         .presentationDetents([.medium, .large])
     }
 
-    /// What the probe learned, in the one place there is room to spell it out.
-    @ViewBuilder
     /// Resolution, size and kind, in that order, and only what is known.
     ///
     /// Kind comes from the probe when it ran and from the manifest rule or the
@@ -1028,6 +1023,8 @@ struct BrowserView: View {
         return parts.isEmpty ? video.url.host ?? "Stream" : parts.joined(separator: "  ·  ")
     }
 
+    /// What the probe learned, in the one place there is room to spell it out.
+    @ViewBuilder
     private func probeBadge(_ video: ExtractedVideo) -> some View {
         switch video.probeState {
         case .pending:

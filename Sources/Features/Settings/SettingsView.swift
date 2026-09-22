@@ -163,7 +163,6 @@ struct SettingsView: View {
             "gesture_double_tap", "gesture_long_press", "gesture_sensitivity",
             "mark_last_played", "show_extension", "videos_layout", "player_engine_mode",
             "auto_play_click", "block_page_fullscreen", "ad_block",
-            "block_long_press",
             "desktop_mode_default", "detection_enabled",
             // Every per-site override too: "back to defaults" that left a site
             // with detection switched off would not be back to defaults.

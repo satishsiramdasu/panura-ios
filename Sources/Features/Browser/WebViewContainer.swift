@@ -84,15 +84,18 @@ struct WebViewContainer: UIViewRepresentable {
             ))
         }
 
-        // Text selection's Copy / Look Up menu on a long press. The link and
-        // image menu is `allowsLinkPreview` instead — see makeUIView.
-        if UserDefaults.standard.object(forKey: "block_long_press") as? Bool ?? true {
-            contentController.addUserScript(WKUserScript(
-                source: LongPressScript.source,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            ))
-        }
+        // Text selection's Copy / Look Up menu on a long press, always. The
+        // link and image menu is `allowsLinkPreview` instead — see makeUIView.
+        //
+        // Not a setting any more. Holding a page in this app means "give me
+        // this video", and the system menu that answers with Copy Link and
+        // Look Up is competing with that gesture — so the only sensible value
+        // was the one it always had.
+        contentController.addUserScript(WKUserScript(
+            source: LongPressScript.source,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
 
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
@@ -107,11 +110,6 @@ struct WebViewContainer: UIViewRepresentable {
         return config
     }
 
-    /// Read live rather than stored, so the delegate below and the web view
-    /// agree even if the setting changes mid-session.
-    static var blockLongPress: Bool {
-        UserDefaults.standard.object(forKey: "block_long_press") as? Bool ?? true
-    }
 
     func makeUIView(context: Context) -> WKWebView {
         let config = Self.makeConfiguration(
@@ -138,7 +136,7 @@ struct WebViewContainer: UIViewRepresentable {
         // which looks like the right hook and is a trap: implementing it at all
         // replaces WebKit's default menu, and there is no way to hand the
         // default back, so the *off* state could never restore what it removed.
-        webView.allowsLinkPreview = !Self.blockLongPress
+        webView.allowsLinkPreview = false
         model.attach(webView)
 
         // Pull to refresh, like the Android SwipeRefreshLayout.

@@ -9,7 +9,6 @@ struct BrowserPreferencesView: View {
     // Moved here with the Detection screen they used to live on.
     @AppStorage("auto_play_click") private var autoPlayClick = true
     @AppStorage("block_page_fullscreen") private var blockPageFullscreen = true
-    @AppStorage("block_long_press") private var blockLongPress = true
     /// The default for sites with no opinion of their own. The browser's site
     /// panel overrides it per site — see `SiteSettings`.
     @AppStorage("detection_enabled") private var detection = true
@@ -101,15 +100,9 @@ struct BrowserPreferencesView: View {
                         icon: "rectangle.inset.filled",
                         isOn: $blockPageFullscreen
                     )
-                    PreferenceToggle(
-                        title: "Block long-press menu",
-                        description: "No text selection or Copy Link menu when you hold a page. Typing and pasting in a page's own boxes still work.",
-                        icon: "hand.tap",
-                        isOn: $blockLongPress
-                    )
                 }
             } header: {
-                Text("Detection")
+                Text("Behaviour")
             } footer: {
                 Text("The Panura mark in the address bar sets this, and what is hidden, for one site at a time.")
             }
