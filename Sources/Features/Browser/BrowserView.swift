@@ -370,22 +370,20 @@ struct BrowserView: View {
             // times - but it does need to be beside the site it is about, and
             // this row names that site.
             Button {
-                guard let url = model.currentURL?.absoluteString, !url.isEmpty else { return }
-                if store.isBookmark(url) {
-                    store.removeBookmark(url: url)
+                guard let current = model.currentURL,
+                      let root = SiteTitle.root(of: current)
+                else { return }
+                let key = root.absoluteString
+                if store.isBookmark(key) {
+                    store.removeBookmark(url: key)
                     flash("Bookmark removed")
                 } else {
-                    store.addBookmark(
-                        url: url,
-                        title: model.pageTitle.isEmpty
-                            ? (model.currentURL?.host ?? url)
-                            : model.pageTitle
-                    )
+                    bookmarkSite(root)
                     flash("Bookmarked")
                 }
                 closeMenu()
             } label: {
-                let saved = store.isBookmark(model.currentURL?.absoluteString ?? "")
+                let saved = store.isBookmark(bookmarkKey)
                 Image(systemName: saved ? "bookmark.fill" : "bookmark")
                     .font(.system(size: 15))
                     .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
@@ -409,6 +407,41 @@ struct BrowserView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+
+    /// The address a bookmark of this site would be stored under.
+    ///
+    /// The site, not the page. This button lives in the row that names the
+    /// host, and Watch Later is what keeps a particular page — bookmarking an
+    /// episode under the episode's own address made the bookmark useless the
+    /// next time you wanted the site for anything else.
+    private var bookmarkKey: String {
+        model.currentURL.flatMap(SiteTitle.root(of:))?.absoluteString ?? ""
+    }
+
+    /// Saves at once, then corrects the name.
+    ///
+    /// The title has to come from the site's own front page, and that is a
+    /// network round trip — far too long to hold a button press. So the
+    /// bookmark is written immediately under the best name already known (the
+    /// host, or the page title when you are standing on the front page), and
+    /// the fetched one replaces it when it arrives. If the fetch fails nothing
+    /// happens and the host remains, which is what it would have been anyway.
+    private func bookmarkSite(_ root: URL) {
+        let key = root.absoluteString
+        let host = root.host ?? key
+        let onRoot = (model.currentURL?.path ?? "/").isEmpty
+            || model.currentURL?.path == "/"
+        let provisional = onRoot && !model.pageTitle.isEmpty ? model.pageTitle : host
+        store.addBookmark(url: key, title: provisional)
+
+        Task {
+            guard let fetched = await SiteTitle.fetch(root: root),
+                  fetched != provisional,
+                  store.isBookmark(key)
+            else { return }
+            store.updateBookmark(original: key, title: fetched, url: key)
+        }
     }
 
     /// Four actions, straight under the site they act on.
