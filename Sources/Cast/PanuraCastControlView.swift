@@ -15,13 +15,11 @@ import SwiftUI
 /// scrubber, then transport, and everything else small.
 struct PanuraCastControlView: View {
     @ObservedObject private var cast = PanuraCastManager.shared
-    @ObservedObject private var flow = CastFlow.shared
     @Environment(\.dismiss) private var dismiss
 
     /// Position being dragged. While non-nil the slider shows this instead of the
     /// TV's reported position, so incoming status updates don't fight the thumb.
     @State private var scrubbing: Double?
-    @State private var showQueue = false
 
     private var playback: PanuraPlayback { cast.playback }
     private var durationSeconds: Double { Double(playback.durationMs) / 1000 }
@@ -29,11 +27,7 @@ struct PanuraCastControlView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            CastControlBar(
-                queueCount: flow.queue.count,
-                onQueue: { showQueue = true },
-                onDone: { dismiss() }
-            )
+            CastControlBar(onDone: { dismiss() })
 
             ScrollView {
                 VStack(spacing: 26) {
@@ -50,20 +44,23 @@ struct PanuraCastControlView: View {
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.bottom, 18)
             }
+
+            // What is lined up sits under what is playing, on the same screen.
+            // It was a sheet behind a button in the bar: a tap and a screen to
+            // answer "what happens after this one".
+            CastQueueInline()
 
             CastStopButton(title: "Stop casting") {
                 cast.stopStream()
                 dismiss()
             }
             .padding(.horizontal, 22)
+            .padding(.top, 10)
             .padding(.bottom, 8)
         }
         .background(PanuraTheme.background)
-        .sheet(isPresented: $showQueue) {
-            NavigationStack { CastQueueView() }
-        }
     }
 
     /// Worth surfacing: in proxy mode the phone is serving every byte and must
@@ -105,10 +102,19 @@ struct PanuraCastControlView: View {
 
     // MARK: transport
 
-    /// One big button and two small ones. Play/pause is what a remote is for and
-    /// it is sized like it; the skips are corrections.
+    /// One big button, with the skips either side of it in two sizes.
+    ///
+    /// Ten seconds is for a line of dialogue missed; a minute is for a scene,
+    /// an advert, or catching someone up who just walked in — six taps on the
+    /// ten-second button was the complaint. The minutes sit outside the
+    /// seconds, so the row reads outwards from the middle: the further from
+    /// play, the bigger the jump.
     private var transport: some View {
-        HStack(spacing: 34) {
+        HStack(spacing: 14) {
+            CastGlyphButton(
+                system: "gobackward.60", size: 21, diameter: 44, label: "Back one minute"
+            ) { cast.seek(byMs: -60_000) }
+
             CastGlyphButton(
                 system: "gobackward.10", label: "Back ten seconds"
             ) { cast.seek(byMs: -10_000) }
@@ -126,6 +132,10 @@ struct PanuraCastControlView: View {
             CastGlyphButton(
                 system: "goforward.10", label: "Forward ten seconds"
             ) { cast.seek(byMs: 10_000) }
+
+            CastGlyphButton(
+                system: "goforward.60", size: 21, diameter: 44, label: "Forward one minute"
+            ) { cast.seek(byMs: 60_000) }
         }
         .padding(.vertical, 2)
     }
@@ -241,13 +251,12 @@ struct PanuraCastControlView: View {
 
 // MARK: - the parts both remotes share
 
-/// Done · what this screen is · the queue.
+/// Done, and what this screen is.
 ///
-/// The queue button carries its count and is simply absent when nothing is
-/// waiting: a control for an empty list is a control that has to be explained.
+/// It carried a queue button too, until the queue moved onto the screen itself.
+/// A button leading to a list that is already visible is a button that has to
+/// be explained.
 struct CastControlBar: View {
-    var queueCount: Int = 0
-    var onQueue: () -> Void = {}
     let onDone: () -> Void
 
     var body: some View {
@@ -266,24 +275,9 @@ struct CastControlBar: View {
             Text("Playing on TV")
                 .font(.subheadline.weight(.semibold))
             Spacer()
-
-            if queueCount > 0 {
-                Button(action: onQueue) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("\(queueCount)").font(.caption.weight(.semibold))
-                    }
-                    .foregroundStyle(PanuraTheme.accent)
-                    .padding(.horizontal, 12)
-                    .frame(height: 38)
-                    .background(Capsule().fill(PanuraTheme.accentSoft.opacity(0.35)))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Queue, \(queueCount) waiting")
-            } else {
-                Color.clear.frame(width: 38, height: 38)
-            }
+            // Balances Done, so the title sits in the middle of the bar rather
+            // than in the middle of what is left of it.
+            Color.clear.frame(width: 38, height: 38)
         }
         .padding(.horizontal, 18)
         .padding(.top, 10)
@@ -344,6 +338,8 @@ struct CastHero: View {
 struct CastGlyphButton: View {
     let system: String
     var size: CGFloat = 26
+    /// The tap target, which is also what gives the glyph its rank in the row.
+    var diameter: CGFloat = 52
     let label: String
     let action: () -> Void
 
@@ -351,12 +347,100 @@ struct CastGlyphButton: View {
         Button(action: action) {
             Image(systemName: system)
                 .font(.system(size: size, weight: .medium))
-                .foregroundStyle(.primary)
-                .frame(width: 52, height: 52)
+                .foregroundStyle(size < 24 ? PanuraTheme.onSurfaceVariant : .primary)
+                .frame(width: diameter, height: diameter)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+}
+
+/// What is lined up, under the controls for what is playing.
+///
+/// A queue belongs on the screen it is a queue for. It was a sheet behind a
+/// button, which made "what happens after this one" a question you had to know
+/// to ask — and the answer arrived as a screen covering the thing it was about.
+///
+/// A `List` rather than a stack of rows, because reordering is the whole point
+/// of showing it and `onMove` is not something worth rewriting. Reordering is a
+/// mode, though, not the resting state: with the drag handles always out, the
+/// rows stop responding to an ordinary tap, and tapping one to play it now is
+/// the commonest correction by a distance.
+struct CastQueueInline: View {
+    @ObservedObject private var flow = CastFlow.shared
+    @State private var reordering = false
+
+    /// Tall enough for three, then it scrolls. The controls above are the
+    /// subject of the screen; this is what comes next.
+    private var height: CGFloat { min(CGFloat(flow.queue.count) * 56 + 6, 190) }
+
+    var body: some View {
+        if !flow.queue.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                header
+                list
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            Text("Up next · \(flow.queue.count)")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            Spacer(minLength: 0)
+            Button(reordering ? "Done" : "Reorder") {
+                withAnimation(.easeOut(duration: 0.18)) { reordering.toggle() }
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(PanuraTheme.accent)
+            Button("Clear") { flow.clearQueue() }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        }
+        .padding(.horizontal, 22)
+    }
+
+    private var list: some View {
+        List {
+            ForEach(flow.queue) { item in
+                Button {
+                    // Play it now: everything else keeps its order behind it.
+                    flow.replace(with: [item] + flow.queue.filter { $0.id != item.id })
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: item.isStream ? "globe" : "film")
+                            .font(.system(size: 13))
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            .frame(width: 20)
+                        Text(item.title)
+                            .font(.footnote)
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 22, bottom: 0, trailing: 16))
+                .listRowSeparatorTint(PanuraTheme.outlineVariant)
+            }
+            .onDelete { offsets in
+                for index in offsets.sorted(by: >) where flow.queue.indices.contains(index) {
+                    flow.remove(flow.queue[index])
+                }
+            }
+            .onMove { source, destination in
+                flow.move(from: source, to: destination)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .environment(\.editMode, .constant(reordering ? .active : .inactive))
+        .frame(height: height)
     }
 }
 

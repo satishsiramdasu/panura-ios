@@ -178,17 +178,11 @@ struct CastSessionView: View {
 /// trust would be a slider that fights the TV.
 struct ChromecastControlView: View {
     @ObservedObject private var cast = CastManager.shared
-    @ObservedObject private var flow = CastFlow.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var showQueue = false
 
     var body: some View {
         VStack(spacing: 0) {
-            CastControlBar(
-                queueCount: flow.queue.count,
-                onQueue: { showQueue = true },
-                onDone: { dismiss() }
-            )
+            CastControlBar(onDone: { dismiss() })
 
             ScrollView {
                 VStack(spacing: 26) {
@@ -219,20 +213,20 @@ struct ChromecastControlView: View {
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 8)
-                .padding(.bottom, 24)
+                .padding(.bottom, 18)
             }
+
+            CastQueueInline()
 
             CastStopButton(title: "Stop casting") {
                 cast.stopRemote()
                 dismiss()
             }
             .padding(.horizontal, 22)
+            .padding(.top, 10)
             .padding(.bottom, 8)
         }
         .background(PanuraTheme.background)
-        .sheet(isPresented: $showQueue) {
-            NavigationStack { CastQueueView() }
-        }
     }
 }
 

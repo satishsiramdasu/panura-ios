@@ -16,8 +16,8 @@ import SwiftUI
 ///
 /// `presentationCompactAdaptation(.popover)` is the whole trick: without it a
 /// popover on a phone turns into a sheet from the bottom, which is the shape
-/// this is moving away from. It is iOS 16.4, and on 16.0–16.3 the sheet is the
-/// fallback — the panel still works, it just arrives from below.
+/// this is moving away from. It needs iOS 16.4, which is why the app's floor is
+/// 16.4 — there is no fallback path to keep working.
 enum PanelPopover {
     /// Wide enough for a device name or a site's controls, never the width of
     /// the screen: a panel that spans the screen reads as a new screen.
@@ -52,16 +52,12 @@ private struct PanelPopoverChrome: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        if #available(iOS 16.4, *) {
-            if let tint {
-                content
-                    .presentationCompactAdaptation(.popover)
-                    .presentationBackground(tint)
-            } else {
-                content.presentationCompactAdaptation(.popover)
-            }
-        } else {
+        if let tint {
             content
+                .presentationCompactAdaptation(.popover)
+                .presentationBackground(tint)
+        } else {
+            content.presentationCompactAdaptation(.popover)
         }
     }
 }

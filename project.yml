@@ -1,8 +1,12 @@
 name: PanuraPlayer
 options:
   bundleIdPrefix: panura.web
+  # 16.4 rather than 16.0: it is the floor for `presentationCompactAdaptation`,
+  # which is what keeps the app's panels popovers on a phone instead of sheets
+  # from the bottom. Everything 16.0 runs on runs 16.4 too, and the share of
+  # devices sitting on 16.0-16.3 today is a rounding error.
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "16.4"
   createIntermediateGroups: true
 
 settings:
