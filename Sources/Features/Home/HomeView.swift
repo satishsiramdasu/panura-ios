@@ -13,9 +13,7 @@ struct HomeView: View {
     @ObservedObject private var session = BrowserSession.shared
 
     @State private var showAddress = false
-    /// Which list the address screen opens on. Search lands on Most Visited;
-    /// the History card lands on History.
-    @State private var addressStart: AddressSection = .mostVisited
+    @State private var showWatchLater = false
     @State private var showBookmarksSheet = false
     @State private var editingBookmark: SiteEntry?
     @State private var confirmClearHistory = false
@@ -70,7 +68,6 @@ struct HomeView: View {
         .task { await store.pruneDeadResumes() }
         .fullScreenCover(isPresented: $showAddress) {
             AddressScreen(
-                startSection: addressStart,
                 onNavigate: { text in
                     showAddress = false
                     onOpenBrowser(text)
@@ -79,6 +76,7 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
+        .sheet(isPresented: $showWatchLater) { watchLaterSheet }
         .sheet(item: $editingBookmark) { BookmarkEditor(entry: $0) }
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
         .confirmationDialog(
@@ -135,10 +133,12 @@ struct HomeView: View {
     ///
     /// Which is why Settings is no longer among them. It is not a place you go
     /// to watch something; it is something you adjust, and it sits with the
-    /// other two of those at the bottom of the screen. History took the fourth
-    /// seat because it is the one thing here that answers "the one I had
-    /// yesterday" - the question Bookmarks and Continue Watching between them
-    /// do not.
+    /// other two of those at the bottom of the screen.
+    ///
+    /// Watch Later has the fourth seat. Bookmarks is the site you return to and
+    /// Continue Watching is the thing you are part-way through; neither answers
+    /// "the one I found yesterday and meant to get to", which is the commonest
+    /// thing to lose in a browser.
     private var quickAccessSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader("Go to")
@@ -149,12 +149,8 @@ struct HomeView: View {
                 sectionCard(.web, title: "Web\nBrowser")
                 sectionCard(.videos, title: "Phone\nVideos")
                 sectionCard(.stream, title: "Network\nStream")
-                // Not a destination of its own: the address screen already
-                // draws history, with favicons and a search box over it, and
-                // opening it on that tab is the whole of the feature.
-                card(title: "History", icon: "clock.arrow.circlepath", tint: .purple) {
-                    addressStart = .history
-                    showAddress = true
+                card(title: "Watch\nLater", icon: "clock", tint: .purple) {
+                    showWatchLater = true
                 }
             }
             .padding(.horizontal, 16)
@@ -263,7 +259,7 @@ struct HomeView: View {
                 background: session.privateMode
                     ? PanuraTheme.incognito.opacity(0.22)
                     : PanuraTheme.surfaceVariant,
-                onTap: { addressStart = .mostVisited; showAddress = true },
+                onTap: { showAddress = true },
                 leading: {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 15))
@@ -344,6 +340,83 @@ struct HomeView: View {
         Label(title, systemImage: systemImage)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(PanuraTheme.accent)
+    }
+
+    // MARK: watch later
+
+    /// The pages set aside, newest first.
+    ///
+    /// A row opens the page in the browser rather than playing anything. What
+    /// was saved is the page, not the stream - stream URLs are signed and die
+    /// within hours - so watching it again means detecting it again, which is
+    /// what opening the page does.
+    private var watchLaterSheet: some View {
+        NavigationStack {
+            Group {
+                if store.watchLater.isEmpty {
+                    VStack(spacing: 10) {
+                        Image(systemName: "clock")
+                            .font(.system(size: 34))
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        Text("Nothing saved yet")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Tap the clock beside the address bar to set a page aside for later.")
+                            .font(.caption)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 40)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List {
+                        ForEach(store.watchLater) { entry in
+                            Button {
+                                showWatchLater = false
+                                onOpenBrowser(entry.url)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    PosterThumb(
+                                        url: entry.poster.flatMap(URL.init(string:)),
+                                        fallback: "film",
+                                        width: 88, height: 50, corner: 8
+                                    )
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(entry.title)
+                                            .font(.subheadline.weight(.medium))
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(2)
+                                        Text(entry.host)
+                                            .font(.caption2)
+                                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .onDelete { offsets in
+                            // By URL, not by index: the store filters on it,
+                            // and removing one row would shift every index
+                            // after it.
+                            for url in offsets.map({ store.watchLater[$0].url }) {
+                                store.removeWatchLater(url: url)
+                            }
+                        }
+                    }
+                    .listStyle(.plain)
+                }
+            }
+            .background(PanuraTheme.background)
+            .navigationTitle("Watch Later")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { showWatchLater = false } label: { Image(systemName: "xmark") }
+                }
+            }
+        }
     }
 
     // MARK: bookmarks

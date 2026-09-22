@@ -36,6 +36,12 @@ struct SiteEntry: Codable, Identifiable, Hashable {
     var title: String
     var visits: Int = 1
     var lastVisit: Date = .init()
+    /// The page's own artwork, when whoever saved the entry knew it. Optional
+    /// rather than defaulted, because the synthesised decoder reads an Optional
+    /// with `decodeIfPresent` and so keeps reading entries written before this
+    /// property existed; a non-optional with a default would throw on all of
+    /// them and empty every list on first launch after the update.
+    var poster: String?
 
     var id: String { url }
 
@@ -150,6 +156,14 @@ final class BrowsingStore: ObservableObject {
     static let shared = BrowsingStore()
 
     @Published private(set) var bookmarks: [SiteEntry] = []
+    /// Pages set aside to watch later.
+    ///
+    /// The PAGE, never the stream. A detected stream URL is signed and expires
+    /// in hours - which is what `pruneDeadResumes()` exists to clean up after -
+    /// so a list that stored one would be a list of dead links by morning.
+    /// Storing the page means opening an entry runs detection again, on
+    /// whatever the site serves that day.
+    @Published private(set) var watchLater: [SiteEntry] = []
     /// Per-URL, as a browser's history is: every distinct page is its own row.
     @Published private(set) var history: [SiteEntry] = []
     /// Per-host, feeding Most Visited. Deliberately not capped to the history
@@ -161,10 +175,13 @@ final class BrowsingStore: ObservableObject {
     /// bookmarks and resume points are explicit user actions and still persist.
     @Published var recordHistory = true
 
-    // The stored key keeps its old spelling on purpose: it is data, not a
-    // name. Renaming it would orphan every saved site on every device that
-    // already has one, which is a silent loss - the list would simply be empty.
-    private let bookmarksKey = "home_shortcuts"
+    private let watchLaterKey = "home_watch_later"
+    private let bookmarksKey = "home_bookmarks"
+    /// What the same list was called when bookmarks were called shortcuts. Read
+    /// once, at first launch after the rename, so nobody loses a saved site to
+    /// a change of vocabulary; written back under the new key immediately, and
+    /// never read again after that.
+    private let legacyBookmarksKey = "home_shortcuts"
     private let historyKey = "home_history"
     private let hostVisitsKey = "home_host_visits"
     private let resumeKey = "home_resume"
@@ -178,8 +195,15 @@ final class BrowsingStore: ObservableObject {
     private var lastRecordedURL: String?
 
     private init() {
-        bookmarks = Self.load(bookmarksKey) ?? []
+        if let saved: [SiteEntry] = Self.load(bookmarksKey) {
+            bookmarks = saved
+        } else if let inherited: [SiteEntry] = Self.load(legacyBookmarksKey) {
+            bookmarks = inherited
+            Self.save(inherited, bookmarksKey)
+            UserDefaults.standard.removeObject(forKey: legacyBookmarksKey)
+        }
         history = Self.load(historyKey) ?? []
+        watchLater = Self.load(watchLaterKey) ?? []
         resumes = Self.load(resumeKey) ?? []
         hostVisits = Self.load(hostVisitsKey) ?? Self.seedHostVisits(from: history)
     }
@@ -257,6 +281,39 @@ final class BrowsingStore: ObservableObject {
     func moveBookmarks(from source: IndexSet, to destination: Int) {
         bookmarks.move(fromOffsets: source, toOffset: destination)
         persistBookmarks()
+    }
+
+    // MARK: watch later
+
+    func isWatchLater(_ url: String) -> Bool {
+        watchLater.contains { $0.url == url }
+    }
+
+    /// Newest first: this is a queue of intentions, and the one just added is
+    /// the one being thought about.
+    func addWatchLater(url: String, title: String, poster: String? = nil) {
+        guard !url.isEmpty else { return }
+        watchLater.removeAll { $0.url == url }
+        watchLater.insert(
+            SiteEntry(url: url, title: title.isEmpty ? url : title, poster: poster),
+            at: 0
+        )
+        persistWatchLater()
+    }
+
+    func removeWatchLater(url: String) {
+        watchLater.removeAll { $0.url == url }
+        persistWatchLater()
+    }
+
+    func moveWatchLater(from source: IndexSet, to destination: Int) {
+        watchLater.move(fromOffsets: source, toOffset: destination)
+        persistWatchLater()
+    }
+
+    func clearWatchLater() {
+        watchLater.removeAll()
+        persistWatchLater()
     }
 
     // MARK: history
@@ -494,6 +551,7 @@ final class BrowsingStore: ObservableObject {
     // MARK: storage
 
     private func persistBookmarks() { Self.save(bookmarks, bookmarksKey) }
+    private func persistWatchLater() { Self.save(watchLater, watchLaterKey) }
     private func persistHistory() { Self.save(history, historyKey) }
     private func persistHostVisits() { Self.save(hostVisits, hostVisitsKey) }
     private func persistResumes() { Self.save(resumes, resumeKey) }

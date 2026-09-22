@@ -97,7 +97,7 @@ enum ScreenshotMode {
         ]
 
         write(visits, "home_host_visits")
-        write(bookmarks, "home_shortcuts")
+        write(bookmarks, "home_bookmarks")
         write(resumes, "home_resume")
         // Recents is per-page where the tally above is per-host; both grids are
         // on Home, and one of them being empty is as obvious as both.

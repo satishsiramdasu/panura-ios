@@ -193,57 +193,40 @@ struct BrowserView: View {
             glyphLabel: showMenu ? "Close site controls" : "Site controls and browser menu",
             glyphTint: session.privateMode ? PanuraTheme.incognito : nil
         ) {
-            AddressPill(
-                title: model.pageTitle,
-                url: model.currentURL?.absoluteString ?? "",
-                placeholder: "Search or enter website",
-                // Private browsing colours the whole bar, not just the mark.
-                // Dropping this was a mistake: the tint is how the session
-                // announces itself, and one small mark is too quiet for a
-                // state where nothing is being written down.
-                background: session.privateMode
-                    ? PanuraTheme.incognito.opacity(0.22)
-                    : PanuraTheme.surfaceVariant,
-                onTap: { showAddress = true },
-                leading: {
-                    // Same slot Android gives it: first cell inside the pill.
-                    Button {
-                        guard let url = model.currentURL?.absoluteString else { return }
-                        if store.isBookmark(url) {
-                            store.removeBookmark(url: url)
-                        } else {
-                            store.addBookmark(
-                                url: url,
-                                title: model.pageTitle.isEmpty
-                                    ? (model.currentURL?.host ?? url)
-                                    : model.pageTitle
-                            )
-                        }
-                    } label: {
-                        let saved = store.isBookmark(model.currentURL?.absoluteString ?? "")
-                        Image(systemName: saved ? "star.fill" : "star")
-                            .font(.system(size: 15))
-                            .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
-                            .frame(width: 38, height: 38)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(!pageUsable)
-                    .accessibilityLabel("Add to bookmarks")
-                },
-                trailing: {
-                    // Back and forward live here now. They were in the options
-                    // panel, which made going back a two-tap affair on the one
-                    // control people reach for most.
-                    HStack(spacing: 0) {
-                        pillNav("chevron.left", "Back", enabled: model.canGoBack) {
-                            model.goBack()
-                        }
-                        pillNav("chevron.right", "Forward", enabled: model.canGoForward) {
-                            model.goForward()
+            HStack(spacing: 2) {
+                AddressPill(
+                    title: model.pageTitle,
+                    url: model.currentURL?.absoluteString ?? "",
+                    placeholder: "Search or enter website",
+                    // Private browsing colours the whole bar, not just the mark.
+                    // Dropping this was a mistake: the tint is how the session
+                    // announces itself, and one small mark is too quiet for a
+                    // state where nothing is being written down.
+                    background: session.privateMode
+                        ? PanuraTheme.incognito.opacity(0.22)
+                        : PanuraTheme.surfaceVariant,
+                    onTap: { showAddress = true },
+                    // Nothing here now. The bookmark toggle held this cell and is
+                    // in the site panel beside the domain: you bookmark a site once
+                    // ever, and the one cell a pill can spare should belong to
+                    // something done once a visit.
+                    leading: { EmptyView() },
+                    trailing: {
+                        // Back and forward live here now. They were in the options
+                        // panel, which made going back a two-tap affair on the one
+                        // control people reach for most.
+                        HStack(spacing: 0) {
+                            pillNav("chevron.left", "Back", enabled: model.canGoBack) {
+                                model.goBack()
+                            }
+                            pillNav("chevron.right", "Forward", enabled: model.canGoForward) {
+                                model.goForward()
+                            }
                         }
                     }
-                }
-            )
+                )
+                watchLaterButton
+            }
         }
         // Anchored to the bar, not to the page.
         //
@@ -263,6 +246,43 @@ struct BrowserView: View {
         } message: {
             Text("Private browsing is turning off, so this page will be recorded in history from now on.")
         }
+    }
+
+    /// Sets this page aside, outside the pill rather than in it.
+    ///
+    /// Inside, it would push the title off centre - the pill's text has one
+    /// cell on each side and adding a third makes the middle no longer the
+    /// middle. Out here it sits with the cast mark, which is the other control
+    /// that acts on the page rather than on the address.
+    ///
+    /// A clock, because YouTube's Watch Later is a clock and this is the same
+    /// promise. The bookmark glyph is taken, by bookmarks.
+    @ViewBuilder
+    private var watchLaterButton: some View {
+        let url = model.currentURL?.absoluteString ?? ""
+        let saved = store.isWatchLater(url)
+        Button {
+            if saved {
+                store.removeWatchLater(url: url)
+                flash("Removed from Watch Later")
+            } else {
+                store.addWatchLater(
+                    url: url,
+                    title: model.pageTitle.isEmpty ? (model.currentURL?.host ?? url) : model.pageTitle,
+                    poster: model.posterURL?.absoluteString
+                )
+                flash("Saved to Watch Later")
+            }
+        } label: {
+            Image(systemName: saved ? "clock.fill" : "clock")
+                .font(.system(size: 16))
+                .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
+                .frame(width: 38, height: 38)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!pageUsable)
+        .accessibilityLabel(saved ? "Remove from Watch Later" : "Watch later")
     }
 
     @ViewBuilder
@@ -328,6 +348,34 @@ struct BrowserView: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
             Spacer(minLength: 8)
+            // Where the star used to be in the pill. A site is bookmarked once
+            // and then never again, so it does not need to be on screen at all
+            // times - but it does need to be beside the site it is about, and
+            // this row names that site.
+            Button {
+                guard let url = model.currentURL?.absoluteString, !url.isEmpty else { return }
+                if store.isBookmark(url) {
+                    store.removeBookmark(url: url)
+                } else {
+                    store.addBookmark(
+                        url: url,
+                        title: model.pageTitle.isEmpty
+                            ? (model.currentURL?.host ?? url)
+                            : model.pageTitle
+                    )
+                }
+            } label: {
+                let saved = store.isBookmark(model.currentURL?.absoluteString ?? "")
+                Image(systemName: saved ? "bookmark.fill" : "bookmark")
+                    .font(.system(size: 15))
+                    .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!pageUsable)
+            .accessibilityLabel("Bookmark this site")
+
             if let host, !siteSettings.isDefault(host: host) {
                 Button("Reset") {
                     let wasBlocking = siteSettings.value(.adBlock, host: host)
@@ -1073,6 +1121,9 @@ struct BrowserView: View {
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
             Spacer(minLength: 0)
+            // The same clock as the address bar, because this sheet covers it.
+            // Several streams on one page are still one page to come back to.
+            watchLaterButton
         }
         .padding(10)
         .background(
