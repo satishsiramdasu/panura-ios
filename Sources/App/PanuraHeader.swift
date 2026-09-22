@@ -62,17 +62,20 @@ struct PanuraHeader<Content: View>: View {
     /// back out.
     private var menuButton: some View {
         Button { drawer.toggle() } label: {
-            // Three lines of unequal length, in a circle of its own. Equal lines
-            // are the older drawing and read as a list; the stagger is what says
-            // menu, and the circle gives it the same weight as the cast mark
-            // facing it across the bar.
-            Image(systemName: drawer.isOpen ? "xmark" : "line.3.horizontal.decrease")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(PanuraTheme.surfaceVariant))
-                .frame(width: 38, height: 38)
-                .contentShape(Rectangle())
+            Group {
+                if drawer.isOpen {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .semibold))
+                } else {
+                    MenuGlyph()
+                }
+            }
+            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            // 38 square with nothing drawn behind it. The footprint is what
+            // `PanelMetrics.glyphCentre` measures from, so it stays even though
+            // the circle that used to fill it is gone.
+            .frame(width: 38, height: 38)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(drawer.isOpen ? "Close menu" : "Menu")
@@ -186,5 +189,24 @@ struct AddressPill<Leading: View, Trailing: View>: View {
         .padding(.horizontal, 6)
         .frame(height: 44)
         .background(background, in: Capsule())
+    }
+}
+
+/// Three bars, left aligned, the middle one longest.
+///
+/// Drawn rather than named: no SF Symbol has this stagger — `line.3.horizontal`
+/// is three equal lines and reads as a list, and `line.3.horizontal.decrease`
+/// centres its lines and shortens each one in turn, which is the filter mark.
+private struct MenuGlyph: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4.5) {
+            bar(15)
+            bar(20)
+            bar(15)
+        }
+    }
+
+    private func bar(_ width: CGFloat) -> some View {
+        Capsule().frame(width: width, height: 2.2)
     }
 }
