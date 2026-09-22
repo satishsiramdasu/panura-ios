@@ -582,6 +582,14 @@ struct WebViewContainer: UIViewRepresentable {
                 // A single-page app moved between routes. Only pushState,
                 // popstate and hashchange reach here - see ExtractionScript for
                 // why replaceState deliberately does not.
+                //
+                // The main frame only. The sniffer runs in every frame and so
+                // this arrives from every frame, and an ad iframe pushing state
+                // is not the page moving: taken at face value it threw away the
+                // page's findings and poster, and pointed `currentURL` — which
+                // is the address bar, and the key every per-site setting is
+                // looked up by — at the advertiser.
+                guard message.frameInfo.isMainFrame else { return }
                 if let s = dict["url"] as? String, let u = URL(string: s) {
                     routeChanged(to: u)
                 }

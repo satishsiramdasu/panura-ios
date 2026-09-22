@@ -21,7 +21,6 @@ import Foundation
 enum PagePosterScript {
     static let source = #"""
     (function(){
-      var last = '';
       function abs(u){
         try { return new URL(u, location.href).href; } catch (e) { return ''; }
       }
@@ -113,14 +112,21 @@ enum PagePosterScript {
         } catch (e) {}
         return '';
       }
+      // Sends the same answer every time it is asked, deliberately.
+      //
+      // It used to remember what it had sent and stay quiet afterwards, which
+      // assumed the app still had it. The app drops the poster whenever it
+      // decides the page has changed, and it can decide that after this script
+      // has already spoken — so one ill-timed clear lost the poster for the
+      // life of the page. Re-stating it costs one small message; the app just
+      // assigns the same URL again.
       function report(){
         try {
           var url = fromMeta() || fromJSONLD() || fromVideo()
                     || fromArticle() || fromLargest();
           // Data URIs are usually a placeholder pixel, and a poster worth
           // showing is never one.
-          if (!url || url.indexOf('data:') === 0 || url === last) return;
-          last = url;
+          if (!url || url.indexOf('data:') === 0) return;
           window.webkit.messageHandlers.panura.postMessage({ kind: 'poster', url: url });
         } catch (e) {}
       }
@@ -133,8 +139,16 @@ enum PagePosterScript {
       window.addEventListener('load', function(){ setTimeout(report, 400); });
       // A single-page app changes the page without reloading it, and the poster
       // changes with it.
-      window.addEventListener('popstate', function(){ last = ''; setTimeout(report, 800); });
-      window.addEventListener('hashchange', function(){ last = ''; setTimeout(report, 800); });
+      window.addEventListener('popstate', function(){ setTimeout(report, 800); });
+      window.addEventListener('hashchange', function(){ setTimeout(report, 800); });
+      // Then once every five seconds for a minute, and no longer: a page that
+      // has not settled inside a minute is not going to, and a detection can
+      // arrive long after the sweeps above have finished.
+      var beats = 0;
+      var timer = setInterval(function(){
+        if (++beats > 12) { clearInterval(timer); return; }
+        report();
+      }, 5000);
     })();
     """#
 }
