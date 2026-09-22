@@ -40,7 +40,7 @@ struct PanuraHeader<Content: View>: View {
     @ObservedObject private var drawer = DrawerState.shared
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: AppChrome.headerSpacing) {
             menuButton
             glyph
             content
@@ -48,7 +48,7 @@ struct PanuraHeader<Content: View>: View {
             CastToolbarButton()
                 .frame(width: 44, height: 44)
         }
-        .padding(.horizontal, 6)
+        .padding(.horizontal, AppChrome.headerPadding)
         .frame(height: Self.height)
         .background(PanuraTheme.surfaceContainer)
     }

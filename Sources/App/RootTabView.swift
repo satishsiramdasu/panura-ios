@@ -72,11 +72,30 @@ struct RootTabView: View {
         DragGesture(minimumDistance: 24)
             .onEnded { value in
                 guard value.translation.width < -40 else { return }
-                drawer.close()
+                dismissDrawerIfOverlay()
             }
     }
 
-    var body: some View {
+    /// Regular width means an iPad with room to spare - never a phone, and not
+    /// an iPad in Split View or Slide Over, which report compact and so get the
+    /// phone's drawer back. That is right for both: a sidebar on a half-width
+    /// iPad window would leave the app less room than a phone has.
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    private var usesSidebar: Bool { sizeClass == .regular }
+    /// The sidebar starts open on an iPad, but only the first time. Reopening
+    /// it on every rotation would overrule someone who had just closed it.
+    @State private var didOpenSidebar = false
+
+    /// Closing the drawer is a phone idea. On an iPad the sidebar is furniture:
+    /// pressing a row in it is not a reason to take it away.
+    private func dismissDrawerIfOverlay() {
+        guard !usesSidebar else { return }
+        drawer.close()
+    }
+
+    /// The phone: the app slides off the drawer rather than the drawer over the
+    /// app, which is what keeps the way out under the thumb that opened it.
+    private var pushLayout: some View {
         ZStack(alignment: .leading) {
             // Underneath, revealed by the app moving off it. A drawer that
             // slides over the app hides how to get back; one the app slides off
@@ -86,7 +105,7 @@ struct RootTabView: View {
                     destinations: drawerDestinations,
                     actions: drawerActions,
                     onAbout: {
-                        drawer.close()
+                        dismissDrawerIfOverlay()
                         settingsDeepLink = .about
                         showSettings = true
                     }
@@ -127,6 +146,44 @@ struct RootTabView: View {
                     .padding(.leading, DrawerState.width)
                     .ignoresSafeArea()
             }
+        }
+    }
+
+    /// The iPad: the drawer is furniture, not an interruption.
+    ///
+    /// It takes its width out of the layout instead of sliding the app off the
+    /// screen, so both are usable at once - which is the whole difference. The
+    /// phone's drawer has to be dismissed before anything else can be touched,
+    /// because it is covering the app. This one is beside it, so there is
+    /// nothing to dismiss: no scrim, no tap-to-close, no swipe, and no row that
+    /// puts it away when pressed.
+    private var sidebarLayout: some View {
+        HStack(spacing: 0) {
+            if drawer.isOpen {
+                AppDrawerPanel(
+                    destinations: drawerDestinations,
+                    actions: drawerActions,
+                    onAbout: {
+                        settingsDeepLink = .about
+                        showSettings = true
+                    }
+                )
+                .frame(width: DrawerState.width)
+                .transition(.move(edge: .leading))
+                Divider().overlay(PanuraTheme.surfaceVariant)
+            }
+            shell
+        }
+    }
+
+    var body: some View {
+        Group {
+            if usesSidebar { sidebarLayout } else { pushLayout }
+        }
+        .onAppear {
+            guard usesSidebar, !didOpenSidebar else { return }
+            didOpenSidebar = true
+            drawer.isOpen = true
         }
         .background(PanuraTheme.surfaceContainer.ignoresSafeArea())
         // One bottom edge for everything in the stack — the screen's, not the
@@ -360,7 +417,7 @@ struct RootTabView: View {
 
     private func select(_ destination: AppDestination) {
         session.showBar()
-        drawer.close()
+        dismissDrawerIfOverlay()
         // Settings opens over whatever you were doing and hands it back when it
         // closes, rather than replacing it.
         guard destination != .settings else {
@@ -402,12 +459,12 @@ struct RootTabView: View {
                 icon: "questionmark.circle.fill", label: "Help",
                 detail: "Answers, and how to reach us",
                 tint: .blue
-            ) { drawer.close(); showFAQ = true },
+            ) { dismissDrawerIfOverlay(); showFAQ = true },
             AppDrawerPanel.Item(
                 icon: "exclamationmark.bubble.fill", label: "Report a problem",
                 detail: "A site that will not play, or anything broken",
                 tint: .orange
-            ) { drawer.close(); showReport = true },
+            ) { dismissDrawerIfOverlay(); showReport = true },
         ]
         // Only once there is a listing to open. A Rate row that goes nowhere is
         // worse than no Rate row.
@@ -418,7 +475,7 @@ struct RootTabView: View {
                     detail: "Leave a review on the App Store",
                     tint: .yellow
                 ) {
-                    drawer.close()
+                    dismissDrawerIfOverlay()
                     UIApplication.shared.open(VersionStore.storeURL)
                 }
             )

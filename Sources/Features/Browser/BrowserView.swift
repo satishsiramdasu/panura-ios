@@ -559,7 +559,7 @@ struct BrowserView: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .semibold))
-                .frame(width: 30, height: 38)
+                .frame(width: AppChrome.pillNavWidth, height: 38)
                 .foregroundStyle(enabled ? PanuraTheme.onSurfaceVariant : Color.secondary.opacity(0.3))
                 .contentShape(Rectangle())
         }

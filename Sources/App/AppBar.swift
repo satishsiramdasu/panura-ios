@@ -70,4 +70,28 @@ enum AppDestination: Hashable, CaseIterable {
 /// the controls.
 enum AppChrome {
     static let bottomInset: CGFloat = 16
+
+    /// A 375-point phone: iPhone SE 2 and 3, the 12 and 13 mini, and the 8.
+    ///
+    /// The floor, not a guess - the deployment target is 16.4 and the 320pt SE
+    /// of 2016 stops at iOS 15. The next size up is 390, so the threshold has
+    /// 10 points of daylight on each side and cannot drift onto the wrong
+    /// device.
+    ///
+    /// Read once. `UIScreen` is fixed for the life of the process on a phone,
+    /// and re-reading it per layout pass would cost more than the seven points
+    /// it saves.
+    static let isNarrow: Bool = UIScreen.main.bounds.width < 380
+
+    /// What the header spends on air rather than on the address.
+    ///
+    /// On a 375pt phone the title and URL get 109 points between the glyph and
+    /// the chevrons - about eighteen characters - so every point of padding is
+    /// a character the user cannot read. On 390 and up there is room, and
+    /// tightening it there would only make the bar look cramped for nothing.
+    static var headerPadding: CGFloat { isNarrow ? 4 : 6 }
+    static var headerSpacing: CGFloat { isNarrow ? 3 : 4 }
+    /// Back and forward. 14pt glyphs either way, so the target stays well
+    /// clear of a fingertip at both widths.
+    static var pillNavWidth: CGFloat { isNarrow ? 28 : 30 }
 }
