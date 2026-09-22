@@ -97,6 +97,16 @@ struct WebViewContainer: UIViewRepresentable {
             forMainFrameOnly: false
         ))
 
+        // Tidies up after the page: font-measuring nodes a site meant to take
+        // away and left behind. Document end, main frame only — it reads the
+        // body's own children, and there is nothing to read before there is a
+        // body.
+        contentController.addUserScript(WKUserScript(
+            source: FontProbeScript.source,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
+
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
         // Private browsing: a data store that is thrown away with the web view,

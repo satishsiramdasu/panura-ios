@@ -160,7 +160,12 @@ struct CastDevicesView: View {
         // Wide enough to read a device name, narrow enough to stay a panel
         // hanging off the mark rather than a screen that has taken over.
         .frame(width: min(UIScreen.main.bounds.width * 0.86, 400))
-        .background(RoundedRectangle(cornerRadius: 20).fill(PanuraTheme.surfaceContainer))
+        // Mirrors the browser's panel: square where it meets the bar and the
+        // edge of the screen, round on the three corners out in the open.
+        .background(
+            PanelShape(corners: [.topLeft, .bottomLeft, .bottomRight], radius: 20)
+                .fill(PanuraTheme.surfaceContainer)
+        )
         .sheet(isPresented: $showControls) { CastSessionView() }
         // Whatever the way out — dismissing, connecting — the scan ends with the
         // screen. An idle scan costs battery and the SDK will not stop one on
@@ -540,29 +545,40 @@ struct CastPanelOverlay: View {
 
     var body: some View {
         if picker.isShowing {
-            ZStack(alignment: .topTrailing) {
-                // Dismisses on a tap anywhere off the panel. Lighter than a
-                // sheet's dimming, because the screen behind is still the
-                // subject — this is a control, not a destination.
-                Color.black.opacity(0.42)
-                    .ignoresSafeArea()
-                    .transition(.opacity)
+            VStack(spacing: 0) {
+                // The header keeps its colour — the mark that opened this is in
+                // it — but nothing in it fires while the panel is open. The bar
+                // holds the address, back, forward and the cast mark itself, and
+                // any of them going off under an open panel is an accident.
+                Color.black.opacity(0.001)
+                    .frame(height: PanuraHeader<AnyView>.height)
+                    .contentShape(Rectangle())
                     .onTapGesture { picker.close() }
 
-                CastDevicesView()
-                    .shadow(color: .black.opacity(0.4), radius: 26, y: 12)
-                    .padding(.trailing, 10)
-                    .padding(.top, 6)
-                    // Grows out of the top-right corner, where the mark is.
-                    .transition(.scale(scale: 0.92, anchor: .topTrailing)
-                        .combined(with: .opacity))
+                ZStack(alignment: .topTrailing) {
+                    // Dismisses on a tap anywhere off the panel. Lighter than a
+                    // sheet's dimming, because the screen behind is still the
+                    // subject — this is a control, not a destination.
+                    Color.black.opacity(0.32)
+                        .ignoresSafeArea(edges: .bottom)
+                        .onTapGesture { picker.close() }
+
+                    CastDevicesView()
+                        .shadow(color: .black.opacity(0.35), radius: 22, y: 10)
+                        // Drops out of the bar, like the browser's panel on the
+                        // other side. It was a floating card before, which is
+                        // the shape of a dialog — something the app is asking —
+                        // when this is a drawer belonging to one button.
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .zIndex(50)
         }
     }
 }
 
-/// The cast card on Home./// The cast card on Home.
+/// The cast card on Home.
 ///
 /// Casting was reachable only from the mark in a header — a 23-point glyph that
 /// says nothing about what it does until you already know. It is one of the two

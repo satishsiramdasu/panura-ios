@@ -74,7 +74,15 @@ struct RootTabView: View {
                 // the opposite. Nothing on the phone shows it at all, which is
                 // what earns a permanent strip.
                 if isCasting {
-                    castBar.transition(.move(edge: .bottom).combined(with: .opacity))
+                    castBar
+                        // Inset on every edge it can reach. With the app bar
+                        // hidden — which is most of a scrolled browser page —
+                        // this is the bottom-most thing on the screen, and flush
+                        // to the edges it was being eaten by the display's
+                        // rounded corners.
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, barVisible ? 6 : AppBarRow.bottomInset)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
                 if barVisible {
