@@ -28,7 +28,9 @@ struct RootTabView: View {
             case "web": return .web
             case "videos", "player": return .videos
             case "stream": return .stream
-            case "settings": return .settings
+            // Settings is a sheet now; the screenshot run opens it from Home
+            // in `.task` below rather than by landing on it.
+            case "settings": return .home
             default: return .home
             }
         }
@@ -52,6 +54,11 @@ struct RootTabView: View {
     @ObservedObject private var castPicker = CastPicker.shared
     /// Which Settings screen to land on, when something asked for one.
     @State private var settingsDeepLink: SettingsScreen?
+    /// Settings is a sheet, not a destination. It is somewhere you go *from*
+    /// wherever you are and come back out of, which is what a sheet is; as a
+    /// destination it also had to carry the app's header, and every screen
+    /// pushed inside it then arrived wearing a different one.
+    @State private var showSettings = false
 
     @ObservedObject private var drawer = DrawerState.shared
 
@@ -116,6 +123,16 @@ struct RootTabView: View {
             ReportIssueSheet(pageURL: nil, source: "menu")
         }
         .sheet(isPresented: $showFAQ) { FAQView() }
+        .sheet(isPresented: $showSettings) {
+            SettingsView(deepLink: $settingsDeepLink)
+        }
+        .task {
+            #if DEBUG
+            if ScreenshotMode.isActive, ScreenshotMode.screen == "settings" {
+                showSettings = true
+            }
+            #endif
+        }
         // Starting a cast anywhere in the app raises it, so the wait is never
         // silent — a Dolby Vision clip can take minutes to convert, and without
         // this the phone simply looked like it had stopped responding.
@@ -281,13 +298,12 @@ struct RootTabView: View {
                     onGoHome: { select(.home) },
                     onOpenSettings: { screen in
                         settingsDeepLink = screen
-                        select(.settings)
+                        showSettings = true
                     }
                 )
             }
             layer(.videos) { LocalVideosView() }
             layer(.stream) { StreamView() }
-            layer(.settings) { SettingsView(deepLink: $settingsDeepLink) }
         }
     }
 
@@ -318,6 +334,12 @@ struct RootTabView: View {
     private func select(_ destination: AppDestination) {
         session.showBar()
         drawer.close()
+        // Settings opens over whatever you were doing and hands it back when it
+        // closes, rather than replacing it.
+        guard destination != .settings else {
+            showSettings = true
+            return
+        }
         withAnimation(.easeInOut(duration: 0.22)) {
             selection = destination
         }

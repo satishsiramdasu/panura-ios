@@ -33,40 +33,33 @@ struct AnchoredPanel<Content: View>: View {
     var width: CGFloat = PanelMetrics.width
     @ViewBuilder var content: Content
 
-    var body: some View {
-        VStack(spacing: 0) {
-            pointer
-            content
-                .frame(width: width)
-                .background(
-                    RoundedRectangle(cornerRadius: PanelMetrics.corner, style: .continuous)
-                        .fill(PanelMetrics.surface)
-                )
-        }
-        .frame(width: width)
-        .shadow(color: .black.opacity(0.42), radius: 20, y: 8)
-    }
-
-    /// Kept fully clear of the rounded corners.
+    /// The arrow is part of the panel, not a triangle stacked on top of one.
     ///
-    /// Overlapping one put the arrow's base against the corner's curve, and the
-    /// sliver between the two showed the page through the panel — a pinprick of
-    /// daylight in the corner of the cast panel. The base has to sit entirely on
-    /// the card's straight top edge, so the inset can never be less than the
-    /// corner radius plus half the arrow.
-    private var pointer: some View {
-        let inset = max(pointerInset, PanelMetrics.corner + PanelMetrics.pointerWidth / 2)
-        return HStack(spacing: 0) {
-            if side == .trailing { Spacer(minLength: 0) }
-            PointerShape()
+    /// Two shapes cannot be made to blend: they meet on a seam that survives
+    /// anti-aliasing, and a shadow drawn round the pair traces that seam as a
+    /// dark line straight through the join. One path has no join to trace.
+    var body: some View {
+        content
+            .frame(width: width)
+            .padding(.top, PanelMetrics.pointerHeight)
+            .background(
+                PanelBubble(
+                    corner: PanelMetrics.corner,
+                    pointerInset: max(
+                        pointerInset,
+                        PanelMetrics.corner + PanelMetrics.pointerWidth / 2
+                    ),
+                    pointerWidth: PanelMetrics.pointerWidth,
+                    pointerHeight: PanelMetrics.pointerHeight,
+                    side: side
+                )
                 .fill(PanelMetrics.surface)
-                .frame(width: PanelMetrics.pointerWidth, height: 9)
-                // A point of overlap: two shapes meeting exactly leave a hairline
-                // of background between them once anti-aliasing has had its say.
-                .padding(.bottom, -1)
-                .padding(side.edge, inset - PanelMetrics.pointerWidth / 2)
-            if side == .leading { Spacer(minLength: 0) }
-        }
+            )
+            // Flattens panel and arrow into one silhouette before the shadow is
+            // drawn, so the shadow goes round the outside instead of round each
+            // piece.
+            .compositingGroup()
+            .shadow(color: .black.opacity(0.4), radius: 18, y: 6)
     }
 }
 
@@ -76,7 +69,8 @@ enum PanelMetrics {
     /// the screen: a panel that spans the screen reads as a new screen.
     static var width: CGFloat { min(UIScreen.main.bounds.width * 0.82, 360) }
     static let corner: CGFloat = 14
-    static let pointerWidth: CGFloat = 20
+    static let pointerWidth: CGFloat = 22
+    static let pointerHeight: CGFloat = 9
     /// A step lighter than the header it hangs from — that difference is what
     /// separates the two without a line between them.
     static var surface: Color { PanuraTheme.surfaceContainerHigh }
@@ -99,16 +93,40 @@ enum PanelMetrics {
     static var posterWidth: CGFloat { min(UIScreen.main.bounds.width - 72, 320) }
 }
 
-/// The arrow: a triangle, with straight edges.
+/// The panel and its arrow as one outline.
 ///
-/// It was drawn with a quadratic curve, which made a dome rather than a point —
-/// the shape of a speech bubble's tail, not of something indicating a button.
-private struct PointerShape: Shape {
+/// The arrow is a triangle with straight edges — it was a quadratic curve once,
+/// which makes a dome, the shape of a speech bubble's tail rather than of
+/// something indicating a button. Its base is pulled half a point into the card
+/// so the two parts of the path overlap rather than abut; a path that merely
+/// touches itself still shows the join.
+private struct PanelBubble: Shape {
+    let corner: CGFloat
+    /// From the panel's own edge to the middle of the arrow.
+    let pointerInset: CGFloat
+    let pointerWidth: CGFloat
+    let pointerHeight: CGFloat
+    let side: PanelSide
+
     func path(in rect: CGRect) -> Path {
         var path = Path()
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        let body = CGRect(
+            x: rect.minX, y: rect.minY + pointerHeight,
+            width: rect.width, height: max(0, rect.height - pointerHeight)
+        )
+        path.addRoundedRect(
+            in: body,
+            cornerSize: CGSize(width: corner, height: corner),
+            style: .continuous
+        )
+
+        let centre = side == .leading
+            ? rect.minX + pointerInset
+            : rect.maxX - pointerInset
+        let half = pointerWidth / 2
+        path.move(to: CGPoint(x: centre - half, y: body.minY + 0.5))
+        path.addLine(to: CGPoint(x: centre, y: rect.minY))
+        path.addLine(to: CGPoint(x: centre + half, y: body.minY + 0.5))
         path.closeSubpath()
         return path
     }
@@ -149,7 +167,11 @@ struct PanelScaffold<Content: View>: View {
                     content
                 }
                 .padding(side.edge, PanelMetrics.margin)
-                .padding(.top, 2)
+                // Up into the bar by a few points, so the arrow reaches its
+                // button instead of pointing at it from across a gap. The bar
+                // is 52 tall and its buttons are 44, so there is dead space at
+                // the bottom of it for the arrow to claim.
+                .padding(.top, -5)
                 // Out of the button, not out of the corner of the screen.
                 .transition(
                     .scale(scale: 0.86, anchor: side.unitPoint).combined(with: .opacity)

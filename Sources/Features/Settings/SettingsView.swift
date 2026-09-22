@@ -14,6 +14,76 @@ enum SettingsScreen: Hashable {
     // switch they all depend on already lived. A screen of its own put the
     // app's most specialised options at the same level as "Playback".
     case browser, playback, subtitles, gestures, localVideos, about, support
+
+    /// What the header says while this screen is open. Held here rather than on
+    /// each screen because the header is drawn by the stack, not by the screen.
+    var title: String {
+        switch self {
+        case .browser: return "Web Browser"
+        case .playback: return "Playback"
+        case .subtitles: return "Subtitles"
+        case .gestures: return "Gestures"
+        case .localVideos: return "Videos"
+        case .about: return "About"
+        case .support: return "Help & Support"
+        }
+    }
+}
+
+/// The header every level of Settings wears.
+///
+/// Settings is a sheet now, and a sheet has no bar of its own — which is what
+/// was wrong before: the root hid the navigation bar to wear the app's header,
+/// and every screen pushed on top of it got the system bar back, so going one
+/// level in changed the shape of the top of the screen.
+///
+/// Back on the left, close on the right, title in the middle, and the two
+/// controls are the same circle so neither reads as more important than the
+/// other. The left circle is still drawn when there is nothing to go back to —
+/// as empty space, so the title stays in the middle of the screen rather than
+/// shifting a hair each time a screen is pushed.
+struct SettingsHeader: View {
+    let title: String
+    /// nil at the root.
+    var onBack: (() -> Void)?
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if let onBack {
+                circle("chevron.left", label: "Back", action: onBack)
+            } else {
+                Color.clear.frame(width: 38, height: 38)
+            }
+
+            Spacer(minLength: 0)
+            Text(title)
+                .font(.headline)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+
+            circle("xmark", label: "Close", action: onClose)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(PanuraTheme.background)
+    }
+
+    private func circle(
+        _ glyph: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: glyph)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(PanuraTheme.surfaceVariant))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
 }
 
 struct SettingsView: View {
@@ -25,6 +95,7 @@ struct SettingsView: View {
     @State private var confirmReset = false
     @State private var didReset = false
     @State private var path: [SettingsScreen] = []
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         content
@@ -117,25 +188,34 @@ struct SettingsView: View {
                 }
             }
             .navigationDestination(for: SettingsScreen.self) { screen in
-                switch screen {
-                case .browser: BrowserPreferencesView()
-                case .playback: PlaybackPreferencesView()
-                case .subtitles: SubtitlePreferencesView()
-                case .gestures: GesturePreferencesView()
-                case .localVideos: LocalVideoPreferencesView()
-                case .about: AboutView()
-                case .support: SupportView()
+                Group {
+                    switch screen {
+                    case .browser: BrowserPreferencesView()
+                    case .playback: PlaybackPreferencesView()
+                    case .subtitles: SubtitlePreferencesView()
+                    case .gestures: GesturePreferencesView()
+                    case .localVideos: LocalVideoPreferencesView()
+                    case .about: AboutView()
+                    case .support: SupportView()
+                    }
+                }
+                // The same header, one level down. Each of these screens sets
+                // its own `navigationTitle`, which is what the hidden bar would
+                // have shown; the header says it instead, in the same place on
+                // every level.
+                .toolbar(.hidden, for: .navigationBar)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    SettingsHeader(title: screen.title, onBack: { path.removeLast() }) {
+                        dismiss()
+                    }
                 }
             }
             .scrollContentBackground(.hidden)
             .background(PanuraTheme.background)
-            // The app's own header instead of a nav bar: the glyph, the title
-            // and the cast control hold the same pixel on every screen, which is
-            // what stops a destination switch from looking like leaving the app.
-            // Pushed screens keep their normal bar, so back stays where iOS
-            // users expect it.
-            .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Settings") }
-            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .navigationBar)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                SettingsHeader(title: "Settings", onBack: nil) { dismiss() }
+            }
             .confirmationDialog(
                 "Reset settings?",
                 isPresented: $confirmReset,
