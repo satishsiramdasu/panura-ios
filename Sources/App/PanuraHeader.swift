@@ -25,6 +25,9 @@ struct PanuraHeader<Content: View>: View {
     /// protection is switched off for the site in the address bar.
     var glyphMarked: Bool = false
     var glyphLabel: String = "Home"
+    /// False where the content draws the mark itself — the browser and Home,
+    /// whose pills carry it in their leading cell.
+    var showsGlyph: Bool = true
     /// Recolours the mark itself. Private browsing uses it.
     ///
     /// The bar used to turn purple instead — the address pill repainted behind
@@ -83,18 +86,45 @@ struct PanuraHeader<Content: View>: View {
 
     @ViewBuilder
     private var glyph: some View {
+        if showsGlyph {
+            PanuraGlyph(
+                onTap: onTapGlyph,
+                active: glyphActive,
+                marked: glyphMarked,
+                label: glyphLabel,
+                tint: glyphTint
+            )
+        }
+    }
+}
+
+/// The app's mark, wherever it is drawn.
+///
+/// Lifted out of the header because the address pill wants it: in the browser
+/// and on Home it sits in the pill's leading cell, which is the slot every
+/// browser uses for whatever the address is about. The header keeps drawing it
+/// for the screens whose middle is a plain title.
+struct PanuraGlyph: View {
+    var onTap: (() -> Void)?
+    var active: Bool = false
+    var marked: Bool = false
+    var label: String = "Home"
+    var tint: Color?
+
+    @ViewBuilder
+    var body: some View {
         let mark = Image("AppLogo")
             .resizable()
             .scaledToFit()
             .frame(width: 30, height: 30)
         let icon = Group {
-            if let glyphTint {
+            if let tint {
                 // `sourceAtop` over a compositing group paints every opaque
                 // pixel of the mark and nothing around it — a flat silhouette
                 // in the tint, rather than the muddy result of multiplying a
                 // colour through artwork that already has its own.
                 mark
-                    .overlay(glyphTint.blendMode(.sourceAtop))
+                    .overlay(tint.blendMode(.sourceAtop))
                     .compositingGroup()
             } else {
                 mark
@@ -103,14 +133,14 @@ struct PanuraHeader<Content: View>: View {
             .frame(width: 44, height: 44)
             .background(
                 Circle()
-                    .fill(glyphActive ? PanuraTheme.accentSoft : .clear)
+                    .fill(active ? PanuraTheme.accentSoft : .clear)
                     .frame(width: 40, height: 40)
             )
             // A brand mark cannot be struck through the way a shield can, so
             // the state goes beside it: one dot, ringed in the bar's own colour
             // so it reads as sitting on top rather than as part of the logo.
             .overlay(alignment: .topTrailing) {
-                if glyphMarked {
+                if marked {
                     Circle()
                         .fill(PanuraTheme.onSurfaceVariant)
                         .frame(width: 9, height: 9)
@@ -118,10 +148,10 @@ struct PanuraHeader<Content: View>: View {
                         .offset(x: -7, y: 9)
                 }
             }
-        if let onTapGlyph {
-            Button(action: onTapGlyph) { icon }
+        if let onTap {
+            Button(action: onTap) { icon }
                 .buttonStyle(.plain)
-                .accessibilityLabel(glyphLabel)
+                .accessibilityLabel(label)
         } else {
             icon
         }

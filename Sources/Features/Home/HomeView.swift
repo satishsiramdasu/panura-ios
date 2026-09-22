@@ -287,7 +287,7 @@ struct HomeView: View {
     // MARK: header — address pill, same shape as the browser's top bar
 
     private var header: some View {
-        PanuraHeader(glyphTint: session.privateMode ? PanuraTheme.incognito : nil) {
+        PanuraHeader(showsGlyph: false) {
             AddressPill(
                 title: "",
                 url: "",
@@ -301,10 +301,20 @@ struct HomeView: View {
                     : PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
                 leading: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 15))
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        .frame(width: 34, height: 38)
+                    // The mark, in the same cell the browser's pill gives it,
+                    // so the two bars stay the one bar they are meant to read
+                    // as. It replaces a magnifying glass that was saying what
+                    // the placeholder beside it already says.
+                    //
+                    // Tapping it opens the address screen like the rest of the
+                    // pill: there is nowhere for a Home glyph to go, and a mark
+                    // that does nothing inside a control that does something is
+                    // a dead spot in the middle of the target.
+                    PanuraGlyph(
+                        onTap: { showAddress = true },
+                        label: "Search or enter website",
+                        tint: session.privateMode ? PanuraTheme.incognito : nil
+                    )
                 },
                 trailing: {
                     // Same cell Android puts it in: last inside Home's pill. It

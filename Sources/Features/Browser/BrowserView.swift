@@ -192,13 +192,7 @@ struct BrowserView: View {
     /// reach a place the app bar already has a seat for; opening what this site
     /// is allowed to do has no other way in.
     private var header: some View {
-        PanuraHeader(
-            onTapGlyph: { withAnimation(PanelMetrics.motion) { showMenu.toggle() } },
-            glyphActive: showMenu,
-            glyphMarked: siteLowered,
-            glyphLabel: showMenu ? "Close site controls" : "Site controls and browser menu",
-            glyphTint: session.privateMode ? PanuraTheme.incognito : nil
-        ) {
+        PanuraHeader(showsGlyph: false) {
             AddressPill(
                 title: model.pageTitle,
                 url: model.currentURL?.absoluteString ?? "",
@@ -211,19 +205,31 @@ struct BrowserView: View {
                     ? PanuraTheme.incognito.opacity(0.22)
                     : PanuraTheme.surfaceVariant,
                 onTap: { showAddress = true },
-                // Back one side, forward the other, the address between them -
-                // the order they are in. Side by side on the right they were a
-                // pair of chevrons pointing opposite ways with nothing between,
-                // and the left one is pressed many times for every press of the
-                // right.
+                // The mark, in the cell every browser reserves for whatever the
+                // address is about. It was outside the pill, costing the title
+                // 48 points on a phone where the title has about a hundred; in
+                // here it does the same job and pays nothing.
+                //
+                // Back and forward are a pair again as a result. Separating them
+                // was the better arrangement when this cell was empty, and there
+                // is no arrangement where both ideas fit.
                 leading: {
-                    pillNav("chevron.left", "Back", enabled: model.canGoBack) {
-                        model.goBack()
-                    }
+                    PanuraGlyph(
+                        onTap: { withAnimation(PanelMetrics.motion) { showMenu.toggle() } },
+                        active: showMenu,
+                        marked: siteLowered,
+                        label: showMenu ? "Close site controls" : "Site controls and browser menu",
+                        tint: session.privateMode ? PanuraTheme.incognito : nil
+                    )
                 },
                 trailing: {
-                    pillNav("chevron.right", "Forward", enabled: model.canGoForward) {
-                        model.goForward()
+                    HStack(spacing: 0) {
+                        pillNav("chevron.left", "Back", enabled: model.canGoBack) {
+                            model.goBack()
+                        }
+                        pillNav("chevron.right", "Forward", enabled: model.canGoForward) {
+                            model.goForward()
+                        }
                     }
                 }
             )

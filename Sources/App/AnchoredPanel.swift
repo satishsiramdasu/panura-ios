@@ -76,10 +76,16 @@ enum PanelMetrics {
     static var surface: Color { PanuraTheme.surfaceContainerHigh }
     /// Header, then a hair of daylight, so the arrow has somewhere to be.
     static var topOffset: CGFloat { PanuraHeader<AnyView>.height + 2 }
-    /// The middle of the Panura mark, from the left edge of the screen: 6 points
-    /// of bar padding, the 38-point menu button, the HStack's 4, then half of a
-    /// 44-point button.
-    static let glyphCentre: CGFloat = 70
+    /// The middle of the Panura mark, from the left edge of the screen.
+    ///
+    /// The mark moved inside the address pill, so the sum gained a term: bar
+    /// padding, the 38-point menu button, the bar's spacing, the pill's own 6
+    /// points of padding, then half of a 44-point button. Computed rather than
+    /// written down, because two of those terms are smaller on a 375pt phone
+    /// and an arrow three points off its button is visible.
+    static var glyphCentre: CGFloat {
+        AppChrome.headerPadding + 38 + AppChrome.headerSpacing + 6 + 22
+    }
     /// The middle of the cast mark, from the right edge.
     static let castCentre: CGFloat = 28
     /// What the panel keeps between itself and the side of the screen. Small,
