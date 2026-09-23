@@ -11,16 +11,36 @@ import UIKit
 /// and `apply()` nudges the active scene to re-evaluate immediately (iOS 16
 /// `requestGeometryUpdate`) instead of waiting for the next physical rotation.
 enum OrientationManager {
-    /// The mask the AppDelegate hands back to UIKit. Default matches Info.plist.
-    static var mask: UIInterfaceOrientationMask = .all {
+    /// The mask the AppDelegate hands back to UIKit. Narrower than Info.plist on
+    /// a phone, which declares landscape for the player's sake - see `reset`.
+    static var mask: UIInterfaceOrientationMask = defaultMask {
         didSet { guard oldValue != mask else { return }; apply() }
+    }
+
+    /// What the app allows with no player open. Also the launch value: `reset`
+    /// runs when a player closes, so setting it only there would leave the
+    /// first run of the app free to rotate until something had been played.
+    private static var defaultMask: UIInterfaceOrientationMask {
+        UIDevice.current.userInterfaceIdiom == .pad ? .all : .portrait
     }
 
     /// Allow free rotation (player open, not locked).
     static func allowAll() { mask = .allButUpsideDown }
 
     /// Restore the app-wide default (player closed).
-    static func reset() { mask = .all }
+    ///
+    /// **Portrait on a phone, any orientation on an iPad.** Nobody browses the
+    /// web sideways on a phone, and every screen in the app pays for the
+    /// possibility: the header, the pill, the drawer and the Explore grid are
+    /// all laid out for a tall narrow window, and a landscape phone is a wide
+    /// short one with the keyboard taking most of it.
+    ///
+    /// This is the app's chrome only. The player is untouched - it calls
+    /// `allowAll`, `applyVideoOrientation`, `rotate` and `lockCurrent` for
+    /// itself, and landscape stays in `UISupportedInterfaceOrientations`
+    /// because the plist is the ceiling: take landscape out of it and the
+    /// player cannot ask for it either.
+    static func reset() { mask = defaultMask }
 
     /// Auto-orient to match a video's shape (portrait clip → portrait, wide clip
     /// → landscape). Pins the family, like the manual rotate.
@@ -48,7 +68,9 @@ enum OrientationManager {
     }
 
     static var isLocked: Bool {
-        // A single-orientation mask means the user locked it.
+        // A single-orientation mask means the user locked it. Only meaningful
+        // while the player is open: with the player closed a phone sits at
+        // `.portrait`, which is the default rather than a lock.
         ![.all, .allButUpsideDown].contains(mask)
     }
 
