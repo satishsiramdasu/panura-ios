@@ -193,7 +193,20 @@ struct RootTabView: View {
             .frame(width: drawer.isOpen ? DrawerState.width : DrawerState.railWidth)
             .clipped()
             Divider().overlay(PanuraTheme.surfaceVariant)
+            // Takes the remainder and nothing more.
+            //
+            // An `HStack` hands a child its ideal width before it compresses
+            // anything, and the browser's chrome carries fixed widths of its
+            // own - so shell could claim more than was left beside the rail and
+            // the overflow simply hung off the right edge of the screen, which
+            // reads as a web page with a strip missing. The explicit
+            // `maxWidth: .infinity` plus priority says: fit what is left. The
+            // clip is the backstop, so a future fixed width inside cannot
+            // silently do it again.
             shell
+                .frame(maxWidth: .infinity)
+                .layoutPriority(1)
+                .clipped()
         }
     }
 

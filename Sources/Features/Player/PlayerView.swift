@@ -129,7 +129,11 @@ struct PlayerView<Model: PlayerEngine>: View {
                 .rotationEffect(.degrees(contentRotated ? 90 : 0))
                 .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
-        .ignoresSafeArea()
+        // Deliberately NOT `.ignoresSafeArea()` here. This wrapper only exists
+        // to measure and turn; the things that should reach the screen edges -
+        // the black ground and the video surface - already ignore it for
+        // themselves inside `content`. Ignoring it out here expanded the frame
+        // the controls are laid out in, and put the top row under the notch.
     }
 
     private var content: some View {
