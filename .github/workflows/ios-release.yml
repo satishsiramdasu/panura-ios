@@ -176,6 +176,23 @@ jobs:
       # must be registered under Certificates, Identifiers & Profiles → Devices,
       # or this step fails with "Your team has no devices from which to generate
       # a provisioning profile."
+      #
+      # The other cost, and it is an operational one, not something a flag
+      # fixes: a hosted runner starts with an empty keychain, so Xcode cannot
+      # reuse a development certificate and asks Apple for a new one. Apple caps
+      # those at two. Every few runs this step dies with "Your account has
+      # reached the maximum number of certificates", and the "No profiles for
+      # panura.web.videoplayer" line underneath is the consequence, not a
+      # second fault.
+      #
+      # The fix is to revoke the stale development certificates in the portal -
+      # they were made by runners that no longer exist and nothing holds their
+      # private keys. Do NOT try to dodge it by archiving unsigned: that was
+      # tried twice, and the paragraph above says exactly how it ends.
+      #
+      # The durable fix, when this becomes tiresome: import a stored .p12 and
+      # provisioning profile from secrets and sign manually, which creates no
+      # certificates at all.
       - name: Archive (signed)
         env:
           KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
