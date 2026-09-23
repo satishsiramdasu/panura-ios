@@ -135,7 +135,21 @@ struct WebViewContainer: UIViewRepresentable {
         // adds the missing tail without hard-coding a device or an OS version -
         // the rest of the string stays whatever WebKit says it is. Desktop mode
         // still replaces the whole UA with `BrowserModel.desktopUA`.
-        config.applicationNameForUserAgent = "Version/17.0 Safari/605.1.15"
+        //
+        // The exact tokens matter more than they look. This said
+        // `Version/17.0 Safari/605.1.15` for a day, and mobile YouTube took
+        // about ten seconds to start every video while desktop mode - which
+        // sends a clean canonical UA - started at once. `605.1.15` is a WebKit
+        // build number, not a Safari one; real Safari sends `Safari/604.1`.
+        // YouTube parses the UA to choose codecs, MSE behaviour and which
+        // player bundle to serve, so a Safari it does not recognise gets a
+        // conservative path and a long buffer before the first frame.
+        //
+        // Still not byte-identical to Safari, which puts `Version` before
+        // `Mobile` - appending cannot reach that position without rebuilding
+        // the whole string and hard-coding the OS. If a site still misreads
+        // this, that is the next step, not a different pair of numbers.
+        config.applicationNameForUserAgent = "Version/18.0 Safari/604.1"
         config.allowsInlineMediaPlayback = true
         // The HTML5 Fullscreen API, off by default in WKWebView.
         //
