@@ -1,6 +1,20 @@
 import UIKit
 import SwiftUI
 
+/// Runs a state change with the sheet slide switched off.
+///
+/// `fullScreenCover` always arrives from the bottom, and the address screen is
+/// not a sheet in any sense that matters: it replaces the pill it was opened
+/// from, in place, and the keyboard is already coming up underneath. A third of
+/// a second of travel before you can type reads as the app being slow to
+/// respond to a tap. Both ends are silenced, because a screen that appears
+/// instantly and then slides away is worse than either done consistently.
+func withoutSheetAnimation(_ body: () -> Void) {
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction, body)
+}
+
 /// Which list a blank search box browses.
 /// Two lists, not three. Bookmarks were a third tab, which put the sites you
 /// chose to keep behind the same tap as the ones the app counted for you — and
@@ -44,6 +58,10 @@ struct AddressScreen: View {
     @State private var suggestions: [String] = []
     @State private var section: AddressSection = .mostVisited
     @FocusState private var focused: Bool
+    /// Said once, for the copy button — which otherwise gives no sign at all
+    /// that anything happened, on a screen with no visible clipboard.
+    @State private var toast: String?
+    @State private var toastTask: Task<Void, Never>?
 
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
     private var isBlank: Bool { trimmed.isEmpty }
@@ -98,6 +116,20 @@ struct AddressScreen: View {
             list
         }
         .background(pageColor)
+        // Above the keyboard, which owns the bottom of this screen, and clear of
+        // the card the button is on.
+        .overlay(alignment: .bottom) {
+            if let toast {
+                Text(toast)
+                    .font(.footnote)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
+                    .shadow(color: .black.opacity(0.3), radius: 10, y: 3)
+                    .padding(.bottom, 24)
+                    .transition(.opacity)
+            }
+        }
         .onAppear {
             section = startSection
             focused = true
@@ -304,6 +336,7 @@ struct AddressScreen: View {
             }
             Button {
                 UIPasteboard.general.string = currentURL
+                flash("Address copied")
             } label: { cardGlyph("doc.on.doc") }
             .buttonStyle(.plain)
             .accessibilityLabel("Copy address")
@@ -318,6 +351,16 @@ struct AddressScreen: View {
         .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 14))
         .padding(.horizontal, 16)
         .padding(.bottom, 10)
+    }
+
+    private func flash(_ message: String) {
+        toastTask?.cancel()
+        withAnimation { toast = message }
+        toastTask = Task {
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation { toast = nil }
+        }
     }
 
     private func cardGlyph(_ name: String) -> some View {

@@ -111,10 +111,10 @@ struct BrowserView: View {
                 currentURL: model.currentURL?.absoluteString ?? "",
                 currentTitle: model.pageTitle,
                 onNavigate: { text in
-                    showAddress = false
+                    withoutSheetAnimation { showAddress = false }
                     model.load(text)
                 },
-                onDismiss: { showAddress = false }
+                onDismiss: { withoutSheetAnimation { showAddress = false } }
             )
         }
         .sheet(isPresented: $showPanuraControls) {
@@ -214,7 +214,7 @@ struct BrowserView: View {
                 background: session.privateMode
                     ? PanuraTheme.incognito.opacity(0.22)
                     : PanuraTheme.surfaceVariant,
-                onTap: { showAddress = true },
+                onTap: { withoutSheetAnimation { showAddress = true } },
                 // The mark, in the cell every browser reserves for whatever the
                 // address is about. It was outside the pill, costing the title
                 // 48 points on a phone where the title has about a hundred; in

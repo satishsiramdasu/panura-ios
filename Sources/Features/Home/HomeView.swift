@@ -71,10 +71,10 @@ struct HomeView: View {
         .fullScreenCover(isPresented: $showAddress) {
             AddressScreen(
                 onNavigate: { text in
-                    showAddress = false
+                    withoutSheetAnimation { showAddress = false }
                     onOpenBrowser(text)
                 },
-                onDismiss: { showAddress = false }
+                onDismiss: { withoutSheetAnimation { showAddress = false } }
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
@@ -302,7 +302,7 @@ struct HomeView: View {
                 background: session.privateMode
                     ? PanuraTheme.incognito.opacity(0.22)
                     : PanuraTheme.surfaceVariant,
-                onTap: { showAddress = true },
+                onTap: { withoutSheetAnimation { showAddress = true } },
                 leading: {
                     // The mark, in the same cell the browser's pill gives it,
                     // so the two bars stay the one bar they are meant to read
@@ -314,7 +314,7 @@ struct HomeView: View {
                     // that does nothing inside a control that does something is
                     // a dead spot in the middle of the target.
                     PanuraGlyph(
-                        onTap: { showAddress = true },
+                        onTap: { withoutSheetAnimation { showAddress = true } },
                         label: "Search or enter website",
                         tint: session.privateMode ? PanuraTheme.incognito : nil
                     )
