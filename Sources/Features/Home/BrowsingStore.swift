@@ -680,7 +680,7 @@ final class BrowsingStore: ObservableObject {
             ResumeThumbnails.remove(entry.thumbnailPath)
             ResumePosition.forget(entry.url)
         }
-        resumes.removeAll(\.isExpired)
+        resumes.removeAll { $0.isExpired }
         persistResumes()
     }
 
