@@ -111,7 +111,28 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// that is not "which track" lives in there — see `PlayerOptionsSheet`.
     @State private var options: PlayerOptionsSheet<Model>.Kind?
 
+    /// The iPad's rotate, which turns the picture because the system will not
+    /// turn the window. Always false on a phone - see `OrientationManager`.
+    @State private var contentRotated = false
+
     var body: some View {
+        // A quarter turn with the frame's dimensions swapped, so the rotated
+        // picture fills the window rather than being cropped to the unrotated
+        // one. SwiftUI transforms hit-testing along with the view, so every
+        // gesture inside keeps working in the turned frame with no adjustment.
+        GeometryReader { geo in
+            content
+                .frame(
+                    width: contentRotated ? geo.size.height : geo.size.width,
+                    height: contentRotated ? geo.size.width : geo.size.height
+                )
+                .rotationEffect(.degrees(contentRotated ? 90 : 0))
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+        }
+        .ignoresSafeArea()
+    }
+
+    private var content: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
@@ -642,7 +663,7 @@ struct PlayerView<Model: PlayerEngine>: View {
 
             // Bottom-right group
             HStack(spacing: QuickMetrics.buttonGap) {
-                quickAction("rotate.right", "Rotate") { OrientationManager.rotate(); scheduleHide() }
+                quickAction("rotate.right", "Rotate") { rotate(); scheduleHide() }
                 sleepQuick
                 speedQuick
                 aspectAction
@@ -983,6 +1004,16 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     /// Push the controls' disappearance out. Called by everything the user can
     /// touch, and by the ticker itself while a scrub holds them open.
+    /// The phone asks the system to turn the window; the iPad turns its own
+    /// picture, because the system ignores the request there.
+    private func rotate() {
+        if OrientationManager.honoursMask {
+            OrientationManager.rotate()
+        } else {
+            withAnimation(.easeInOut(duration: 0.25)) { contentRotated.toggle() }
+        }
+    }
+
     private func scheduleHide() {
         #if DEBUG
         // The screenshot run photographs the player, and a player whose controls

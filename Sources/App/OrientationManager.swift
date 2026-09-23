@@ -45,7 +45,28 @@ enum OrientationManager {
     /// Auto-orient to match a video's shape (portrait clip → portrait, wide clip
     /// → landscape). Pins the family, like the manual rotate.
     static func applyVideoOrientation(portrait: Bool) {
+        // Nothing to apply where the mask is ignored. Turning the *content* to
+        // match a video's shape unasked would spin the picture under someone
+        // who only pressed play, so the iPad letterboxes and leaves the turn to
+        // the button.
+        guard honoursMask else { return }
         mask = portrait ? .portrait : .landscape
+    }
+
+    /// Whether the system will act on `mask` at all.
+    ///
+    /// **False on iPad.** iPadOS ignores `supportedInterfaceOrientations` and
+    /// `requestGeometryUpdate` for any app that supports multitasking, which
+    /// this one does: `UIRequiresFullScreen` is unset and all four orientations
+    /// are declared, both deliberately. So on an iPad the player's rotate
+    /// button did nothing whatever - it set a mask nothing was going to read.
+    ///
+    /// The sanctioned fix is `UIRequiresFullScreen = true`, which costs Split
+    /// View and Stage Manager across the whole app and is deprecated in iPadOS
+    /// 26. `PlayerView` turns its own picture instead: no system involvement,
+    /// nothing outside the player affected, and it survives the deprecation.
+    static var honoursMask: Bool {
+        UIDevice.current.userInterfaceIdiom != .pad
     }
 
     /// Manual rotate button — flip the pinned orientation family (portrait ⇄
