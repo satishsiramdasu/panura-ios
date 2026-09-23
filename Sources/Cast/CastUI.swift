@@ -417,7 +417,16 @@ struct CastDevicesView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.surfaceVariant))
+            // Same panel, same problem as the device rows: `surfaceVariant` is
+            // three levels off `surfaceContainerHigh` behind it, which is no
+            // edge at all.
+            .background(
+                RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.surfaceContainerHighest)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(PanuraTheme.outlineVariant, lineWidth: 1)
+            )
 
             if panura.isCasting, !panura.streamTitle.isEmpty {
                 Label(panura.streamTitle, systemImage: "play.fill")

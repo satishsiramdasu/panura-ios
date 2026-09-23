@@ -20,10 +20,31 @@ final class BrowserSession: ObservableObject {
     /// can end up out of reach.
     @Published var barVisible = true
 
+    /// The page the browser is on, kept here rather than only on the model.
+    ///
+    /// Two things need it that do not own the web view. Home's pill can switch
+    /// private mode and has no way to know the browser is mid-page, so the
+    /// toggle used to close whatever was open without asking. And the web view
+    /// is rebuilt often enough - private mode, two settings, an iPad resize -
+    /// that `makeUIView` needs somewhere outside the view tree to read the page
+    /// back from, or every rebuild lands on the start page.
+    @Published private(set) var lastURL: URL?
+
+    /// Whether there is a page worth warning about. The start page is not one.
+    var hasPage: Bool { lastURL != nil && lastURL != WebViewContainer.startPage }
+
+    func pageChanged(to url: URL?) {
+        if lastURL != url { lastURL = url }
+    }
+
     private init() {}
 
     func setPrivateMode(_ on: Bool) {
         guard privateMode != on else { return }
+        // The web view is rebuilt on a different data store, and it must not
+        // come back holding the page it had. Cleared here rather than at each
+        // call site so no future caller can forget.
+        lastURL = nil
         privateMode = on
         // Bookmarks and resume points are explicit user actions and still
         // persist; only the passive record stops.

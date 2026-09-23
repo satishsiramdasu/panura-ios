@@ -123,6 +123,14 @@ struct WebViewContainer: UIViewRepresentable {
         // swapped on a live web view, which is why the browser rebuilds one.
         if privateMode { config.websiteDataStore = .nonPersistent() }
         config.allowsInlineMediaPlayback = true
+        // The HTML5 Fullscreen API, off by default in WKWebView.
+        //
+        // Mobile sites hand a bare <video> to the system player, which has its
+        // own fullscreen and needs nothing from us. Desktop sites - YouTube's
+        // desktop player above all - build their own controls and call
+        // `requestFullscreen()` on a <div>, which silently did nothing. That is
+        // why fullscreen worked on mobile YouTube and was dead in desktop mode.
+        config.preferences.isElementFullscreenEnabled = true
         config.mediaTypesRequiringUserActionForPlayback = []
         // Block the pop-under/new-window ads these sites open on tap.
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -167,7 +175,15 @@ struct WebViewContainer: UIViewRepresentable {
         )
         webView.scrollView.refreshControl = refresh
         context.coordinator.observe(webView)
-        webView.load(URLRequest(url: Self.startPage))
+        // The page that was open, not the start page.
+        //
+        // This view is rebuilt more often than it looks: the identity carries
+        // private mode and two settings, and on iPad a Split View resize
+        // changes the layout around it. Every one of those used to land on
+        // google.com. Private mode is the exception and clears `currentURL`
+        // itself before it flips, because carrying a page across that boundary
+        // is the one thing the boundary exists to prevent.
+        webView.load(URLRequest(url: BrowserSession.shared.lastURL ?? Self.startPage))
 
         // Ad/tracker rule lists, then one reload so they apply to the current
         // page. Site rules are NOT injected here — the manifest names no domains

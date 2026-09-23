@@ -81,7 +81,16 @@ struct RootTabView: View {
     /// phone's drawer back. That is right for both: a sidebar on a half-width
     /// iPad window would leave the app less room than a phone has.
     @Environment(\.horizontalSizeClass) private var sizeClass
-    private var usesSidebar: Bool { sizeClass == .regular }
+    /// iPad only, and the idiom check is not redundant.
+    ///
+    /// A large iPhone reports `.regular` width in landscape. Keyed on the size
+    /// class alone, rotating the phone swapped `pushLayout` for `sidebarLayout`
+    /// - a different view tree, so every child was rebuilt, the web view with
+    /// them, and the browser reloaded its start page. Turning the phone sideways
+    /// threw away the page you were reading.
+    private var usesSidebar: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular
+    }
     /// The sidebar starts open on an iPad, but only the first time. Reopening
     /// it on every rotation would overrule someone who had just closed it.
     @State private var didOpenSidebar = false

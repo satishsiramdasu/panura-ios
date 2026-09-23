@@ -5,7 +5,12 @@ import WebKit
 final class BrowserModel: ObservableObject {
     @Published var isLoading = false
     @Published var progress: Double = 0
-    @Published var currentURL: URL?
+    /// Mirrored onto the session on every change, because the things that
+    /// need to know the page - Home's private toggle, and a rebuilt web view
+    /// looking for what to load - both outlive this model.
+    @Published var currentURL: URL? {
+        didSet { BrowserSession.shared.pageChanged(to: currentURL) }
+    }
     @Published var pageTitle = ""
     @Published var canGoBack = false
     @Published var canGoForward = false

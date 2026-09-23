@@ -18,6 +18,10 @@ struct HomeView: View {
 
     @State private var showReport = false
     @State private var showClearData = false
+    /// Home's pill can switch private mode while the browser is mid-page, and
+    /// the switch closes that page. It used to do it without asking, from a
+    /// screen that does not even show what would be lost.
+    @State private var confirmPrivateSwitch = false
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
     /// The card a Remove was asked for — held until it is confirmed.
@@ -79,6 +83,21 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
+        .confirmationDialog(
+            session.privateMode ? "Turn off private browsing?" : "Close the open page?",
+            isPresented: $confirmPrivateSwitch,
+            titleVisibility: .visible
+        ) {
+            Button(
+                session.privateMode ? "Turn off and close" : "Close and go private",
+                role: .destructive
+            ) {
+                session.setPrivateMode(!session.privateMode)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Switching private browsing starts the browser again, so the page you have open will close.")
+        }
         // An overlay, not a sheet: it has to arrive centred, where the eye
         // already is, rather than sliding up from the far end of the screen.
         .overlay {
@@ -328,7 +347,8 @@ struct HomeView: View {
                     // so this is where it has to be switchable — the browser's
                     // own copy of the switch is in its options panel.
                     Button {
-                        session.setPrivateMode(!session.privateMode)
+                        if session.hasPage { confirmPrivateSwitch = true }
+                        else { session.setPrivateMode(!session.privateMode) }
                     } label: {
                         Image(systemName: "eyeglasses")
                             .font(.system(size: 15))

@@ -44,6 +44,10 @@ struct BrowserView: View {
     /// Asked when private browsing is switched OFF with a page still open — the
     /// session is live and is about to start being recorded again.
     @State private var confirmLeavingPrivate = false
+    /// Going *in* costs the page too: the web view is rebuilt on a different
+    /// data store, so whatever is open closes. Leaving already asked; entering
+    /// did it silently, which is the same loss with no warning.
+    @State private var confirmEnteringPrivate = false
     /// Only read to rebuild the web view when it changes: user scripts are fixed
     /// at creation, so a toggle in Settings means nothing until a new one exists.
     @AppStorage("auto_play_click") private var autoPlayClick = true
@@ -261,6 +265,19 @@ struct BrowserView: View {
             Button("Stay private", role: .cancel) {}
         } message: {
             Text("Private browsing is turning off, so this page will be recorded in history from now on.")
+        }
+        .confirmationDialog(
+            "Close this page?",
+            isPresented: $confirmEnteringPrivate,
+            titleVisibility: .visible
+        ) {
+            Button("Close and go private", role: .destructive) {
+                model.setPrivateMode(true)
+                flash("Private browsing on")
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Private browsing starts on a clean slate, so the page you are on will close.")
         }
     }
 
@@ -492,6 +509,8 @@ struct BrowserView: View {
                     // Only worth asking about when there is a page to lose.
                     if pageUsable { confirmLeavingPrivate = true }
                     else { leavePrivateMode(keepPage: false) }
+                } else if pageUsable {
+                    confirmEnteringPrivate = true
                 } else {
                     model.setPrivateMode(true)
                     flash("Private browsing on")
