@@ -123,6 +123,46 @@
                 <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
             </array>
         </dict>
+
+        <!--
+          The two the app collects itself, without an SDK, which is why neither
+          appears in any vendor's manifest and both were missing here.
+
+          CustomerSupport: "Report a problem" POSTs {url, reason} to Panura's
+          own Worker. Apple's optional-disclosure exception nearly covers it,
+          but one of its conditions is that the collection be infrequent and
+          outside primary functionality — and Report is offered in the site
+          panel, on Home and in the drawer. Declared rather than argued.
+
+          SearchHistory: what is typed in the address bar goes to Google's
+          suggest endpoint to be completed. No cookies, no identifier, and the
+          code refuses to send anything containing "://" or beginning "www." —
+          so an address never leaves the device, only a search term.
+        -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeCustomerSupport</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeSearchHistory</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
     </array>
 
     <key>NSPrivacyAccessedAPITypes</key>

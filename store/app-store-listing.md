@@ -174,13 +174,47 @@ Firebase Crashlytics and Analytics are in the app, so the answer is **not**
 "Data Not Collected". App Store Connect → App Privacy → Get Started → **Yes, we
 collect data from this app**, then tick exactly these five:
 
+**Answered 2026-09-23.** Seven types, none linked, none used for tracking.
+`Resources/PrivacyInfo.xcprivacy` declares the same seven with the same
+purposes — change one, change the other, or the binary and the listing disagree.
+
 | Category → type | Purpose | Linked to the user | Used for tracking |
 |---|---|---|---|
 | Diagnostics → Crash Data | App Functionality | No | No |
 | Diagnostics → Other Diagnostic Data | App Functionality, Analytics | No | No |
 | Usage Data → Product Interaction | Analytics | No | No |
+| Usage Data → Search History | App Functionality | No | No |
 | Identifiers → Device ID | Analytics | No | No |
 | Location → Coarse Location | Analytics | No | No |
+| User Content → Customer Support | App Functionality | No | No |
+
+**Crash Data is App Functionality, not Analytics.** Apple's Analytics purpose is
+about evaluating *user behaviour*; a crash log measures software stability, and
+"minimize app crashes" is named in the App Functionality description. Firebase's
+own Crashlytics manifest says the same. Other Diagnostic Data carries both,
+because stability figures across builds genuinely are looked at in aggregate.
+
+**Two types the app collects itself, added 2026-09-23.** Neither comes from an
+SDK, so neither appeared in any vendor's manifest and both were missing:
+
+- **Customer Support** — "Report a problem" POSTs `{url, reason}` to Panura's own
+  Worker. Apple's optional-disclosure exception nearly covers it, but one of its
+  conditions is that collection be infrequent and outside primary functionality,
+  and Report is offered in the site panel, on Home and in the drawer. Declared
+  rather than argued. No name, email or device id is in the payload, which is
+  also why it cannot be replied to.
+- **Search History** — what is typed in the address bar goes to Google's suggest
+  endpoint to be completed. No cookies, no identifier, and `SearchSuggestions`
+  refuses to send anything containing `://` or beginning `www.`, so an address
+  never leaves the device — only a search term. The judgment call: Google is not
+  an SDK whose code was added, which is a reading under which this need not be
+  declared. Declared anyway, because under-declaring is the failure Apple acts
+  on.
+
+**Browsing History is deliberately NOT declared.** The only URL that ever leaves
+the device is the one page a user knowingly attaches to a report, which is
+customer-support data. Bookmarks, history, Watch Later and resume points stay in
+`UserDefaults`.
 
 What each one is:
 
@@ -216,6 +250,65 @@ change the other.
 ⚠️ **Turning ads on changes this again.** Personalised AdMob ads add Usage Data →
 Advertising Data, mark Device ID as used for tracking, flip `NSPrivacyTracking`
 to `true`, and make the ATT prompt mandatory. Do not ship ads without all four.
+
+`GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS` is `false` in
+`project.yml` as of 2026-09-23. Firebase's default is to ALLOW those signals,
+which lets Google use Analytics data to personalise advertising — the one route
+by which "Device ID is not used for tracking" could stop being true without
+anyone changing a line. Turning it back on is a decision with an ATT prompt
+attached, not a default to inherit.
+
+## Accessibility (the nutrition label)
+
+**Answered 2026-09-23: Yes, supporting two — Dark Interface and Sufficient
+Contrast.** Everything else No.
+
+**Dark Interface.** The criterion is a mostly dark interface with few or no
+large light views, *excluding third-party or user-generated content* — which is
+what lets a browser qualify despite rendering white pages. One dark palette
+throughout, `UIUserInterfaceStyle: Dark`, `.preferredColorScheme(.dark)`, and a
+launch screen painted `#0F0F0E`, the same value as the app background, so launch
+never flashes white. The Smart Invert fallback in that criterion is for apps
+*without* a native dark appearance and does not apply.
+
+**Sufficient Contrast**, measured with the WCAG formula rather than estimated:
+
+| pair | ratio |
+|---|---:|
+| primary text (white) on any surface | 17.07 – 19.18 |
+| secondary text (white 60%) on any surface | 6.77 – 7.25 |
+| amber accent on background / surfaces | 9.51 – 10.69 |
+| dark-on-amber, filled buttons | 8.33 |
+| private-mode violet on background | 9.63 |
+| duration badge, worst case over a white video frame | 8.45 |
+| `outline`, borders only, never text | 3.18 |
+
+Lowest text ratio is 6.77 against a 4.5 bar; `outline` clears the 3:1 that
+applies to non-text components. The only things below 4.5 are disabled controls
+— the greyed chevrons at 1.78 and disabled panel cells at 2.71 — which are
+inactive components, exempt, and have to look inactive: at full brightness the
+chevron is 6.84 and reads as enabled.
+
+**Why the rest are No**, so 1.1 does not have to re-derive it:
+
+- **Larger Text** — the criterion is 200%. 65 fixed `.system(size:)` calls, no
+  `dynamicTypeSize` handling anywhere, and hard frames throughout (52pt header,
+  92pt cards, 142×80 posters) that would clip. This is the one worth fixing:
+  mechanical work, no device needed to start.
+- **VoiceOver, Voice Control** — 26 accessibility labels is not the same as
+  completing every common task, and none of it has been run under either. Needs
+  a device pass, not more labels.
+- **Reduced Motion** — no `accessibilityReduceMotion` anywhere, and the drawer,
+  panel and found bar all animate unconditionally.
+- **Captions, Audio Descriptions** — the app ships no content of its own. It
+  displays subtitles from whatever is played but cannot guarantee any video has
+  them.
+- **Differentiate Without Color Alone** — probably true and not audited. The
+  states checked do change shape as well as colour (`bookmark`↔`bookmark.fill`,
+  `clock`↔`clock.fill`) and private mode changes the placeholder text too.
+
+**Accessibility URL: blank.** A thin page describing work not yet done is worse
+than none.
 
 ## Availability — the EU and mainland China are out for 1.0
 

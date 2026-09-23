@@ -77,6 +77,15 @@ targets:
           UIColorName: LaunchBackground
           UIImageName: LaunchLogo
           UIImageRespectsSafeAreaInsets: false
+        # Firebase defaults to ALLOWING ad-personalisation signals, which
+        # lets Google use Analytics data to personalise advertising. That is
+        # the one route by which the App Store answer "Device ID is not used
+        # for tracking" could stop being true without anyone changing a line.
+        # Off, explicitly, so the binary says what the listing says.
+        #
+        # Revisit with ads in 1.1 — turning it on is a decision with an ATT
+        # prompt attached, not a default to inherit.
+        GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS: false
         # Dark only, like the Android app. Without this the system paints its
         # own chrome light while every surface we draw is near-black.
         UIUserInterfaceStyle: Dark
