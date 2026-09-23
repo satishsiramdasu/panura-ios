@@ -60,19 +60,17 @@ struct PanuraHeader<Content: View>: View {
     ///
     /// Left of the mark, where the app's own controls live, and on every screen
     /// in the same place — it replaces a bottom bar, so it has to be as findable
-    /// as one. While the drawer is open the app is pushed aside and this button
-    /// goes with it, wearing a cross: whatever is under your thumb is the way
-    /// back out.
+    /// as one.
+    ///
+    /// The same glyph whether the drawer is open or shut. It used to swap to a
+    /// cross, which made the one control that has to be recognisable everywhere
+    /// into two different-looking buttons, and read as "close the app" rather
+    /// than "close the menu". Tapping away and swiping both dismiss the drawer
+    /// anyway; the button is a switch, and a switch does not change shape when
+    /// it is on.
     private var menuButton: some View {
         Button { drawer.toggle() } label: {
-            Group {
-                if drawer.isOpen {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 15, weight: .semibold))
-                } else {
-                    MenuGlyph()
-                }
-            }
+            MenuGlyph()
             .foregroundStyle(PanuraTheme.onSurfaceVariant)
             // 38 square with nothing drawn behind it. The footprint is what
             // `PanelMetrics.glyphCentre` measures from, so it stays even though
