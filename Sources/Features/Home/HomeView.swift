@@ -18,6 +18,7 @@ struct HomeView: View {
 
     @State private var showReport = false
     @State private var showClearData = false
+    @State private var showResumeManager = false
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
     /// The card a Remove was asked for — held until it is confirmed.
@@ -79,6 +80,9 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
+        .sheet(isPresented: $showResumeManager) {
+            ContinueWatchingManager(onOpenBrowser: onOpenBrowser)
+        }
         // An overlay, not a sheet: it has to arrive centred, where the eye
         // already is, rather than sliding up from the far end of the screen.
         .overlay {
@@ -239,28 +243,6 @@ struct HomeView: View {
     }
 
     /// The same header, whose action button opens a menu.
-    private func sectionHeaderMenu<Items: View>(
-        _ title: String,
-        actionLabel: String,
-        actionIcon: String,
-        @ViewBuilder items: () -> Items
-    ) -> some View {
-        HStack(spacing: 10) {
-            Text(title).font(.subheadline.weight(.semibold))
-            Spacer()
-            Menu {
-                items()
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: actionIcon).font(.system(size: 11))
-                    Text(actionLabel).font(.caption)
-                }
-                .foregroundStyle(PanuraTheme.accent)
-            }
-        }
-        .padding(.horizontal, 16)
-    }
-
     private func optionTile(
         _ title: String,
         systemImage: String,
@@ -474,14 +456,16 @@ struct HomeView: View {
 
     private var continueWatchingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeaderMenu("Continue Watching", actionLabel: "Clear all", actionIcon: "trash") {
-                Section("The videos stay. Only the resume points go.") {
-                    Button(role: .destructive) {
-                        store.clearWatching()
-                    } label: {
-                        Label("Clear \(store.continueWatching.count) items", systemImage: "trash")
-                    }
-                }
+            // "Manage", not "Clear all". One destructive button was the only
+            // thing this row offered, so tidying a single dead link meant
+            // throwing away every resume point. The sheet can do both, and can
+            // show what it is about to remove.
+            sectionHeader(
+                "Continue Watching",
+                actionLabel: "Manage",
+                actionIcon: "slider.horizontal.3"
+            ) {
+                showResumeManager = true
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
@@ -500,7 +484,14 @@ struct HomeView: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                                 }
                             }
-                            .onTapGesture { openResume(entry) }
+                            // A dead card asks instead of opening. Tapping it
+                            // used to start a check that ended in the card
+                            // vanishing; now the card says what it is and
+                            // offers the two things worth doing with it.
+                            .overlay {
+                                if entry.isExpired { expiredMenu(entry) }
+                            }
+                            .onTapGesture { if !entry.isExpired { openResume(entry) } }
                             .contextMenu {
                                 Button(role: .destructive) {
                                     pendingRemove = entry
@@ -511,6 +502,28 @@ struct HomeView: View {
                 .padding(.horizontal, 16)
             }
         }
+    }
+
+    /// The whole card, as a menu, for an entry whose link has died.
+    ///
+    /// An overlay rather than a second card: the card underneath already draws
+    /// itself faded, and this only has to catch the tap and offer the choice.
+    private func expiredMenu(_ entry: ResumeEntry) -> some View {
+        Menu {
+            Section("This link has expired. The page it came from may still work.") {
+                if let page = entry.sourcePage {
+                    Button {
+                        onOpenBrowser(page.absoluteString)
+                    } label: { Label("Visit website", systemImage: "safari") }
+                }
+                Button(role: .destructive) {
+                    store.removeWatching(url: entry.url)
+                } label: { Label("Delete", systemImage: "trash") }
+            }
+        } label: {
+            Color.clear.contentShape(Rectangle())
+        }
+        .menuOrder(.fixed)
     }
 
     /// Verifies before playing, and drops the entry if the link is gone. The
@@ -525,10 +538,10 @@ struct HomeView: View {
             if alive {
                 PlaybackSession.shared.play(entry.mediaItem)
             } else {
-                store.removeWatching(url: entry.url)
-                resumeToast = "That link has expired — open the page again."
-                try? await Task.sleep(nanoseconds: 3_200_000_000)
-                resumeToast = nil
+                // Marked, not deleted. The card stays, greyed, offering the
+                // page it came from - which is nearly always still there.
+                store.markExpired(url: entry.url)
+                flashResume("That link has expired.")
             }
         }
     }
@@ -642,34 +655,49 @@ private struct BookmarkTile: View {
 private struct ContinueWatchingCard: View {
     let entry: ResumeEntry
 
-    /// Decoded once when the card appears, off the main thread. A computed
-    /// property would re-read the file on every layout pass, and the row is a
-    /// horizontal scroller. The file lives in Caches and may be gone, so a
-    /// failed load is ordinary and simply leaves the glyph in place.
+    /// The grabbed frame, decoded once when the card appears and off the main
+    /// thread. A computed property would re-read the file on every layout pass,
+    /// and the row is a horizontal scroller. The file lives in Caches and may
+    /// be gone, so a failed load is ordinary.
     @State private var thumbnail: UIImage?
+
+    /// The site's poster, if there is one.
+    ///
+    /// Tried first, and the frame is the fallback rather than the source. A
+    /// frame only exists once something has played long enough to grab one, and
+    /// it sits in Caches where the system evicts it whenever it likes - which
+    /// is why most of these cards were showing a glyph.
+    private var posterURL: URL? { entry.poster.flatMap(URL.init(string:)) }
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             RoundedRectangle(cornerRadius: 12)
                 .fill(PanuraTheme.surfaceVariant)
 
-            if let thumbnail {
-                Image(uiImage: thumbnail)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 140, height: 90)
-                    .clipped()
+            if let posterURL {
+                AsyncImage(url: posterURL) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    // A poster that will not load is no better than no poster,
+                    // so it steps aside for the frame rather than leaving a
+                    // hole where a picture was promised.
+                    case .failure: grabbedFrame
+                    default: Color.clear
+                    }
+                }
+                .frame(width: 140, height: 90)
+                .clipped()
             } else {
-                Image(systemName: entry.isLocal ? "film.fill" : "link")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                grabbedFrame
             }
 
-            Image(systemName: "play.circle.fill")
-                .font(.title)
-                .foregroundStyle(.white.opacity(0.9))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            if !entry.isExpired {
+                Image(systemName: "play.circle.fill")
+                    .font(.title)
+                    .foregroundStyle(.white.opacity(0.9))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
 
             if entry.remainingSeconds > 0 {
                 Text(entry.timeLeftLabel)
@@ -704,9 +732,38 @@ private struct ContinueWatchingCard: View {
         .frame(width: 140, height: 90)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
+        // Faded, and saying so. A dead link is still worth keeping - the page
+        // behind it usually works - but it should not look like something
+        // that will play when pressed.
+        .opacity(entry.isExpired ? 0.45 : 1)
+        .overlay(alignment: .center) {
+            if entry.isExpired {
+                Text("Link expired")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 4)
+                    .background(.black.opacity(0.7), in: Capsule())
+            }
+        }
         .task(id: entry.thumbnailPath) {
             guard let path = entry.thumbnailPath else { thumbnail = nil; return }
             thumbnail = await Task.detached { UIImage(contentsOfFile: path) }.value
+        }
+    }
+
+    @ViewBuilder
+    private var grabbedFrame: some View {
+        if let thumbnail {
+            Image(uiImage: thumbnail)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 140, height: 90)
+                .clipped()
+        } else {
+            Image(systemName: entry.isLocal ? "film.fill" : "link")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

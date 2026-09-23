@@ -127,6 +127,41 @@ struct ResumeEntry: Codable, Identifiable, Hashable {
     /// Frame grabbed during playback. Optional on purpose — it lives in Caches,
     /// so the system may evict it at any time and the card falls back to a glyph.
     var thumbnailPath: String?
+    /// The page's own poster, which is the better picture and the one that
+    /// survives.
+    ///
+    /// A grabbed frame only exists once something has played long enough to
+    /// grab one, and it lives in Caches where the system may evict it whenever
+    /// it likes - which is why most cards showed a glyph. The poster is known
+    /// before the first frame and is a URL, not a file, so nothing can evict
+    /// it. The frame is the fallback now, not the source.
+    ///
+    /// Optional, like every field added after the fact: a synthesised decoder
+    /// only tolerates a missing key for an Optional property, and saved JSON
+    /// from before this existed has to keep decoding.
+    var poster: String?
+    /// Set by the liveness sweep when the link no longer answers.
+    ///
+    /// The entry is kept rather than deleted. A stream URL expiring does not
+    /// mean the user is finished with the thing it pointed at - they can still
+    /// open the page it came from and carry on - and a card disappearing on its
+    /// own is indistinguishable from a bug.
+    var expired: Bool?
+
+    var isExpired: Bool { expired == true }
+
+    /// Where to send someone whose link has died.
+    ///
+    /// The Referer is the page the stream was found on - the browser sends it
+    /// with every request precisely because the CDN demands it - so it is
+    /// already stored, already correct, and needs no new plumbing. Falling back
+    /// to the stream's own origin gives at least the right site.
+    var sourcePage: URL? {
+        let referer = headers.first { $0.key.caseInsensitiveCompare("referer") == .orderedSame }
+        if let value = referer?.value, let url = URL(string: value) { return url }
+        guard let stream = URL(string: url), let host = stream.host else { return nil }
+        return URL(string: "\(stream.scheme ?? "https")://\(host)/")
+    }
 
     var id: String { url }
 
@@ -293,9 +328,19 @@ final class BrowsingStore: ObservableObject {
         history.sorted { $0.lastVisit > $1.lastVisit }
     }
 
+    /// Newest first, with everything expired swept to the end.
+    ///
+    /// A dead card is still worth keeping - the page it came from usually still
+    /// works - but it is not what someone scanning this row is looking for, and
+    /// leaving them interleaved by date puts dead cards in front of live ones.
     var continueWatching: [ResumeEntry] {
-        resumes.sorted { $0.updated > $1.updated }
+        resumes.sorted {
+            if $0.isExpired != $1.isExpired { return !$0.isExpired }
+            return $0.updated > $1.updated
+        }
     }
+
+    var expiredWatching: [ResumeEntry] { resumes.filter(\.isExpired) }
 
     // MARK: bookmarks
 
@@ -509,6 +554,15 @@ final class BrowsingStore: ObservableObject {
         if let i = resumes.firstIndex(where: { $0.url == key }) {
             resumes[i].updated = Date()
             resumes[i].title = item.title
+            // Playing it proves the link answers, whatever a sweep concluded
+            // earlier.
+            resumes[i].expired = nil
+            // Only fill a gap. An entry that already has a poster keeps it -
+            // a later play may arrive with none, and losing a good picture to
+            // an empty field is worse than never having had one.
+            if resumes[i].poster == nil {
+                resumes[i].poster = item.thumbnailURL?.absoluteString
+            }
         } else {
             resumes.append(
                 ResumeEntry(
@@ -516,7 +570,8 @@ final class BrowsingStore: ObservableObject {
                     title: item.title,
                     isLocal: item.isLocal,
                     headers: item.headers,
-                    contentType: item.contentType
+                    contentType: item.contentType,
+                    poster: item.thumbnailURL?.absoluteString
                 )
             )
         }
@@ -596,8 +651,37 @@ final class BrowsingStore: ObservableObject {
             for await (url, alive) in group where !alive { dead.append(url) }
         }
 
-        for url in dead { removeWatching(url: url) }
+        // Marked, not removed. A card that deletes itself while someone is
+        // looking at the screen reads as a bug, and the page behind a dead
+        // stream URL is usually still there to be opened again.
+        for url in dead {
+            guard let i = resumes.firstIndex(where: { $0.url == url }) else { continue }
+            resumes[i].expired = true
+        }
+        // And anything that answered is alive again - a link can come back,
+        // and a card that stayed greyed out after it did would be a lie.
+        let deadSet = Set(dead)
+        for i in resumes.indices where !deadSet.contains(resumes[i].url) {
+            resumes[i].expired = nil
+        }
+        persistResumes()
         return dead.count
+    }
+
+    func markExpired(url: String) {
+        guard let i = resumes.firstIndex(where: { $0.url == url }) else { return }
+        resumes[i].expired = true
+        persistResumes()
+    }
+
+    /// Clears out the dead and leaves everything still playable.
+    func removeExpiredWatching() {
+        for entry in resumes where entry.isExpired {
+            ResumeThumbnails.remove(entry.thumbnailPath)
+            ResumePosition.forget(entry.url)
+        }
+        resumes.removeAll(\.isExpired)
+        persistResumes()
     }
 
     /// One entry's liveness — the pre-flight check a tap makes, so a dead card
