@@ -116,10 +116,39 @@ struct PlayerView<Model: PlayerEngine>: View {
     @State private var contentRotated = false
 
     var body: some View {
-        // A quarter turn with the frame's dimensions swapped, so the rotated
-        // picture fills the window rather than being cropped to the unrotated
-        // one. SwiftUI transforms hit-testing along with the view, so every
-        // gesture inside keeps working in the turned frame with no adjustment.
+        // The phone gets `content` and nothing around it.
+        //
+        // It briefly got the iPad's measuring wrapper too, and that was a
+        // mistake: a `GeometryReader` reports a stale size through a rotation,
+        // so a video going fullscreen in landscape was laid out at the portrait
+        // width and sat in a tall strip down one side of the screen. The phone
+        // never needed the wrapper - the system turns its window, so the frame
+        // arrives correct without anything measuring it.
+        //
+        // Branching on `honoursMask` rather than on `contentRotated` is what
+        // keeps this safe. It is a device constant, so a phone always takes
+        // this path and an iPad always takes the other; the branch is never
+        // crossed at runtime, and `content` is never rebuilt - which it would
+        // be if the shape of the tree changed under a playing video.
+        if OrientationManager.honoursMask {
+            content
+        } else {
+            rotatableContent
+        }
+    }
+
+    /// The iPad, which has to turn its own picture - see `OrientationManager`.
+    ///
+    /// A quarter turn with the frame's dimensions swapped, so the rotated
+    /// picture fills the window rather than being cropped to the unrotated one.
+    /// SwiftUI transforms hit-testing along with the view, so every gesture
+    /// inside keeps working in the turned frame with no adjustment.
+    ///
+    /// Deliberately not `.ignoresSafeArea()`: the black ground and the video
+    /// surface already ignore it for themselves inside `content`, and ignoring
+    /// it again out here expands the frame the controls are laid out in, which
+    /// puts the top row under the notch.
+    private var rotatableContent: some View {
         GeometryReader { geo in
             content
                 .frame(
@@ -129,11 +158,6 @@ struct PlayerView<Model: PlayerEngine>: View {
                 .rotationEffect(.degrees(contentRotated ? 90 : 0))
                 .position(x: geo.size.width / 2, y: geo.size.height / 2)
         }
-        // Deliberately NOT `.ignoresSafeArea()` here. This wrapper only exists
-        // to measure and turn; the things that should reach the screen edges -
-        // the black ground and the video surface - already ignore it for
-        // themselves inside `content`. Ignoring it out here expanded the frame
-        // the controls are laid out in, and put the top row under the notch.
     }
 
     private var content: some View {
