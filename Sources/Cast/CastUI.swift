@@ -94,50 +94,58 @@ struct CastMark: View {
 struct ChromecastMark: View {
     var connected = false
 
+    /// Scales a 24dp coordinate.
+    ///
+    /// A static method, not a local `func`: a `@ViewBuilder` closure rejects a
+    /// declaration outright, and a static one also captures nothing from the
+    /// escaping `GeometryReader` closure it is called inside.
+    private static func p(_ x: CGFloat, _ y: CGFloat, _ u: CGFloat) -> CGPoint {
+        CGPoint(x: x * u, y: y * u)
+    }
+
     var body: some View {
         GeometryReader { geo in
             let u = min(geo.size.width, geo.size.height) / 24
-            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * u, y: y * u) }
 
             Path { path in
                 // The frame: an open rounded rectangle. The left edge stops at
                 // y=8 and the bottom edge at x=14, which is the gap the waves
                 // occupy.
-                path.move(to: p(21, 3))
-                path.addLine(to: p(3, 3))
-                path.addCurve(to: p(1, 5), control1: p(1.9, 3), control2: p(1, 3.9))
-                path.addLine(to: p(1, 8))
-                path.addLine(to: p(3, 8))
-                path.addLine(to: p(3, 5))
-                path.addLine(to: p(21, 5))
-                path.addLine(to: p(21, 19))
-                path.addLine(to: p(14, 19))
-                path.addLine(to: p(14, 21))
-                path.addLine(to: p(21, 21))
-                path.addCurve(to: p(23, 19), control1: p(22.1, 21), control2: p(23, 20.1))
-                path.addLine(to: p(23, 5))
-                path.addCurve(to: p(21, 3), control1: p(23, 3.9), control2: p(22.1, 3))
+                path.move(to: Self.p(21, 3, u))
+                path.addLine(to: Self.p(3, 3, u))
+                path.addCurve(to: Self.p(1, 5, u), control1: Self.p(1.9, 3, u), control2: Self.p(1, 3.9, u))
+                path.addLine(to: Self.p(1, 8, u))
+                path.addLine(to: Self.p(3, 8, u))
+                path.addLine(to: Self.p(3, 5, u))
+                path.addLine(to: Self.p(21, 5, u))
+                path.addLine(to: Self.p(21, 19, u))
+                path.addLine(to: Self.p(14, 19, u))
+                path.addLine(to: Self.p(14, 21, u))
+                path.addLine(to: Self.p(21, 21, u))
+                path.addCurve(to: Self.p(23, 19, u), control1: Self.p(22.1, 21, u), control2: Self.p(23, 20.1, u))
+                path.addLine(to: Self.p(23, 5, u))
+                path.addCurve(to: Self.p(21, 3, u), control1: Self.p(23, 3.9, u), control2: Self.p(22.1, 3, u))
                 path.closeSubpath()
 
                 // Innermost wave: a solid corner, as in the original.
-                path.move(to: p(1, 18))
-                path.addLine(to: p(1, 21))
-                path.addLine(to: p(4, 21))
-                path.addCurve(to: p(1, 18), control1: p(4, 19.34), control2: p(2.66, 18))
+                path.move(to: Self.p(1, 18, u))
+                path.addLine(to: Self.p(1, 21, u))
+                path.addLine(to: Self.p(4, 21, u))
+                path.addCurve(to: Self.p(1, 18, u), control1: Self.p(4, 19.34, u), control2: Self.p(2.66, 18, u))
                 path.closeSubpath()
 
-                path.move(to: p(1, 14))
-                path.addLine(to: p(1, 16))
-                path.addCurve(to: p(6, 21), control1: p(3.76, 16), control2: p(6, 18.24))
-                path.addLine(to: p(8, 21))
-                path.addCurve(to: p(1, 14), control1: p(8, 17.13), control2: p(4.87, 14))
+                path.move(to: Self.p(1, 14, u))
+                path.addLine(to: Self.p(1, 16, u))
+                path.addCurve(to: Self.p(6, 21, u), control1: Self.p(3.76, 16, u), control2: Self.p(6, 18.24, u))
+                path.addLine(to: Self.p(8, 21, u))
+                path.addCurve(to: Self.p(1, 14, u), control1: Self.p(8, 17.13, u), control2: Self.p(4.87, 14, u))
                 path.closeSubpath()
 
-                path.move(to: p(1, 10))
-                path.addLine(to: p(1, 12))
-                path.addCurve(to: p(10, 21), control1: p(5.97, 12), control2: p(10, 16.03))
-                path.addLine(to: p(12, 21))
-                path.addCurve(to: p(1, 10), control1: p(12, 14.92), control2: p(7.07, 10))
+                path.move(to: Self.p(1, 10, u))
+                path.addLine(to: Self.p(1, 12, u))
+                path.addCurve(to: Self.p(10, 21, u), control1: Self.p(5.97, 12, u), control2: Self.p(10, 16.03, u))
+                path.addLine(to: Self.p(12, 21, u))
+                path.addCurve(to: Self.p(1, 10, u), control1: Self.p(12, 14.92, u), control2: Self.p(7.07, 10, u))
                 path.closeSubpath()
             }
             .overlay(alignment: .topLeading) {
