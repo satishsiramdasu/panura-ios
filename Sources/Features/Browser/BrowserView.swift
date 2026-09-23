@@ -301,17 +301,35 @@ struct BrowserView: View {
                 flash("Saved to Watch Later", fromBottom: boxed)
             }
         } label: {
-            Image(systemName: saved ? "clock.fill" : "clock")
+            let glyph = Image(systemName: saved ? "clock.fill" : "clock")
                 .font(.system(size: 16))
                 .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
-                .frame(width: boxed ? 44 : 38, height: boxed ? 42 : 38)
+
+            if boxed {
+                ZStack {
+                    // A hidden line of the label the other two buttons carry.
+                    // Their height is a glyph and a word inside 10 points of
+                    // padding; stating 42 here got within two points of that
+                    // and looked it. This takes the height from the same text,
+                    // so the three cannot drift apart again.
+                    Text(" ")
+                        .font(.subheadline.weight(.semibold))
+                        .hidden()
+                    glyph
+                }
+                .frame(width: 26)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 10)
                 .background {
-                    if boxed {
-                        RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(PanuraTheme.outline, lineWidth: 1)
-                    }
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(PanuraTheme.outline, lineWidth: 1)
                 }
                 .contentShape(Rectangle())
+            } else {
+                glyph
+                    .frame(width: 38, height: 38)
+                    .contentShape(Rectangle())
+            }
         }
         .buttonStyle(.plain)
         .disabled(!pageUsable)
