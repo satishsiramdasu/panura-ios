@@ -14,8 +14,12 @@ enum OrientationManager {
     /// The mask the AppDelegate hands back to UIKit. Narrower than Info.plist on
     /// a phone, which declares landscape for the player's sake - see `reset`.
     static var mask: UIInterfaceOrientationMask = defaultMask {
-        didSet { guard oldValue != mask else { return }; apply() }
+        didSet { guard oldValue != mask else { return }; apply(force: forceNextUpdate) }
     }
+
+    /// Whether the next mask change should *turn* the window or merely permit
+    /// it to turn. Reset after every change, so forcing is always deliberate.
+    private static var forceNextUpdate = true
 
     /// What the app allows with no player open. Also the launch value: `reset`
     /// runs when a player closes, so setting it only there would leave the
@@ -24,8 +28,24 @@ enum OrientationManager {
         UIDevice.current.userInterfaceIdiom == .pad ? .all : .portrait
     }
 
-    /// Allow free rotation (player open, not locked).
-    static func allowAll() { mask = .allButUpsideDown }
+    /// Allow free rotation (player open, or a page's video gone fullscreen).
+    ///
+    /// Permits, never forces. `requestGeometryUpdate` actively rotates the
+    /// scene, and firing it while WebKit is presenting its own fullscreen
+    /// window resized the window out from under a transition that had already
+    /// measured itself - the page's player kept the portrait size it entered
+    /// with and sat in a strip down one side of a landscape screen. Worse if
+    /// the phone was already turned: the window jumped, the content did not,
+    /// and even the system's own close button went out of reach.
+    ///
+    /// Widening the set needs no force anyway. Telling the system the app now
+    /// accepts landscape is enough for it to follow the device, which is what
+    /// the user is holding and therefore what they meant.
+    static func allowAll() {
+        forceNextUpdate = false
+        mask = .allButUpsideDown
+        forceNextUpdate = true
+    }
 
     /// Restore the app-wide default (player closed).
     ///
@@ -106,9 +126,16 @@ enum OrientationManager {
             ?? UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
     }
 
-    private static func apply() {
+    /// - Parameter force: ask the scene to *become* one of `mask` now, rather
+    ///   than only re-reading what the app allows. Needed when narrowing to a
+    ///   single orientation - the player's rotate and lock - because there the
+    ///   whole point is to turn the picture without the device turning. Wrong
+    ///   when widening, where the device is already the answer.
+    private static func apply(force: Bool) {
         guard let scene = activeScene else { return }
-        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+        if force {
+            scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask)) { _ in }
+        }
         scene.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
     }
 }

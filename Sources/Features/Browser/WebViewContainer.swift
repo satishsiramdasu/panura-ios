@@ -266,13 +266,22 @@ struct WebViewContainer: UIViewRepresentable {
                         switch wv.fullscreenState {
                         case .enteringFullscreen, .inFullscreen:
                             OrientationManager.allowAll()
-                        default:
+                        case .exitingFullscreen:
+                            // Wait for WebKit to finish putting its window
+                            // away. Narrowing the mask back to portrait *does*
+                            // force a rotation, and forcing one into the middle
+                            // of the exit animation leaves the page laid out
+                            // for a window that is no longer there.
+                            try? await Task.sleep(nanoseconds: 350_000_000)
+                            guard wv.fullscreenState == .notInFullscreen else { return }
                             // Only if nothing else is holding it open - the
                             // app's own player sets a mask of its own and must
                             // not have it reset from under it.
                             if !PlaybackSession.shared.isPlayingSomething {
                                 OrientationManager.reset()
                             }
+                        default:
+                            break
                         }
                     }
                 },
