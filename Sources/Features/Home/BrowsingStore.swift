@@ -227,6 +227,28 @@ final class BrowsingStore: ObservableObject {
         watchLater = Self.load(watchLaterKey) ?? []
         resumes = Self.load(resumeKey) ?? []
         hostVisits = Self.load(hostVisitsKey) ?? Self.seedHostVisits(from: history)
+
+        // One-time: clear out what the start page banked before it stopped
+        // counting. Every launch and every web-view rebuild had recorded a
+        // visit, so on an install of any age Google is sitting at the top of
+        // Most Visited with a count nobody earned. Both lists, because the
+        // history rows are what the tally would be re-seeded from.
+        let purgeKey = "home_purged_own_search"
+        if !UserDefaults.standard.bool(forKey: purgeKey) {
+            let keptHistory = history.filter {
+                URL(string: $0.url).map { !Self.isOwnSearch($0) } ?? true
+            }
+            if keptHistory.count != history.count {
+                history = keptHistory
+                Self.save(history, historyKey)
+            }
+            let keptHosts = hostVisits.filter { $0.host != "google.com" }
+            if keptHosts.count != hostVisits.count {
+                hostVisits = keptHosts
+                Self.save(hostVisits, hostVisitsKey)
+            }
+            UserDefaults.standard.set(true, forKey: purgeKey)
+        }
     }
 
     /// First run after the split: derive the tally from whatever history the
@@ -365,6 +387,7 @@ final class BrowsingStore: ObservableObject {
     func recordVisit(url: URL, title: String) {
         guard recordHistory else { return }
         guard let scheme = url.scheme, scheme.hasPrefix("http"), let rawHost = url.host else { return }
+        guard !Self.isOwnSearch(url) else { return }
 
         let key = url.absoluteString
         let isRestatement = key == lastRecordedURL
@@ -389,6 +412,26 @@ final class BrowsingStore: ObservableObject {
         persistHistory()
 
         bumpHost(rawHost, title: title, isRoot: url.path.isEmpty || url.path == "/", counts: !isRestatement)
+    }
+
+    /// The app's own plumbing, wearing a URL.
+    ///
+    /// Two things reach `recordVisit` that nobody chose to visit. The browser
+    /// opens on Google and returns to it after every rebuild, so it banked a
+    /// visit on launch, on every private-mode switch and on every settings
+    /// toggle - enough to sit permanently at the top of Most Visited without
+    /// anyone ever going there. And typing anything that is not an address
+    /// becomes a `google.com/search?q=` load, which is this app's search box
+    /// doing its job, not a site someone browsed to.
+    ///
+    /// Anything else on Google still counts: Maps, Drive, a link followed out
+    /// of a result page.
+    private static func isOwnSearch(_ url: URL) -> Bool {
+        guard let host = url.host?.lowercased() else { return false }
+        let bare = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        guard bare == "google.com" || bare.hasSuffix(".google.com") else { return false }
+        let path = url.path
+        return path.isEmpty || path == "/" || path.hasPrefix("/search")
     }
 
     /// The Most Visited side of a visit.

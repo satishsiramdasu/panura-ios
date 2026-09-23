@@ -122,6 +122,20 @@ struct WebViewContainer: UIViewRepresentable {
         // so cookies, cache and local storage never reach disk. It cannot be
         // swapped on a live web view, which is why the browser rebuilds one.
         if privateMode { config.websiteDataStore = .nonPersistent() }
+        // Make the default user agent end in a Safari token.
+        //
+        // WKWebView's own UA omits `Version/x Safari/x` - it says
+        // "...AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148" and stops.
+        // Sites that sniff the browser rather than test for features do not
+        // recognise it, and Google in particular answers an unknown UA with its
+        // 1998 no-JavaScript page: plain links, bordered buttons, "Google
+        // offered in:". That is what an iPad was getting on the start page.
+        //
+        // `applicationNameForUserAgent` is appended to the default UA, so this
+        // adds the missing tail without hard-coding a device or an OS version -
+        // the rest of the string stays whatever WebKit says it is. Desktop mode
+        // still replaces the whole UA with `BrowserModel.desktopUA`.
+        config.applicationNameForUserAgent = "Version/17.0 Safari/605.1.15"
         config.allowsInlineMediaPlayback = true
         // The HTML5 Fullscreen API, off by default in WKWebView.
         //
