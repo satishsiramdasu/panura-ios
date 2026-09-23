@@ -294,7 +294,13 @@ struct CastDevicesView: View {
         }
         .padding(.vertical, 16)
         .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.surfaceVariant))
+        .background(
+            RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.surfaceContainerHighest)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(PanuraTheme.outlineVariant, lineWidth: 1)
+        )
     }
 
     /// What a Chromecast row says under its name.
@@ -415,7 +421,21 @@ struct CastDevicesView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity)
-            .background(RoundedRectangle(cornerRadius: 14).fill(PanuraTheme.surfaceVariant))
+            // The panel behind this is `surfaceContainerHigh` (#1E1E1D) and
+            // these cards were `surfaceVariant` (#1C1C1A) - three levels apart
+            // across all three channels, which is not an edge, it is the same
+            // colour twice. Raised to `surfaceContainerHighest` and given a
+            // hairline, because on a dark panel a fill alone has to shift a
+            // long way before the eye reads a boundary, and shifting it that
+            // far would make the rows glow.
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(PanuraTheme.surfaceContainerHighest)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(PanuraTheme.outlineVariant, lineWidth: 1)
+            )
             .contentShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.plain)

@@ -437,10 +437,23 @@ final class BrowsingStore: ObservableObject {
 
     /// "Clear history" means both, as it does in a browser: leaving the tiles
     /// behind would still show where the user had been.
+    /// Both lists, for the one-tap Clear History that the address screen and
+    /// the browser still offer. Clear Data takes them separately.
     func clearHistory() {
+        clearBrowsingHistory()
+        clearMostVisited()
+    }
+
+    func clearBrowsingHistory() {
         history.removeAll()
-        hostVisits.removeAll()
         persistHistory()
+    }
+
+    /// Most Visited is a tally of hosts, not a list of pages, and someone who
+    /// wants the pages gone does not necessarily want the ranking reset - so
+    /// Clear Data lets them go separately even though Clear History takes both.
+    func clearMostVisited() {
+        hostVisits.removeAll()
         persistHostVisits()
     }
 

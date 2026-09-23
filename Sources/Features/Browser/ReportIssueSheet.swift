@@ -21,11 +21,15 @@ struct ReportIssueSheet: View {
     /// something. Long enough to rule out "asd" without demanding an essay.
     private static let minDetailChars = 10
 
+    // "Video not detected" sits second, not first. At the top of a list it is
+    // the answer people reach for when they are unsure, which turns every vague
+    // report into a detection bug and buries the real ones. The genuinely most
+    // common failure leads instead.
     private static let appReasons = [
-        "Video not detected", "Playback issue", "Cast issue", "App crash", "Other",
+        "Playback issue", "Video not detected", "Cast issue", "App crash", "Other",
     ]
     private static let pageReasons = [
-        "Video not detected", "Page not loading", "Source error",
+        "Page not loading", "Video not detected", "Source error",
         "Wrong video", "Ad issue", "Other",
     ]
 
@@ -36,6 +40,10 @@ struct ReportIssueSheet: View {
     private var detailsTooShort: Bool {
         detailsRequired && details.trimmingCharacters(in: .whitespacesAndNewlines).count < Self.minDetailChars
     }
+    /// Nothing is chosen for you. A pre-selected reason is a guess the form
+    /// makes on the reporter's behalf, and it arrives as though they had made
+    /// it - so the picker opens empty and Send waits for a real answer.
+    private var incomplete: Bool { reason.isEmpty || detailsTooShort }
     private var host: String? {
         guard let pageURL else { return nil }
         return URL(string: pageURL)?.host ?? pageURL
@@ -55,6 +63,10 @@ struct ReportIssueSheet: View {
                     // the height, which leaves room for the description that
                     // actually makes a report useful.
                     Picker("What went wrong", selection: $reason) {
+                        // The empty tag, so "nothing picked yet" is a state the
+                        // picker can show rather than silently resolving to
+                        // whatever happens to be first.
+                        Text("Select a reason").tag("")
                         ForEach(reasons, id: \.self) { Text($0).tag($0) }
                     }
                 } header: {
@@ -93,22 +105,31 @@ struct ReportIssueSheet: View {
                     Button { send() } label: {
                         Text("Send report")
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(detailsTooShort ? PanuraTheme.onSurfaceVariant : Color.black)
+                            .foregroundStyle(incomplete ? PanuraTheme.onSurfaceVariant : Color.black)
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
                             .background(
                                 Capsule().fill(
-                                    detailsTooShort ? PanuraTheme.surfaceVariant : PanuraTheme.accent
+                                    incomplete ? PanuraTheme.surfaceVariant : PanuraTheme.accent
                                 )
                             )
                     }
                     .buttonStyle(.plain)
-                    .disabled(detailsTooShort)
+                    .disabled(incomplete)
 
-                    Button("Cancel") { dismiss() }
-                        .font(.footnote)
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        .padding(.vertical, 4)
+                    // A button the same size as Send. It was a footnote-sized
+                    // word with no edges, which is not something you aim at -
+                    // and on a form with a required field it is what people
+                    // need when they change their mind.
+                    Button { dismiss() } label: {
+                        Text("Cancel")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.red)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(Capsule().fill(Color.red.opacity(0.16)))
+                    }
+                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 10)

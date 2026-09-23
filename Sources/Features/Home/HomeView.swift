@@ -17,7 +17,7 @@ struct HomeView: View {
     @State private var editingBookmark: SiteEntry?
 
     @State private var showReport = false
-    @State private var showErase = false
+    @State private var showClearData = false
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
     /// The card a Remove was asked for — held until it is confirmed.
@@ -79,7 +79,13 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
-        .sheet(isPresented: $showErase) { EraseAndExitSheet() }
+        // An overlay, not a sheet: it has to arrive centred, where the eye
+        // already is, rather than sliding up from the far end of the screen.
+        .overlay {
+            if showClearData {
+                ClearDataDialog(isPresented: $showClearData) { flashResume($0) }
+            }
+        }
         .sheet(item: $editingBookmark) { BookmarkEditor(entry: $0) }
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
         .confirmationDialog(
@@ -208,25 +214,12 @@ struct HomeView: View {
             // it, and still on the drawer for anyone who looks there first.
             optionTile("Settings", systemImage: "gearshape") { onOpenSection(.settings) }
             optionTile("Report Issue", systemImage: "ladybug") { showReport = true }
-            // A menu rather than a dialog. A confirmation dialog on iOS comes
-            // up from the bottom of the screen, a long way from the tile that
-            // raised it and carrying no trace of which one that was; a menu
-            // opens on the button, so the question stays attached to the thing
-            // being asked about.
-            optionMenu("Clear History", systemImage: "trash") {
-                Section("Most Visited and recent pages go. Bookmarks and Continue Watching stay.") {
-                    Button(role: .destructive) {
-                        store.clearHistory()
-                    } label: { Label("Clear History", systemImage: "trash") }
-                }
-                // Its own section: this one is not a bigger version of the
-                // button above it. That clears two lists and leaves you where
-                // you were; this can take everything and closes the app.
-                Section {
-                    Button(role: .destructive) {
-                        showErase = true
-                    } label: { Label("Erase Data & Exit", systemImage: "xmark.octagon") }
-                }
+            // "Clear Data", not "Clear History": history is one of seven
+            // things it can take. One tile, one dialog, every choice in it -
+            // rather than a menu whose items each did a different amount of
+            // damage with no way to see what any of them would take.
+            optionTile("Clear Data", systemImage: "trash") {
+                withAnimation(.easeOut(duration: 0.15)) { showClearData = true }
             }
         }
         .padding(.horizontal, 16)
@@ -496,6 +489,16 @@ struct HomeView: View {
                 try? await Task.sleep(nanoseconds: 3_200_000_000)
                 resumeToast = nil
             }
+        }
+    }
+
+    /// The one toast this screen has. Cleared only if nothing else has claimed
+    /// it since, so a second message is not wiped by the first one's timer.
+    private func flashResume(_ message: String) {
+        resumeToast = message
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if resumeToast == message { resumeToast = nil }
         }
     }
 
