@@ -100,24 +100,40 @@ adblock popup captions flv mov
 ## Promotional text (≤170, editable without a new build)
 
 ```
-Find a video on any site and play it properly: real subtitles, gestures, background audio, and your TV a tap away. No account, no downloads.
+Play any video — found on a web page, or already in your library. Real subtitles, gestures, background audio, and your TV a tap away. No account, no downloads.
 ```
+
+159 characters. Rewritten 2026-09-23: the old line said "find a video on any
+site", which sold the browser and left the Videos tab out of the only 170
+characters a passer-by reads. Both halves now appear in the first clause, and
+"already in your library" is the honest phrasing — the photo library is what the
+app reads, and it is not a Files-app player.
 
 ## Description (≤4000)
 
 ```
-Panura turns the web's video into video you can actually watch.
+Panura is a web browser and a video player in one. What plays on a page and what
+is already on your phone open in the same player — full screen, free of the
+page's ads and pop-ups.
 
-Browse to a page, press play, and Panura spots the stream behind the site's own
-player. From there it is yours: a real player with real controls, a picture that
-fills the screen properly, and subtitles you can size, colour and re-encode until
-they are readable.
+Browse to a page, press play, and Panura finds the stream the page is playing.
+Or open the Videos tab, where the same player opens your library. Either way you
+get real controls, a picture that fills the screen properly, and subtitles you
+can size, colour and re-encode until they are readable.
 
 BUILT-IN BROWSER
 • Ad and pop-up blocking, so a page that opens six tabs opens none
 • Private mode that keeps nothing once you leave it
 • Desktop mode for sites that hide their player from phones
-• Shortcuts and history, with the address bar where your thumb is
+• Bookmarks, history and Watch Later, with the address bar where your thumb is
+
+YOUR PHONE'S VIDEOS
+• Every video in your photo library, in a grid or a list
+• Albums, search, and sorting by name, date or size
+• Length and file size on every row, and delete without leaving the app
+• iCloud videos play too — Panura fetches them at full quality when you tap
+• The same player, the same gestures, the same subtitle settings
+• Add any of them to Watch Later, beside the pages you saved
 
 THE PLAYER
 • Plays what other players refuse: HLS, MP4, MKV, AVI, and more
@@ -133,20 +149,68 @@ PLAY ON TV
 • Cast to a Chromecast, or to Panura on an Android TV
 • Discovery runs on your own network and stops when you leave the screen
 
-YOUR OWN VIDEOS
-• The Videos tab plays everything in your photo library, in a grid or a list
-• The same player, the same subtitle and gesture settings
-
 WHAT PANURA DOES NOT DO
 • No account, ever. Nothing to sign up for
 • No downloading of anything you browse to
-• No ad tracking. Your history, shortcuts and resume positions stay on the
+• No ad tracking. Your history, bookmarks and resume positions stay on the
   device and are deleted with the app
 • YouTube and its domains are deliberately excluded
 
 Panura is a player and a browser. It hosts no content of its own, indexes
 nothing, and only ever opens the pages you ask it to.
 ```
+
+**Do not write that the web "hides" video.** The opening line said so on
+2026-09-23 and was replaced the same day. Two reasons, the second the real one:
+sites are not concealing anything, they are playing video in their own poor
+player — which is a truer and stronger complaint; and *hides* reads to a
+reviewer as *circumvents*, which is Guideline 5.2, in the first sentence of a
+browser that finds streams. The same applies to "the stream **behind** the
+site's own player", now "the stream the page is playing". Claim a better
+player, never secret access.
+
+**Nor write anything against web pages.** The replacement opened "Web pages play
+video in their own player. Panura gives you a better one" — accurate, and still
+wrong for this field: the listing states what Panura does, and does not run down
+what anyone else does. It also invited the comparison a reviewer is least keen
+to referee. The lede states the benefit as a feature instead: *full screen, free of the
+page's ads and pop-ups*. Distraction-free is the same promise the contrast was
+reaching for, and it is ours to claim.
+
+⚠️ **Scoped to "the page's" ads deliberately.** A flat "no ads" goes false the
+day banner ads ship in 1.1, and a description that contradicts the running app
+is a rejection and a refund thread. The blocker keeps working whatever Panura
+itself shows, so the scoped phrasing survives the change.
+
+The one surviving "hide" is • *Desktop mode for sites that hide their player
+from phones*, which stays. That is literal — sites really do serve a different
+player to mobile — and it describes the condition the feature exists to solve
+rather than passing judgment on anyone.
+
+**Why the Videos section is worded the way it is.** Rebalanced 2026-09-23: the
+description used to be almost entirely about the browser, with four lines at the
+bottom for the library. The section moved above THE PLAYER and grew, but every
+bullet is held to what `LocalVideosModel` actually does, which is `PHAsset` and
+nothing else:
+
+- **No Files-app support.** No `CFBundleDocumentTypes`, no
+  `LSSupportsOpeningDocumentsInPlace`, no `UIFileSharingEnabled`, no document
+  picker, no share extension. Panura is not in Files' "Open in" sheet.
+- **So MKV and AVI stay in the stream list, not the library list.** iOS Photos
+  will not import either container, so on the local side the app sees
+  MP4/MOV/HEVC. "Plays what other players refuse: HLS, MP4, MKV, AVI" is true of
+  what it *plays*; it must not be re-used as a claim about your own files.
+- **No resume claim for library videos.** `LocalVideosModel.lastPlayedID` exists
+  because "the file URL behind it is a temporary copy that changes", and resume
+  positions are keyed by URL. Resume is claimed for the player generally, never
+  for the Videos tab specifically.
+- **iCloud is claimed** because `isNetworkAccessAllowed` is true on both resolve
+  paths and `copyOriginal` writes the full-size resource.
+
+Adding Files import would make the local player real and is the single change
+that would most improve both this section and the Guideline 5.2.3 position —
+substantial functionality that is not "browse to a site and grab the stream".
+Deferred past 1.0 by decision.
 
 ## What's New (first release)
 
@@ -439,8 +503,8 @@ already loading and offers to play it in its own player, which handles formats
 and subtitle options the web player does not.
 
 No content is hosted, indexed, bundled or recommended by us. There is no
-catalogue, no search of other people's sites, and no list of sources anywhere in
-the app. The first screen is a browser address bar.
+catalogue, no directory, and no search across other people's sites; the app
+never suggests a site to visit. The first screen is a browser address bar.
 
 There is NO download feature on iOS. Nothing the user browses to can be saved to
 the device. (The Videos tab plays videos that are already in the user's own
@@ -471,13 +535,37 @@ record the format (for example "hls" or "mkv") and which of the app's two
 playback engines handled it, never an address.
 
 To try the app: open it, type any site with video into the address bar, and press
-play on that site's player. A bar appears at the bottom of the browser naming the
-stream that was found; tapping it plays. No account or sign-in is needed.
+play on that site's player. A bar appears at the bottom of the browser naming
+what was found, with a Play button on it. If the page offers several streams the
+bar shows a count instead, and tapping it lists them to choose from. No account
+or sign-in is needed.
 
 A public-domain page that demonstrates it end to end, if you would like one:
 archive.org/details/BigBuckBunny_124 — press play on the page's own player, then
-tap the bar that appears at the bottom of the screen.
+press Play on the bar that appears at the bottom of the screen.
 ```
+
+**The detection manifest is deliberately not mentioned in the notes — option B,
+decided 2026-09-23.** Three options were weighed: disclose it, stay silent, or
+stay silent while keeping the old sentence "no list of sources anywhere in the
+app". The third was the only dangerous one, because a hashed host list *is* a
+list of sites and that sentence was therefore false in writing to App Review —
+2.3 Accurate Metadata, and account-level rather than app-level if it ever landed
+badly. So the sentence is gone regardless; the notes now claim no catalogue, no
+directory, no cross-site search and no suggested sites, all of which are true.
+
+Silence is not a claim. There is no obligation to document the architecture, and
+remote configuration is ordinary. **If App Review asks, answer immediately and
+fully**: it is data, not code; nothing fetched is executed; it cannot enable any
+feature absent from the reviewed build; hostnames are one-way hashes because the
+file is publicly reachable. Nothing in the notes contradicts any of that, which
+is the entire point of having removed the sentence.
+
+⚠️ **The rule that keeps this true: the manifest may only tune behaviour the
+reviewed build already has.** The moment it can *enable* something — ads, a
+feature toggle, a new capability — it is Guideline 2.5.2, downloading code that
+changes functionality after review. This is why `FeatureFlags.adsEnabled` is
+compile-time and must stay compile-time.
 
 ---
 

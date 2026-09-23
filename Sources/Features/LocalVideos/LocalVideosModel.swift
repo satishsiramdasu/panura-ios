@@ -56,7 +56,13 @@ struct VideoAlbum: Identifiable, Hashable {
 @MainActor
 final class LocalVideosModel: ObservableObject {
     enum State {
-        case loading, needsPermission, empty, loaded([LocalVideoAsset])
+        /// `needsPermission` is "we have not asked yet"; `permissionDenied` is
+        /// "we asked and were refused". They were one case, and that is what
+        /// made Grant Access a button that did nothing: iOS prompts once per
+        /// install, so after a refusal the request returns immediately and the
+        /// screen redrew itself unchanged. The user is then stuck on a tab with
+        /// no way forward and no clue that Settings is where the answer is.
+        case loading, needsPermission, permissionDenied, empty, loaded([LocalVideoAsset])
     }
 
     /// Android's sort menu, minus the ones Photos cannot answer.
@@ -143,18 +149,44 @@ final class LocalVideosModel: ObservableObject {
     }
 
     func load() async {
-        let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        switch status {
-        case .authorized, .limited: await fetch()
-        case .notDetermined: state = .needsPermission
-        default: state = .needsPermission
-        }
+        apply(PHPhotoLibrary.authorizationStatus(for: .readWrite))
+        if case .loading = state { await fetch() }
     }
 
     func requestAccess() async {
-        let status = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-        if status == .authorized || status == .limited { await fetch() }
-        else { state = .needsPermission }
+        // `requestAuthorization` only ever shows the system alert while the
+        // status is `.notDetermined`. Called again after a refusal it returns
+        // `.denied` without showing anything, so asking again is not a retry -
+        // it is a no-op that looks like a broken button. Send the user to
+        // Settings instead, which is the only place the answer can change.
+        guard PHPhotoLibrary.authorizationStatus(for: .readWrite) == .notDetermined else {
+            state = .permissionDenied
+            return
+        }
+        apply(await PHPhotoLibrary.requestAuthorization(for: .readWrite))
+        if case .loading = state { await fetch() }
+    }
+
+    /// Re-read the authorization status without prompting.
+    ///
+    /// Called when the app comes back to the front, because the way out of
+    /// `permissionDenied` is Settings, and returning from Settings is the one
+    /// moment the answer can have changed underneath us.
+    func recheckAccess() async {
+        switch state {
+        case .needsPermission, .permissionDenied: await load()
+        default: break
+        }
+    }
+
+    /// Maps a Photos status onto a state, leaving `.loading` to mean "allowed,
+    /// go and fetch" so the two callers above do not each repeat the switch.
+    private func apply(_ status: PHAuthorizationStatus) {
+        switch status {
+        case .authorized, .limited: state = .loading
+        case .notDetermined: state = .needsPermission
+        default: state = .permissionDenied
+        }
     }
 
     /// Re-read the library after a delete, or when the album changes.

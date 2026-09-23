@@ -228,6 +228,17 @@ struct CastDevicesView: View {
                 scanStatus
                 if !cast.isScanning {
                     wideButton("Scan again", icon: "arrow.clockwise") { cast.startDiscovery() }
+                    // A refused Local Network permission is indistinguishable
+                    // from an empty network: iOS gives no API to read the
+                    // setting, and it shows the alert once per install - so
+                    // scanning again after a refusal can only ever find
+                    // nothing, forever, with no hint why. The way out has to be
+                    // offered here or it does not exist.
+                    wideButton("Open Panura's settings", icon: "gear") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    }
                 }
             } else {
                 ForEach(cast.devices) { device in
@@ -245,7 +256,7 @@ struct CastDevicesView: View {
             }
 
             notice(
-                "Both devices must be on the same Wi-Fi, and Panura needs permission to find devices on it.",
+                "Both devices must be on the same Wi-Fi, and Local Network must be on in Settings \u{203A} Panura.",
                 tone: .warn
             )
         }

@@ -11,6 +11,8 @@ import AVFoundation
 /// show — an asset has an identifier, not a location.
 struct LocalVideosView: View {
     @StateObject private var model = LocalVideosModel()
+    /// Watched only to re-read the photo authorization on return from Settings.
+    @Environment(\.scenePhase) private var scenePhase
     @State private var playIndex = 0
     @State private var selecting = false
     @State private var selection: Set<String> = []
@@ -47,6 +49,8 @@ struct LocalVideosView: View {
                 switch model.state {
                 case .needsPermission:
                     permissionPrompt
+                case .permissionDenied:
+                    permissionDenied
                 // Empty and loaded are the same screen. An empty album used to
                 // replace the whole view, toolbar included, which took away the
                 // album chip and the albums button — the only ways back out of
@@ -90,6 +94,14 @@ struct LocalVideosView: View {
         .task {
             lastPlayedID = LocalVideosModel.lastPlayedID
             await model.load()
+        }
+        // Returning from Settings is the only way the answer changes, and iOS
+        // does not tell us it changed. Checked on every return to the front,
+        // but only while the screen is one of the two that is waiting for it -
+        // otherwise this would re-read the whole library on every app switch.
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            Task { await model.recheckAccess() }
         }
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
@@ -584,6 +596,38 @@ struct LocalVideosView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(PanuraTheme.accent)
         }
+    }
+
+    /// The screen after a refusal, which is a different screen because the
+    /// button has to do a different thing.
+    ///
+    /// iOS shows the photo-library alert once per install. Offering "Grant
+    /// Access" again here would be offering a button that cannot work, so this
+    /// says where the switch actually is and opens the page it is on. Coming
+    /// back from there re-reads the status - see `recheckAccess`.
+    private var permissionDenied: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "lock.fill")
+                .font(.largeTitle)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            Text("Access to your videos is off").font(.headline)
+            Text("Turn on Photos in Settings and your videos will appear here.")
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 260)
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(PanuraTheme.accent)
+            Text("Settings \u{203A} Panura \u{203A} Photos")
+                .font(.caption)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        }
+        .padding(.horizontal, 24)
     }
 
     // MARK: actions
