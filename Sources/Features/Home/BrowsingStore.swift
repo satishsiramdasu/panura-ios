@@ -211,6 +211,18 @@ final class BrowsingStore: ObservableObject {
             Self.save(inherited, bookmarksKey)
             UserDefaults.standard.removeObject(forKey: legacyBookmarksKey)
         }
+        // Titles saved before the entity decoder existed still read `&#8211;`
+        // where the site meant a dash. Repaired in place, once, rather than
+        // decoded on every draw.
+        let repaired = bookmarks.map { entry -> SiteEntry in
+            var copy = entry
+            copy.title = SiteTitle.clean(entry.title)
+            return copy
+        }
+        if repaired != bookmarks {
+            bookmarks = repaired
+            Self.save(bookmarks, bookmarksKey)
+        }
         history = Self.load(historyKey) ?? []
         watchLater = Self.load(watchLaterKey) ?? []
         resumes = Self.load(resumeKey) ?? []

@@ -89,19 +89,73 @@ enum SiteTitle {
         return text.count > 60 ? String(text.prefix(60)).trimmingCharacters(in: .whitespaces) : text
     }
 
-    /// The handful of entities that actually turn up in a title.
+    /// Entity-decodes a title that was stored before this decoder existed.
+    ///
+    /// Titles written by earlier builds kept whatever the markup said, so a
+    /// bookmark made last week can still be carrying `&#8211;` in the middle of
+    /// it. Cheap enough to run over the saved lists at launch, and a no-op for
+    /// every title that has no `&` in it.
+    static func clean(_ title: String) -> String {
+        title.contains("&") ? decode(title) : title
+    }
+
+    /// Entities, named and numeric.
+    ///
+    /// A title arrives exactly as it was written into the markup, and what
+    /// sites write is `&#8211;` — WordPress turns every dash it is handed into
+    /// one. A fixed list of names left those showing as their own source code
+    /// in the middle of a bookmark, so numbers are decoded as well, which
+    /// covers every entity a page can spell that way rather than the dozen
+    /// somebody thought to write down.
     private static func decode(_ s: String) -> String {
         var out = s
         for (entity, char) in [
-            ("&amp;", "&"), ("&#38;", "&"),
-            ("&lt;", "<"), ("&gt;", ">"),
-            ("&quot;", "\""), ("&#34;", "\""),
-            ("&apos;", "'"), ("&#39;", "'"), ("&#x27;", "'"),
-            ("&nbsp;", " "), ("&#160;", " "),
+            ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+            ("&quot;", "\""), ("&apos;", "'"),
+            ("&nbsp;", " "),
             ("&ndash;", "–"), ("&mdash;", "—"),
+            ("&lsquo;", "\u{2018}"), ("&rsquo;", "\u{2019}"),
+            ("&ldquo;", "\u{201C}"), ("&rdquo;", "\u{201D}"),
+            ("&hellip;", "…"), ("&bull;", "•"), ("&middot;", "·"),
+            ("&laquo;", "«"), ("&raquo;", "»"),
+            ("&copy;", "©"), ("&reg;", "®"), ("&trade;", "™"),
         ] {
             out = out.replacingOccurrences(of: entity, with: char, options: .caseInsensitive)
         }
-        return out
+        return numeric(out)
+    }
+
+    /// `&#8211;` and `&#x2014;`.
+    ///
+    /// Anything that is not a number, or is too long to be one, is left exactly
+    /// as it was: a title containing a stray `&#` is odd, but it is what the
+    /// site said and mangling it further helps nobody. The named pass runs
+    /// first, so a decoded `&amp;` cannot begin a second round here.
+    private static func numeric(_ s: String) -> String {
+        guard s.contains("&#") else { return s }
+        var out = ""
+        var rest = Substring(s)
+        while let marker = rest.range(of: "&#") {
+            out += rest[..<marker.lowerBound]
+            let after = rest[marker.upperBound...]
+            guard let end = after.firstIndex(of: ";"),
+                  after.distance(from: after.startIndex, to: end) <= 7
+            else {
+                out += "&#"
+                rest = after
+                continue
+            }
+            let body = after[..<end]
+            let hex = body.first == "x" || body.first == "X"
+            let digits = hex ? body.dropFirst() : Substring(body)
+            if let value = UInt32(digits, radix: hex ? 16 : 10),
+               let scalar = Unicode.Scalar(value) {
+                out.append(Character(scalar))
+            } else {
+                out += "&#\(body);"
+            }
+            rest = after[after.index(after: end)...]
+        }
+        return out + rest
     }
 }
