@@ -18,10 +18,6 @@ struct HomeView: View {
 
     @State private var showReport = false
     @State private var showClearData = false
-    /// Home's pill can switch private mode while the browser is mid-page, and
-    /// the switch closes that page. It used to do it without asking, from a
-    /// screen that does not even show what would be lost.
-    @State private var confirmPrivateSwitch = false
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
     /// The card a Remove was asked for — held until it is confirmed.
@@ -83,24 +79,6 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
-        // The browser's dialog, word for word. It is the same switch with the
-        // same consequence, and two screens describing it differently was two
-        // features as far as anyone reading them was concerned.
-        .confirmationDialog(
-            PrivateSwitch.title(turningOn: !session.privateMode),
-            isPresented: $confirmPrivateSwitch,
-            titleVisibility: .visible
-        ) {
-            Button("Keep this page") {
-                session.setPrivateMode(!session.privateMode, keepingPage: true)
-            }
-            Button("Close it", role: .destructive) {
-                session.setPrivateMode(!session.privateMode, keepingPage: false)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(PrivateSwitch.message(turningOn: !session.privateMode))
-        }
         // An overlay, not a sheet: it has to arrive centred, where the eye
         // already is, rather than sliding up from the far end of the screen.
         .overlay {
@@ -349,20 +327,50 @@ struct HomeView: View {
                     // is browser state, but this is where a session is started,
                     // so this is where it has to be switchable — the browser's
                     // own copy of the switch is in its options panel.
-                    Button {
-                        if session.hasPage { confirmPrivateSwitch = true }
-                        else { session.setPrivateMode(!session.privateMode) }
-                    } label: {
-                        Image(systemName: "eyeglasses")
-                            .font(.system(size: 15))
-                            .foregroundStyle(
-                                session.privateMode
-                                    ? PanuraTheme.incognito
-                                    : PanuraTheme.onSurfaceVariant
-                            )
-                            .frame(width: 38, height: 38)
+                    // A menu, not a confirmation dialog.
+                    //
+                    // A dialog appears where the system decides: a sheet from
+                    // the bottom of the phone, and on an iPad a popover aimed
+                    // at whatever it was attached to - which was the root of
+                    // Home, so it hung mid-screen pointing at nothing. Either
+                    // way the question arrived a long way from the switch that
+                    // raised it. A menu opens on its own label, so it is beside
+                    // the control on both.
+                    //
+                    // Only when there is a page to lose. With nothing open the
+                    // switch has no consequence worth a question, and a menu
+                    // that always opens would put a step in front of a toggle.
+                    //
+                    // The words are the browser's, from `PrivateSwitch`: one
+                    // switch with one consequence, described once.
+                    Group {
+                        if session.hasPage {
+                            Menu {
+                                Section(PrivateSwitch.message(turningOn: !session.privateMode)) {
+                                    Button {
+                                        session.setPrivateMode(!session.privateMode, keepingPage: true)
+                                    } label: {
+                                        Label("Keep this page", systemImage: "doc")
+                                    }
+                                    Button(role: .destructive) {
+                                        session.setPrivateMode(!session.privateMode, keepingPage: false)
+                                    } label: {
+                                        Label("Close it", systemImage: "xmark")
+                                    }
+                                }
+                            } label: {
+                                privateGlyph
+                            }
+                            .menuOrder(.fixed)
+                        } else {
+                            Button {
+                                session.setPrivateMode(!session.privateMode)
+                            } label: {
+                                privateGlyph
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .buttonStyle(.plain)
                     .accessibilityLabel(
                         session.privateMode ? "Turn off private browsing" : "Private browsing"
                     )
@@ -372,6 +380,16 @@ struct HomeView: View {
     }
 
     // MARK: brand + action links
+
+    /// The eyeglasses, worn by whichever control the pill is carrying.
+    private var privateGlyph: some View {
+        Image(systemName: "eyeglasses")
+            .font(.system(size: 15))
+            .foregroundStyle(
+                session.privateMode ? PanuraTheme.incognito : PanuraTheme.onSurfaceVariant
+            )
+            .frame(width: 38, height: 38)
+    }
 
     private var brandBlock: some View {
         HStack(alignment: .center) {

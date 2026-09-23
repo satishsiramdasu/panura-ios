@@ -43,11 +43,6 @@ struct BrowserView: View {
     @State private var toastAtBottom = false
     /// Asked when private browsing is switched OFF with a page still open — the
     /// session is live and is about to start being recorded again.
-    @State private var confirmLeavingPrivate = false
-    /// Going *in* costs the page too: the web view is rebuilt on a different
-    /// data store, so whatever is open closes. Leaving already asked; entering
-    /// did it silently, which is the same loss with no warning.
-    @State private var confirmEnteringPrivate = false
     /// Only read to rebuild the web view when it changes: user scripts are fixed
     /// at creation, so a toggle in Settings means nothing until a new one exists.
     @AppStorage("auto_play_click") private var autoPlayClick = true
@@ -248,35 +243,21 @@ struct BrowserView: View {
                 }
             )
         }
-        // Anchored to the bar, not to the page.
-        //
-        // This hung off the outer stack, and a confirmation dialog now points
-        // at the view it was attached to — so a question about private
-        // browsing arrived as a bubble growing out of the middle of whatever
-        // page was open. It belongs to the bar: the tint that is about to
-        // disappear is right here.
-        .confirmationDialog(
-            "Close this page?",
-            isPresented: $confirmLeavingPrivate,
-            titleVisibility: .visible
-        ) {
-            Button("Keep this page") { leavePrivateMode(keepPage: true) }
-            Button("Close it", role: .destructive) { leavePrivateMode(keepPage: false) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(PrivateSwitch.message(turningOn: false))
-        }
-        .confirmationDialog(
-            PrivateSwitch.title(turningOn: true),
-            isPresented: $confirmEnteringPrivate,
-            titleVisibility: .visible
-        ) {
-            Button("Keep this page") { enterPrivateMode(keepPage: true) }
-            Button("Close it", role: .destructive) { enterPrivateMode(keepPage: false) }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(PrivateSwitch.message(turningOn: true))
-        }
+    }
+
+    private var privateCell: some View {
+        gridCellLabel(
+            "eyeglasses",
+            session.privateMode ? "Private On" : "Private",
+            enabled: true,
+            tint: session.privateMode ? PanuraTheme.incognito : nil
+        )
+    }
+
+    /// Flips private browsing whichever way it is currently pointing.
+    private func switchPrivate(keepPage: Bool) {
+        if session.privateMode { leavePrivateMode(keepPage: keepPage) }
+        else { enterPrivateMode(keepPage: keepPage) }
     }
 
     /// Sets this page aside.
@@ -501,26 +482,49 @@ struct BrowserView: View {
     /// row it used to have: it is a thing you turn on, like the rest of them.
     private var actionRow: some View {
         HStack(alignment: .top, spacing: 0) {
-            Button {
-                showMenu = false
-                if session.privateMode {
-                    // Only worth asking about when there is a page to lose.
-                    if pageUsable { confirmLeavingPrivate = true }
-                    else { leavePrivateMode(keepPage: false) }
-                } else if pageUsable {
-                    confirmEnteringPrivate = true
+            // A menu on the cell, not a dialog on the screen.
+            //
+            // Both used to be `confirmationDialog`s hung off the browser's
+            // outer stack, which on a phone is a sheet from the bottom edge and
+            // on an iPad a popover pointing at whatever it was attached to -
+            // either way, a question about this switch arriving nowhere near
+            // it. A menu opens on its own label. The panel is left standing
+            // while it is up, because closing it first would take the cell the
+            // menu is pointing at.
+            //
+            // Only when there is a page to lose; otherwise the switch has no
+            // consequence worth a question.
+            Group {
+                if pageUsable {
+                    Menu {
+                        Section(PrivateSwitch.message(turningOn: !session.privateMode)) {
+                            Button {
+                                showMenu = false
+                                switchPrivate(keepPage: true)
+                            } label: {
+                                Label("Keep this page", systemImage: "doc")
+                            }
+                            Button(role: .destructive) {
+                                showMenu = false
+                                switchPrivate(keepPage: false)
+                            } label: {
+                                Label("Close it", systemImage: "xmark")
+                            }
+                        }
+                    } label: {
+                        privateCell
+                    }
+                    .menuOrder(.fixed)
                 } else {
-                    enterPrivateMode(keepPage: false)
+                    Button {
+                        showMenu = false
+                        switchPrivate(keepPage: false)
+                    } label: {
+                        privateCell
+                    }
+                    .buttonStyle(.plain)
                 }
-            } label: {
-                gridCellLabel(
-                    "eyeglasses",
-                    session.privateMode ? "Private On" : "Private",
-                    enabled: true,
-                    tint: session.privateMode ? PanuraTheme.incognito : nil
-                )
             }
-            .buttonStyle(.plain)
 
             if let url = model.currentURL {
                 ShareLink(item: url) {
