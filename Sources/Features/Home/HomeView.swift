@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var editingBookmark: SiteEntry?
 
     @State private var showReport = false
+    @State private var showErase = false
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
     /// The card a Remove was asked for — held until it is confirmed.
@@ -78,6 +79,7 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
+        .sheet(isPresented: $showErase) { EraseAndExitSheet() }
         .sheet(item: $editingBookmark) { BookmarkEditor(entry: $0) }
         .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
         .confirmationDialog(
@@ -216,6 +218,14 @@ struct HomeView: View {
                     Button(role: .destructive) {
                         store.clearHistory()
                     } label: { Label("Clear History", systemImage: "trash") }
+                }
+                // Its own section: this one is not a bigger version of the
+                // button above it. That clears two lists and leaves you where
+                // you were; this can take everything and closes the app.
+                Section {
+                    Button(role: .destructive) {
+                        showErase = true
+                    } label: { Label("Erase Data & Exit", systemImage: "xmark.octagon") }
                 }
             }
         }

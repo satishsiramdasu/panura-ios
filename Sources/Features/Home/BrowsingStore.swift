@@ -292,6 +292,13 @@ final class BrowsingStore: ObservableObject {
         persistBookmarks()
     }
 
+    /// Only for Erase and Exit. Nothing else should wipe a list the user built
+    /// on purpose, which is why there is no "clear all" on the Bookmarks sheet.
+    func clearBookmarks() {
+        bookmarks.removeAll()
+        persistBookmarks()
+    }
+
     func updateBookmark(original: String, title: String, url: String) {
         guard let i = bookmarks.firstIndex(where: { $0.url == original }) else { return }
         bookmarks[i].title = title
