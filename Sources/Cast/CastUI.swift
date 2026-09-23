@@ -74,6 +74,85 @@ struct CastMark: View {
     }
 }
 
+/// Material's `cast`, drawn to its own geometry — the Chromecast glyph itself.
+///
+/// Not the same mark as ``CastMark``, and the difference is the point.
+/// ``CastMark`` is `connected_tv`: square corners, a stand, waves *inside* a
+/// closed screen. It is the app's own cast button, matched deliberately to
+/// Android's `PanuraIcons.ConnectedTv` so a screenshot from either phone shows
+/// the same control. This one is the icon Google publishes for Chromecast:
+/// rounded corners, no stand, and the lower-left corner of the frame left open
+/// with the waves standing in the gap.
+///
+/// So it is used for Chromecast device rows and nothing else. A row naming
+/// someone's Chromecast should carry the mark printed on the box, while the
+/// button that starts casting stays ours.
+///
+/// Transcribed from the 24dp path rather than approximated with strokes: the
+/// outline is a filled shape of varying implied weight, and stroking a rounded
+/// rectangle with two spans missing does not reproduce it.
+struct ChromecastMark: View {
+    var connected = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let u = min(geo.size.width, geo.size.height) / 24
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * u, y: y * u) }
+
+            Path { path in
+                // The frame: an open rounded rectangle. The left edge stops at
+                // y=8 and the bottom edge at x=14, which is the gap the waves
+                // occupy.
+                path.move(to: p(21, 3))
+                path.addLine(to: p(3, 3))
+                path.addCurve(to: p(1, 5), control1: p(1.9, 3), control2: p(1, 3.9))
+                path.addLine(to: p(1, 8))
+                path.addLine(to: p(3, 8))
+                path.addLine(to: p(3, 5))
+                path.addLine(to: p(21, 5))
+                path.addLine(to: p(21, 19))
+                path.addLine(to: p(14, 19))
+                path.addLine(to: p(14, 21))
+                path.addLine(to: p(21, 21))
+                path.addCurve(to: p(23, 19), control1: p(22.1, 21), control2: p(23, 20.1))
+                path.addLine(to: p(23, 5))
+                path.addCurve(to: p(21, 3), control1: p(23, 3.9), control2: p(22.1, 3))
+                path.closeSubpath()
+
+                // Innermost wave: a solid corner, as in the original.
+                path.move(to: p(1, 18))
+                path.addLine(to: p(1, 21))
+                path.addLine(to: p(4, 21))
+                path.addCurve(to: p(1, 18), control1: p(4, 19.34), control2: p(2.66, 18))
+                path.closeSubpath()
+
+                path.move(to: p(1, 14))
+                path.addLine(to: p(1, 16))
+                path.addCurve(to: p(6, 21), control1: p(3.76, 16), control2: p(6, 18.24))
+                path.addLine(to: p(8, 21))
+                path.addCurve(to: p(1, 14), control1: p(8, 17.13), control2: p(4.87, 14))
+                path.closeSubpath()
+
+                path.move(to: p(1, 10))
+                path.addLine(to: p(1, 12))
+                path.addCurve(to: p(10, 21), control1: p(5.97, 12), control2: p(10, 16.03))
+                path.addLine(to: p(12, 21))
+                path.addCurve(to: p(1, 10), control1: p(12, 14.92), control2: p(7.07, 10))
+                path.closeSubpath()
+            }
+            .overlay(alignment: .topLeading) {
+                // `cast_connected` fills the screen and leaves the waves alone.
+                if connected {
+                    Rectangle()
+                        .frame(width: 14 * u, height: 10 * u)
+                        .offset(x: 5 * u, y: 7 * u)
+                }
+            }
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
 /// The app's cast control, top-right on every screen — the same slot and the
 /// same job as Android's toolbar cast icon.
 ///
@@ -246,7 +325,10 @@ struct CastDevicesView: View {
                         title: device.name,
                         subtitle: chromecastSubtitle(device),
                         busy: cast.connecting == device.id,
-                        icon: { CastMark() }
+                        // The Chromecast's own mark, not ours: this row names
+                        // someone's device, and the glyph beside it should be
+                        // the one printed on the box.
+                        icon: { ChromecastMark() }
                     ) {
                         cast.connect(device)
                     }
