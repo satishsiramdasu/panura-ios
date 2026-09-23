@@ -247,6 +247,35 @@ struct WebViewContainer: UIViewRepresentable {
                 webView.observe(\.title, options: [.new]) { [weak self] wv, _ in
                     Task { @MainActor in self?.model.pageTitle = wv.title ?? "" }
                 },
+                // Let a page's own fullscreen video turn the phone.
+                //
+                // The app is locked to portrait outside the player, and that
+                // lock reaches a site's fullscreen video too - it is presented
+                // inside this app, so it inherits the app's orientation mask
+                // and was stuck upright with no way to turn it. A video filling
+                // the screen is the one moment on a phone where landscape is
+                // the point.
+                //
+                // `fullscreenState` covers the HTML Fullscreen API, which is
+                // what a desktop-layout site uses for its own player. A mobile
+                // site that hands a bare <video> to the system player is a
+                // different path: WebKit presents that in a window of its own,
+                // which declares its orientations independently of ours.
+                webView.observe(\.fullscreenState, options: [.new]) { wv, _ in
+                    Task { @MainActor in
+                        switch wv.fullscreenState {
+                        case .enteringFullscreen, .inFullscreen:
+                            OrientationManager.allowAll()
+                        default:
+                            // Only if nothing else is holding it open - the
+                            // app's own player sets a mask of its own and must
+                            // not have it reset from under it.
+                            if !PlaybackSession.shared.isPlayingSomething {
+                                OrientationManager.reset()
+                            }
+                        }
+                    }
+                },
                 // The only signal a single-page app gives. `history.pushState`
                 // fires no navigation delegate callback at all — not
                 // didStartProvisional, not didFinish — so without this a React
