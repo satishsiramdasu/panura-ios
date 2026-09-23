@@ -160,6 +160,7 @@ struct LocalVideosView: View {
 
     private var content: some View {
         VStack(spacing: 0) {
+            if model.limitedAccess { limitedBanner }
             if model.visible.isEmpty {
                 ContentUnavailableViewCompat(
                     title: emptyTitle, systemImage: "film", description: emptyMessage
@@ -189,16 +190,64 @@ struct LocalVideosView: View {
     /// nothing reads very differently from a library with no videos in it.
     private var emptyTitle: String {
         if !model.search.trimmingCharacters(in: .whitespaces).isEmpty { return "No matches" }
-        return model.album == nil ? "No videos" : "Empty album"
+        if model.album != nil { return "Empty album" }
+        // Under limited access an empty screen has two completely different
+        // causes - a phone with no videos on it, and a selection with none in
+        // it - and only one of them is the user's to fix. Photos will not tell
+        // us which: a limited library reports the chosen assets and nothing
+        // whatever about the rest. So when access is limited, say the thing
+        // that has an answer.
+        return model.limitedAccess ? "No videos selected" : "No videos"
     }
 
     private var emptyMessage: String {
         if !model.search.trimmingCharacters(in: .whitespaces).isEmpty {
             return "Nothing here is called that."
         }
-        return model.album == nil
-            ? "Videos in your library will show up here."
-            : "This album has no videos in it."
+        if model.album != nil { return "This album has no videos in it." }
+        return model.limitedAccess
+            ? "Panura can only see the videos you chose. Select more, or allow access to all of them."
+            : "Videos in your library will show up here."
+    }
+
+    /// Shown whenever access is limited, empty screen or not.
+    ///
+    /// The selection made at the first prompt is otherwise permanent from
+    /// inside the app - iOS never asks a second time, and the only other route
+    /// is several taps deep in Settings. `presentLimitedLibraryPicker` is the
+    /// sanctioned way back to it.
+    private var limitedBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checklist")
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.accent)
+            Text("Panura can see only the videos you chose.")
+                .font(.caption)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .lineLimit(2)
+            Spacer(minLength: 6)
+            Button("Select More") { presentLimitedPicker() }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PanuraTheme.accent)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(PanuraTheme.surfaceVariant)
+    }
+
+    private func presentLimitedPicker() {
+        guard let controller = Self.topViewController() else { return }
+        Task { await model.selectMoreVideos(from: controller) }
+    }
+
+    /// The frontmost controller, for the one Photos call that is UIKit-only.
+    private static func topViewController() -> UIViewController? {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        var top = scene?.keyWindow?.rootViewController
+        while let next = top?.presentedViewController { top = next }
+        return top
     }
 
     private func cell(_ item: LocalVideoAsset, at index: Int) -> some View {

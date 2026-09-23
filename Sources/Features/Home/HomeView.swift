@@ -36,13 +36,16 @@ struct HomeView: View {
                     brandBlock
                     bookmarksSection
                     if !store.continueWatching.isEmpty { continueWatchingSection }
+                    // Before the destinations, where the cast card used to
+                    // sit after them. Casting is something you reach for once
+                    // you have already chosen what to watch, which made it the
+                    // last card on a screen people open in order to start
+                    // watching. Picking a video *is* starting, so it goes with
+                    // Bookmarks and Continue Watching - the three ways to be
+                    // playing something within one tap - and Explore stays
+                    // below as the list of places to go instead.
+                    PickVideoCard().padding(.horizontal, 16)
                     quickAccessSection
-                    // After the destinations, not before them. Bookmarks and
-                    // Continue Watching are what someone opening the app came
-                    // for, and Quick Access is where they go if neither was it;
-                    // casting is what they reach for once they have picked
-                    // something, which is later than all three.
-                    CastHomeCard().padding(.horizontal, 16)
                     housekeepingRow
                 }
                 .padding(.vertical, 20)
@@ -357,7 +360,7 @@ struct HomeView: View {
                             .foregroundStyle(PanuraTheme.accent)
                     }
                 }
-                Text("WEB VIDEO PLAYER")
+                Text("VIDEO BROWSER")
                     .font(.caption2.weight(.medium))
                     .tracking(2)
                     .foregroundStyle(.secondary)

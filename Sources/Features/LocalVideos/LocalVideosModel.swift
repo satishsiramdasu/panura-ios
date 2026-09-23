@@ -101,6 +101,17 @@ final class LocalVideosModel: ObservableObject {
     }
     private static let layoutKey = "videos_layout"
 
+    /// True while Photos is granting access to a chosen subset rather than
+    /// the whole library.
+    ///
+    /// Worth a published flag of its own because the empty screen is otherwise
+    /// a lie: "no videos" and "no videos *you picked*" look identical, and only
+    /// one of them has an answer. This is the only way to tell them apart -
+    /// a limited library reports exactly what was chosen and nothing about the
+    /// rest, so counting assets cannot distinguish a phone with no videos from
+    /// a selection with none in it.
+    @Published private(set) var limitedAccess = false
+
     @Published var state: State = .loading
     @Published private(set) var albums: [VideoAlbum] = []
     /// nil = the whole library, which is where the tab opens.
@@ -175,13 +186,16 @@ final class LocalVideosModel: ObservableObject {
     func recheckAccess() async {
         switch state {
         case .needsPermission, .permissionDenied: await load()
-        default: break
+        // Limited access can be widened to the whole library in Settings, and
+        // that changes what this screen should show without changing its state.
+        default: if limitedAccess { await load() }
         }
     }
 
     /// Maps a Photos status onto a state, leaving `.loading` to mean "allowed,
     /// go and fetch" so the two callers above do not each repeat the switch.
     private func apply(_ status: PHAuthorizationStatus) {
+        limitedAccess = status == .limited
         switch status {
         case .authorized, .limited: state = .loading
         case .notDetermined: state = .needsPermission
@@ -191,6 +205,22 @@ final class LocalVideosModel: ObservableObject {
 
     /// Re-read the library after a delete, or when the album changes.
     func reload() async { await fetch() }
+
+    /// Opens Photos' own "choose which videos Panura can see" sheet.
+    ///
+    /// The other half of limited access. Without it the selection made at the
+    /// first prompt is permanent from inside the app: the system never asks
+    /// again, and Settings only offers the same sheet several taps further
+    /// away. Re-reads the library afterwards, because the picker returns no
+    /// result and the change is only visible by looking.
+    func selectMoreVideos(from controller: UIViewController) async {
+        await withCheckedContinuation { cont in
+            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: controller) { _ in
+                cont.resume()
+            }
+        }
+        await fetch()
+    }
 
     private func fetch() async {
         let token = UUID()
