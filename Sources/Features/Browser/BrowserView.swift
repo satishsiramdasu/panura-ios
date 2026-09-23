@@ -34,6 +34,13 @@ struct BrowserView: View {
     @State private var showAddress = false
     @State private var showReport = false
     @State private var toast: String?
+    /// Which end of the page the toast appears at.
+    ///
+    /// Beside whatever was pressed: the site panel hangs from the bar at the
+    /// top, and the found-video bar is along the bottom. A message about a tap
+    /// that appears at the other end of the screen from the tap reads as
+    /// something the app decided on its own.
+    @State private var toastAtBottom = false
     /// Asked when private browsing is switched OFF with a page still open — the
     /// session is live and is about to start being recorded again.
     @State private var confirmLeavingPrivate = false
@@ -61,13 +68,16 @@ struct BrowserView: View {
                     // modes means. The auto-click flag rides along for the same
                     // reason: user scripts are registered once, at creation.
                     .id("\(session.privateMode)-\(autoPlayClick)-\(adBlock)")
-                    // On the page, under the bar. It hung off the bottom of the
-                    // whole screen with 90 points of padding - a number that
-                    // cleared the bottom navigation bar, which no longer exists,
-                    // and did not clear the found-video bar, which does. Here
-                    // there is nothing to measure: the page starts under the
-                    // header and the toast starts with it.
-                    .overlay(alignment: .top) { toastView }
+                    // On the page, inside its own frame, so there is nothing
+                    // to measure: the page ends where the found-video bar
+                    // begins and where the cast bar begins, and a toast at the
+                    // bottom of it lands just above whichever is there.
+                    //
+                    // It used to hang off the bottom of the whole screen with
+                    // 90 points of padding, a number that cleared the bottom
+                    // navigation bar - which no longer exists - and did not
+                    // clear the found bar, which does.
+                    .overlay(alignment: toastAtBottom ? .bottom : .top) { toastView }
             }
 
             if showMenu {
@@ -275,7 +285,7 @@ struct BrowserView: View {
         Button {
             if saved {
                 store.removeWatchLater(url: url)
-                flash("Removed from Watch Later")
+                flash("Removed from Watch Later", fromBottom: boxed)
             } else {
                 // Both pictures, not the winner. The winner is whichever
                 // the page ranked first, and on a page that names two the
@@ -288,7 +298,7 @@ struct BrowserView: View {
                     poster: model.posterURL?.absoluteString,
                     posterAlt: model.posterFallbackURL?.absoluteString
                 )
-                flash("Saved to Watch Later")
+                flash("Saved to Watch Later", fromBottom: boxed)
             }
         } label: {
             Image(systemName: saved ? "clock.fill" : "clock")
@@ -677,12 +687,15 @@ struct BrowserView: View {
                 .padding(.vertical, 10)
                 .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
                 .shadow(color: .black.opacity(0.3), radius: 10, y: 3)
-                .padding(.top, 12)
+                .padding(toastAtBottom ? .bottom : .top, 12)
                 .transition(.opacity)
         }
     }
 
-    private func flash(_ message: String) {
+    /// `fromBottom` for anything pressed on the found-video bar; the default
+    /// suits the site panel and the bar at the top.
+    private func flash(_ message: String, fromBottom: Bool = false) {
+        toastAtBottom = fromBottom
         withAnimation { toast = message }
         Task {
             try? await Task.sleep(nanoseconds: 2_000_000_000)
