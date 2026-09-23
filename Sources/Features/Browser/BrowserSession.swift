@@ -1,5 +1,24 @@
 import SwiftUI
 
+/// The words both private-mode dialogs use.
+///
+/// Home's pill and the browser's panel switch the same thing with the same
+/// consequence, and they used to describe it differently - different titles,
+/// different buttons, and only one of them offering to keep the page. Two
+/// screens describing one switch two ways is two features as far as anyone
+/// reading them is concerned.
+enum PrivateSwitch {
+    static func title(turningOn: Bool) -> String {
+        turningOn ? "Start private browsing?" : "Turn off private browsing?"
+    }
+
+    static func message(turningOn: Bool) -> String {
+        turningOn
+            ? "Private browsing starts a fresh session. Keep the page you are on, or close it."
+            : "This session ends and history starts being recorded again. Keep the page you are on, or close it."
+    }
+}
+
 /// Browser state that outlives the browser screen.
 ///
 /// Two things need to be readable from outside `BrowserView`, and for the same
@@ -39,12 +58,18 @@ final class BrowserSession: ObservableObject {
 
     private init() {}
 
-    func setPrivateMode(_ on: Bool) {
+    /// - Parameter keepingPage: carry the open page across the switch.
+    ///
+    /// The web view is rebuilt on a different data store either way - that is
+    /// what private mode *is* - and `makeUIView` reloads from `lastURL`. So
+    /// keeping the page is simply not clearing it, and closing it is clearing
+    /// it. Both directions offer both, because both directions cost the page
+    /// and neither answer is obviously right: someone going private on a page
+    /// usually wants to carry on reading it privately, and someone coming out
+    /// may well want to bookmark what they were on.
+    func setPrivateMode(_ on: Bool, keepingPage: Bool = false) {
         guard privateMode != on else { return }
-        // The web view is rebuilt on a different data store, and it must not
-        // come back holding the page it had. Cleared here rather than at each
-        // call site so no future caller can forget.
-        lastURL = nil
+        if !keepingPage { lastURL = nil }
         privateMode = on
         // Bookmarks and resume points are explicit user actions and still
         // persist; only the passive record stops.

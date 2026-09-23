@@ -83,20 +83,23 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
+        // The browser's dialog, word for word. It is the same switch with the
+        // same consequence, and two screens describing it differently was two
+        // features as far as anyone reading them was concerned.
         .confirmationDialog(
-            session.privateMode ? "Turn off private browsing?" : "Close the open page?",
+            PrivateSwitch.title(turningOn: !session.privateMode),
             isPresented: $confirmPrivateSwitch,
             titleVisibility: .visible
         ) {
-            Button(
-                session.privateMode ? "Turn off and close" : "Close and go private",
-                role: .destructive
-            ) {
-                session.setPrivateMode(!session.privateMode)
+            Button("Keep this page") {
+                session.setPrivateMode(!session.privateMode, keepingPage: true)
+            }
+            Button("Close it", role: .destructive) {
+                session.setPrivateMode(!session.privateMode, keepingPage: false)
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Switching private browsing starts the browser again, so the page you have open will close.")
+            Text(PrivateSwitch.message(turningOn: !session.privateMode))
         }
         // An overlay, not a sheet: it has to arrive centred, where the eye
         // already is, rather than sliding up from the far end of the screen.

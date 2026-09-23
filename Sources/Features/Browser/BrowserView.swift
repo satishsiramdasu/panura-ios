@@ -260,24 +260,22 @@ struct BrowserView: View {
             isPresented: $confirmLeavingPrivate,
             titleVisibility: .visible
         ) {
-            Button("Close page", role: .destructive) { leavePrivateMode(keepPage: false) }
-            Button("Keep it open") { leavePrivateMode(keepPage: true) }
-            Button("Stay private", role: .cancel) {}
+            Button("Keep this page") { leavePrivateMode(keepPage: true) }
+            Button("Close it", role: .destructive) { leavePrivateMode(keepPage: false) }
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Private browsing is turning off, so this page will be recorded in history from now on.")
+            Text(PrivateSwitch.message(turningOn: false))
         }
         .confirmationDialog(
-            "Close this page?",
+            PrivateSwitch.title(turningOn: true),
             isPresented: $confirmEnteringPrivate,
             titleVisibility: .visible
         ) {
-            Button("Close and go private", role: .destructive) {
-                model.setPrivateMode(true)
-                flash("Private browsing on")
-            }
+            Button("Keep this page") { enterPrivateMode(keepPage: true) }
+            Button("Close it", role: .destructive) { enterPrivateMode(keepPage: false) }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Private browsing starts on a clean slate, so the page you are on will close.")
+            Text(PrivateSwitch.message(turningOn: true))
         }
     }
 
@@ -512,8 +510,7 @@ struct BrowserView: View {
                 } else if pageUsable {
                     confirmEnteringPrivate = true
                 } else {
-                    model.setPrivateMode(true)
-                    flash("Private browsing on")
+                    enterPrivateMode(keepPage: false)
                 }
             } label: {
                 gridCellLabel(
@@ -745,15 +742,21 @@ struct BrowserView: View {
     /// `keepPage` reopens the current URL in the persistent store. It cannot be
     /// carried across: the page we are on lives in a data store that is being
     /// thrown away, so keeping it means loading it again on the other side.
+    /// Both said here rather than at the buttons, because each happens from
+    /// two places: the button when there is no page to lose, and the dialog
+    /// when there is.
+    ///
+    /// Nothing re-navigates. The session keeps or clears `lastURL` and the
+    /// rebuilt web view loads whichever it finds, so "keep" and "close" are the
+    /// same code path with one flag.
     private func leavePrivateMode(keepPage: Bool) {
-        let current = model.currentURL?.absoluteString
-        model.setPrivateMode(false)
-        // Said here rather than at the button, because leaving happens from two
-        // places: the button when there is no page to lose, and the dialog when
-        // there is.
+        model.setPrivateMode(false, keepingPage: keepPage)
         flash("Private browsing off")
-        guard keepPage, let current else { return }
-        pendingAddress = current
+    }
+
+    private func enterPrivateMode(keepPage: Bool) {
+        model.setPrivateMode(true, keepingPage: keepPage)
+        flash("Private browsing on")
     }
 
     // MARK: detected videos

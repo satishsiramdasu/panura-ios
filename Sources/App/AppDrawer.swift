@@ -16,6 +16,13 @@ final class DrawerState: ObservableObject {
     /// so it is obvious what the drawer is covering and how to get back.
     static var width: CGFloat { min(UIScreen.main.bounds.width * 0.76, 320) }
 
+    /// The iPad's resting width: one glyph and its padding, nothing else.
+    ///
+    /// 40pt tile plus the row's 10pt each side plus the panel's 10pt each side.
+    /// Derived rather than guessed, so a change to the row does not silently
+    /// leave the rail too narrow or too wide for its own contents.
+    static let railWidth: CGFloat = 40 + 10 * 2 + 10 * 2
+
     static var motion: Animation { .spring(response: 0.34, dampingFraction: 0.86) }
 
     func toggle() { withAnimation(Self.motion) { isOpen.toggle() } }
@@ -56,10 +63,18 @@ struct AppDrawerPanel: View {
     let actions: [Item]
     /// Opens About, from the card that already names the version.
     let onAbout: () -> Void
+    /// Icons only, no labels - the iPad's resting state.
+    ///
+    /// The same panel, not a second one. Every row, in the same order, doing
+    /// the same thing; only the text and the identity card go. Building a
+    /// separate rail view would have meant two lists to keep in step, and the
+    /// first row added to one of them would have been the last time they
+    /// matched.
+    var collapsed: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            identity
+            if collapsed { railHeader } else { identity }
 
             ScrollView {
                 VStack(spacing: 2) {
@@ -131,6 +146,30 @@ struct AppDrawerPanel: View {
         .padding(.bottom, 10)
     }
 
+    /// What the identity card shrinks to: the logo alone, still opening About.
+    ///
+    /// The card cannot simply be dropped. It is the only route to About that is
+    /// not several taps into Settings, and a rail that begins with a row would
+    /// read as one more destination rather than as the app's own header.
+    private var railHeader: some View {
+        Button(action: onAbout) {
+            Image("AppLogo")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 34, height: 34)
+                .frame(width: 40, height: 40)
+                .background(
+                    PanuraTheme.accentContainer,
+                    in: RoundedRectangle(cornerRadius: PanuraTheme.cornerMedium)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("About Panura")
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+    }
+
     private func row(_ item: Item) -> some View {
         HStack(spacing: 14) {
             Image(systemName: item.icon)
@@ -139,21 +178,25 @@ struct AppDrawerPanel: View {
                 .frame(width: 40, height: 40)
                 .background(item.tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 11))
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.label)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(item.isCurrent ? PanuraTheme.accent : .primary)
-                if !item.detail.isEmpty {
-                    Text(item.detail)
-                        .font(.caption2)
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        .lineLimit(2)
+            if !collapsed {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.label)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(item.isCurrent ? PanuraTheme.accent : .primary)
+                    if !item.detail.isEmpty {
+                        Text(item.detail)
+                            .font(.caption2)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            .lineLimit(2)
+                    }
                 }
+                Spacer(minLength: 4)
             }
-            Spacer(minLength: 4)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 9)
+        // The label is gone, so the glyph is the only thing naming the row.
+        .accessibilityLabel(item.label)
         .background(
             RoundedRectangle(cornerRadius: 14)
                 .fill(item.isCurrent ? PanuraTheme.accentSoft : Color.clear)

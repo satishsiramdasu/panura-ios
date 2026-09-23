@@ -91,9 +91,12 @@ final class BrowserModel: ObservableObject {
     /// The caller rebuilds the web view (a data store cannot be swapped on a
     /// live one); this only has to say what the mode is and drop the findings
     /// that belonged to the session being thrown away.
-    func setPrivateMode(_ on: Bool) {
+    func setPrivateMode(_ on: Bool, keepingPage: Bool = false) {
         guard BrowserSession.shared.privateMode != on else { return }
-        BrowserSession.shared.setPrivateMode(on)
+        BrowserSession.shared.setPrivateMode(on, keepingPage: keepingPage)
+        // The findings go whatever happens: they were sniffed by a web view
+        // that is about to be thrown away, and a kept page re-sniffs itself
+        // when it reloads.
         clearFindings()
     }
 

@@ -72,7 +72,7 @@ struct RootTabView: View {
         DragGesture(minimumDistance: 24)
             .onEnded { value in
                 guard value.translation.width < -40 else { return }
-                dismissDrawerIfOverlay()
+                dismissDrawer()
             }
     }
 
@@ -95,10 +95,15 @@ struct RootTabView: View {
     /// it on every rotation would overrule someone who had just closed it.
     @State private var didOpenSidebar = false
 
-    /// Closing the drawer is a phone idea. On an iPad the sidebar is furniture:
-    /// pressing a row in it is not a reason to take it away.
-    private func dismissDrawerIfOverlay() {
-        guard !usesSidebar else { return }
+    /// Puts the drawer away after a row is pressed.
+    ///
+    /// It used to do nothing on an iPad, and that was right while closing meant
+    /// the sidebar vanished - pressing a row was no reason to take the
+    /// furniture away. Closing now means collapsing to the rail, which is
+    /// where the iPad rests anyway, so both platforms want it: the phone gets
+    /// its content back and the iPad gets its width back, and neither loses the
+    /// way in.
+    private func dismissDrawer() {
         drawer.close()
     }
 
@@ -114,7 +119,7 @@ struct RootTabView: View {
                     destinations: drawerDestinations,
                     actions: drawerActions,
                     onAbout: {
-                        dismissDrawerIfOverlay()
+                        dismissDrawer()
                         settingsDeepLink = .about
                         showSettings = true
                     }
@@ -168,19 +173,26 @@ struct RootTabView: View {
     /// puts it away when pressed.
     private var sidebarLayout: some View {
         HStack(spacing: 0) {
-            if drawer.isOpen {
-                AppDrawerPanel(
-                    destinations: drawerDestinations,
-                    actions: drawerActions,
-                    onAbout: {
-                        settingsDeepLink = .about
-                        showSettings = true
-                    }
-                )
-                .frame(width: DrawerState.width)
-                .transition(.move(edge: .leading))
-                Divider().overlay(PanuraTheme.surfaceVariant)
-            }
+            // Always present, never inserted or removed.
+            //
+            // It used to be wrapped in `if drawer.isOpen`, which put a view in
+            // and took it out of the HStack - and anything that changes what is
+            // in a container re-identifies what is beside it, so `shell` was
+            // rebuilt on every toggle, web view and all. The panel is now
+            // permanent and only its *width* changes, so the app beside it is
+            // the same view throughout.
+            AppDrawerPanel(
+                destinations: drawerDestinations,
+                actions: drawerActions,
+                onAbout: {
+                    settingsDeepLink = .about
+                    showSettings = true
+                },
+                collapsed: !drawer.isOpen
+            )
+            .frame(width: drawer.isOpen ? DrawerState.width : DrawerState.railWidth)
+            .clipped()
+            Divider().overlay(PanuraTheme.surfaceVariant)
             shell
         }
     }
@@ -190,6 +202,9 @@ struct RootTabView: View {
             if usesSidebar { sidebarLayout } else { pushLayout }
         }
         .onAppear {
+            // The rail is the resting state and needs no opening; this only
+            // still exists so a first launch on an iPad shows the full menu
+            // once, as an introduction to what the rail's glyphs are.
             guard usesSidebar, !didOpenSidebar else { return }
             didOpenSidebar = true
             drawer.isOpen = true
@@ -432,7 +447,7 @@ struct RootTabView: View {
 
     private func select(_ destination: AppDestination) {
         session.showBar()
-        dismissDrawerIfOverlay()
+        dismissDrawer()
         // Settings opens over whatever you were doing and hands it back when it
         // closes, rather than replacing it.
         guard destination != .settings else {
@@ -474,12 +489,12 @@ struct RootTabView: View {
                 icon: "questionmark.circle.fill", label: "Help",
                 detail: "Answers, and how to reach us",
                 tint: .blue
-            ) { dismissDrawerIfOverlay(); showFAQ = true },
+            ) { dismissDrawer(); showFAQ = true },
             AppDrawerPanel.Item(
                 icon: "exclamationmark.bubble.fill", label: "Report a problem",
                 detail: "A site that will not play, or anything broken",
                 tint: .orange
-            ) { dismissDrawerIfOverlay(); showReport = true },
+            ) { dismissDrawer(); showReport = true },
         ]
         // Only once there is a listing to open. A Rate row that goes nowhere is
         // worse than no Rate row.
@@ -490,7 +505,7 @@ struct RootTabView: View {
                     detail: "Leave a review on the App Store",
                     tint: .yellow
                 ) {
-                    dismissDrawerIfOverlay()
+                    dismissDrawer()
                     UIApplication.shared.open(VersionStore.storeURL)
                 }
             )
