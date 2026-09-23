@@ -1178,9 +1178,14 @@ struct BrowserView: View {
             // which on some pages was most of the screen before a single stream
             // was listed — and every page would then have a header of a
             // different height.
+            //
+            // 142x80 is what the Videos list gives a row, so a video found on a
+            // page and a video already on the phone are drawn at one size. The
+            // shape no longer decides what is cropped: a portrait poster fits
+            // inside it over a blur of itself.
             PosterThumb(
                 url: model.posterURL, alternate: model.posterFallbackURL,
-                fallback: "film", width: 104, height: 60, corner: 10
+                fallback: "film", width: 142, height: 80, corner: 8
             )
 
             VStack(alignment: .leading, spacing: 3) {

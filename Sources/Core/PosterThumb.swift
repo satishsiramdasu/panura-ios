@@ -25,9 +25,9 @@ struct PosterThumb: View {
     /// What to draw when there is no picture — a globe for a stream, a film
     /// frame for something in the library.
     var fallback: String = "film"
-    var width: CGFloat = 54
-    var height: CGFloat = 32
-    var corner: CGFloat = 7
+    var width: CGFloat = 142
+    var height: CGFloat = 80
+    var corner: CGFloat = 8
 
     @State private var fellBack = false
 
@@ -37,14 +37,12 @@ struct PosterThumb: View {
                 .fill(PanuraTheme.surfaceVariant)
 
             if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
+                fitted(Image(uiImage: image))
             } else if let shown = fellBack ? alternate : url {
                 AsyncImage(url: shown) { phase in
                     switch phase {
                     case let .success(image):
-                        image.resizable().scaledToFill()
+                        fitted(image)
                     case .failure:
                         if !fellBack, alternate != nil {
                             // Drawn as the glyph for the instant it takes to
@@ -66,6 +64,34 @@ struct PosterThumb: View {
         }
         .frame(width: width, height: height)
         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+    }
+
+    /// The whole picture, whatever shape it is, over a blur of itself.
+    ///
+    /// Posters are not one shape: a film site publishes a portrait sheet, a
+    /// video site a 16:9 still, and plenty publish a square. Filling the box
+    /// with any of them crops the other two — a portrait poster loses its top
+    /// and bottom, which is where the title usually is. Fitting instead leaves
+    /// bars, and the blown-up blur behind is what cinemas and every television
+    /// app put in those bars: it is made of the picture, so it is always the
+    /// right colour, and it reads as depth rather than as empty space.
+    @ViewBuilder
+    private func fitted(_ image: Image) -> some View {
+        ZStack {
+            image
+                .resizable()
+                .scaledToFill()
+                // A blur samples past its own edges, and clipping afterwards
+                // leaves a pale rim where it ran out of picture. Oversizing the
+                // layer puts that rim outside the box.
+                .scaleEffect(1.25)
+                .blur(radius: 14, opaque: true)
+                .opacity(0.55)
+
+            image
+                .resizable()
+                .scaledToFit()
+        }
     }
 
     private var glyph: some View {

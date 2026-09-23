@@ -81,13 +81,13 @@ struct WatchLaterView: View {
     private func row(_ entry: SiteEntry) -> some View {
         HStack(spacing: 12) {
             if entry.isLocal == true {
-                LibraryThumb(localIdentifier: entry.url, width: 92, height: 52, corner: 8)
+                LibraryThumb(localIdentifier: entry.url, width: 142, height: 80, corner: 8)
             } else {
                 PosterThumb(
                     url: entry.poster.flatMap(URL.init(string:)),
                     alternate: entry.posterAlt.flatMap(URL.init(string:)),
                     fallback: "globe",
-                    width: 92, height: 52, corner: 8
+                    width: 142, height: 80, corner: 8
                 )
             }
             VStack(alignment: .leading, spacing: 3) {
