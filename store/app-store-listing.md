@@ -540,9 +540,12 @@ what was found, with a Play button on it. If the page offers several streams the
 bar shows a count instead, and tapping it lists them to choose from. No account
 or sign-in is needed.
 
-A public-domain page that demonstrates it end to end, if you would like one:
-archive.org/details/BigBuckBunny_124 — press play on the page's own player, then
-press Play on the bar that appears at the bottom of the screen.
+A page that demonstrates it end to end, if you would like one: panura.app/demo —
+our own sample page, carrying a Creative Commons clip in two qualities. Press play
+on the page's own player, then press Play on the bar that appears at the bottom of
+the screen; the bar shows a count of 2, and tapping it lists both qualities.
+archive.org/details/BigBuckBunny_124 is a public-domain page that works the same
+way if you would rather use one that is not ours.
 ```
 
 **The detection manifest is deliberately not mentioned in the notes — option B,
@@ -590,6 +593,37 @@ sold, and it is what the App Store shows in search results.
 After that, in order: the player with its controls up, the subtitle options,
 "Play on TV" with a device listed, and the Videos tab.
 
+**The page it is shot on is `https://panura.app/demo`** — a video page built for
+this, laid out the way an ordinary one is: player, title, meta row, channel,
+description, up-next list. It carries a ten-second excerpt of *Big Buck Bunny*
+(© 2008 Blender Foundation, CC BY 3.0, attributed on the page) in two renditions,
+so the found-stream bar has a real quality list to show rather than one row.
+
+Three things were rejected on the way to it:
+
+- **`/support`**, which the run used before. Clean, and useless: a found-stream
+  bar floating over a FAQ shows the feature working on nothing.
+- **`demo.mediacms.io`**, an open-source project's public demo. Their branding
+  would be in our store metadata, which Apple reads for third-party marks, and
+  the page could change or go down between the screenshot and the review.
+- **Hot-linking the clip** from a public test bucket. `Tools/make-demo-clip.swift`
+  already exists because of this rule: nobody else's CDN gets to decide whether a
+  screenshot run produces an image. The two MP4s are served from `public/demo/` in
+  the panura repo, cached immutably in `_headers`.
+
+It is also the page named in Notes for App Review, so it has to keep working.
+
+**On iPad, only the Home shot has the menu open.** Every other screen is shot with
+the navigation rail — icon-only — because that is the resting state the design
+settled on, and a screenshot showing the full labelled menu on all five screens
+says the app eats 260pt of an iPad for a menu nobody asked for. Home is the one
+place the open menu is the subject.
+
+That was not just a capture note: `didOpenSidebar` was `@State`, so the one-time
+introduction fired **once per launch** rather than once ever, and every cold start
+on an iPad popped the menu open. It is `@AppStorage("ipad_drawer_intro_shown")`
+now, and the screenshot run suppresses it on every screen but Home.
+
 ### How they are captured — by hand, decided 2026-09-19
 
 On the real devices, from the TestFlight build:
@@ -636,4 +670,5 @@ changes and nobody wants to redo five screens twice.
 One trap it did catch, which applies however the shots are taken: **the browser
 screenshot must not show panura.app's home page**, which carries a Google Play
 badge. App Review guideline 2.3.10 rejects metadata naming or showing another
-mobile platform, and screenshots are metadata. `panura.app/support` is clean.
+mobile platform, and screenshots are metadata. `panura.app/demo` names no
+platform — that is a requirement of the page, not an accident of it.

@@ -53,11 +53,17 @@ enum ScreenshotMode {
     /// The page the browser shot is taken on: our own, so no other company's
     /// branding ends up in a screenshot on the App Store.
     ///
-    /// `/support`, not the site root. The root carries a Google Play badge, and
-    /// App Review guideline 2.3.10 rejects metadata naming or showing another
-    /// mobile platform — screenshots are metadata. The support page mentions no
+    /// A purpose-built video page, not `/support` as before. The support page is
+    /// clean but it is a support page — a found-stream bar floating over a FAQ
+    /// shows the feature working on nothing, and the first screenshot is the one
+    /// place detection gets sold. `/demo` is laid out like an ordinary video page
+    /// and carries two real renditions for the bar to have found.
+    ///
+    /// Not the site root, and never the site root: it carries a Google Play
+    /// badge, and App Review guideline 2.3.10 rejects metadata naming or showing
+    /// another mobile platform — screenshots are metadata. `/demo` names no
     /// platform at all.
-    static let page = "https://panura.app/support"
+    static let page = "https://panura.app/demo"
 
     /// Written before `BrowsingStore.shared` is first touched — it loads its
     /// lists in `init`, so anything set afterwards would not be read until the
@@ -109,21 +115,25 @@ enum ScreenshotMode {
     /// Two of them, of different qualities, because one is the case the bar was
     /// redesigned away from: the badge counts and the quality rows are what the
     /// screenshot is for.
+    /// These are the real URLs the demo page carries, so the bar in the
+    /// screenshot shows what a device actually finds on it. They stay a fixture
+    /// rather than being left to detection because a CI runner's cold web view
+    /// deciding whether the bar is populated is how a run produces an empty shot.
     static func demoVideos() -> [ExtractedVideo] {
-        let base = "https://cdn.panura.app/demo"
+        let base = "https://panura.app/demo"
         return [
             ExtractedVideo(
-                url: URL(string: "\(base)/1080p/index.m3u8")!,
-                title: "Coastline drive",
+                url: URL(string: "\(base)/clip-1080.mp4")!,
+                title: "Big Buck Bunny — open movie sample",
                 headers: [:],
-                contentType: "hls",
+                contentType: "mp4",
                 source: .network
             ),
             ExtractedVideo(
-                url: URL(string: "\(base)/720p/index.m3u8")!,
-                title: "Coastline drive",
+                url: URL(string: "\(base)/clip-720.mp4")!,
+                title: "Big Buck Bunny — open movie sample",
                 headers: [:],
-                contentType: "hls",
+                contentType: "mp4",
                 source: .network
             ),
         ]

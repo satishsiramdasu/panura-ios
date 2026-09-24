@@ -93,7 +93,15 @@ struct RootTabView: View {
     }
     /// The sidebar starts open on an iPad, but only the first time. Reopening
     /// it on every rotation would overrule someone who had just closed it.
-    @State private var didOpenSidebar = false
+    /// Whether the one-time "here is what the rail's glyphs are" opening has
+    /// happened.
+    ///
+    /// `@AppStorage`, not `@State`, and that is the whole fix: as `@State` this
+    /// reset with every process, so the comment below said "a first launch" while
+    /// the code meant "every launch" — an iPad popped the full menu open on each
+    /// cold start and the rail, which is supposed to be the resting state, was
+    /// never what anybody saw.
+    @AppStorage("ipad_drawer_intro_shown") private var drawerIntroShown = false
 
     /// Puts the drawer away after a row is pressed.
     ///
@@ -216,10 +224,17 @@ struct RootTabView: View {
         }
         .onAppear {
             // The rail is the resting state and needs no opening; this only
-            // still exists so a first launch on an iPad shows the full menu
-            // once, as an introduction to what the rail's glyphs are.
-            guard usesSidebar, !didOpenSidebar else { return }
-            didOpenSidebar = true
+            // still exists so the very first launch on an iPad shows the full
+            // menu once, as an introduction to what the rail's glyphs are.
+            guard usesSidebar, !drawerIntroShown else { return }
+            #if DEBUG
+            // Home is the one screenshot that wants the menu open — it is the
+            // screen where the labelled menu is the thing being shown. Every
+            // other shot wants the rail, and a simulator that has never launched
+            // before would otherwise take the introduction on all four.
+            if ScreenshotMode.isActive, ScreenshotMode.screen != "home" { return }
+            #endif
+            drawerIntroShown = true
             drawer.isOpen = true
         }
         .background(PanuraTheme.surfaceContainer.ignoresSafeArea())
