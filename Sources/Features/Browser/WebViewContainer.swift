@@ -136,19 +136,25 @@ struct WebViewContainer: UIViewRepresentable {
         // the rest of the string stays whatever WebKit says it is. Desktop mode
         // still replaces the whole UA with `BrowserModel.desktopUA`.
         //
-        // The exact tokens matter more than they look. This said
-        // `Version/17.0 Safari/605.1.15` for a day, and mobile YouTube took
-        // about ten seconds to start every video while desktop mode - which
-        // sends a clean canonical UA - started at once. `605.1.15` is a WebKit
-        // build number, not a Safari one; real Safari sends `Safari/604.1`.
-        // YouTube parses the UA to choose codecs, MSE behaviour and which
-        // player bundle to serve, so a Safari it does not recognise gets a
-        // conservative path and a long buffer before the first frame.
+        // The tokens are Safari's own: `605.1.15` is a WebKit build number, not
+        // a Safari one, and real Safari sends `Safari/604.1`. This said
+        // `Version/17.0 Safari/605.1.15` for a day, which was simply wrong, so
+        // the numbers are worth keeping right whatever else is true.
         //
-        // Still not byte-identical to Safari, which puts `Version` before
-        // `Mobile` - appending cannot reach that position without rebuilding
-        // the whole string and hard-coding the OS. If a site still misreads
-        // this, that is the next step, not a different pair of numbers.
+        // ⚠️ **It did not fix the ten-second stall, so do not chase the UA for
+        // that.** Mobile YouTube takes about ten seconds to start a video while
+        // desktop mode starts at once, and the canonical-UA theory - that
+        // YouTube parses the UA to pick codecs, MSE behaviour and player bundle,
+        // and gives an unrecognised Safari a conservative path - was tested on
+        // device on 2026-09-24 and is false: the stall is unchanged with these
+        // tokens. Unresolved and deferred, deliberately. The remaining
+        // difference from real Safari is `Version`'s position (Safari puts it
+        // before `Mobile`, and appending cannot reach that spot without
+        // rebuilding the whole string and hard-coding the OS) - but after the
+        // above, that is a guess with a poor prior, not the next step. Look at
+        // what the player actually waits on instead: which requests are in
+        // flight during those ten seconds, and whether the content blocker or
+        // InlineVideoScript is holding one of them up.
         config.applicationNameForUserAgent = "Version/18.0 Safari/604.1"
         config.allowsInlineMediaPlayback = true
         // The HTML5 Fullscreen API, off by default in WKWebView.
