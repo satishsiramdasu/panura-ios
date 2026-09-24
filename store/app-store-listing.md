@@ -236,7 +236,7 @@ same release is the kind of thing reviewers notice.
 
 Firebase Crashlytics and Analytics are in the app, so the answer is **not**
 "Data Not Collected". App Store Connect → App Privacy → Get Started → **Yes, we
-collect data from this app**, then tick exactly these five:
+collect data from this app**, then tick exactly these seven:
 
 **Answered 2026-09-23.** Seven types, none linked, none used for tracking.
 `Resources/PrivacyInfo.xcprivacy` declares the same seven with the same
@@ -308,8 +308,28 @@ device. Analytics' automatic screen events name the app's screens, never the
 pages visited. A report the user chooses to send carries the page address and
 their text, to Panura's own worker, not to Firebase.
 
-`Resources/PrivacyInfo.xcprivacy` declares the same five types. Change one,
+`Resources/PrivacyInfo.xcprivacy` declares the same seven types. Change one,
 change the other.
+
+### The ATT key blocked submission — fixed 2026-09-24, needs a new build
+
+"Add for Review" refused the first attempt with: *your app contains
+`NSUserTrackingUsageDescription`, indicating that it may request permission to
+track users. To submit for review, update your App Privacy response to indicate
+that data collected from this app will be used for tracking purposes, or update
+your app binary and upload a new build.*
+
+Apple offers two ways out and only one of them is honest. **Declaring tracking
+would be a false statement to App Review** — 2.3 Accurate Metadata — and would
+hang a "Data Used to Track You" panel on the listing of an app that does not
+track: `AdManager.startIfEnabled` returns on `FeatureFlags.adsEnabled` *before*
+it reaches ATT, so with ads off the prompt cannot be raised at all, and
+`NSPrivacyTracking` is false for the same reason.
+
+So the key is gone from `project.yml` and the build has to be re-uploaded. The
+string itself is preserved in the comment that replaced it, because restoring it
+is part of turning ads on and the wording was already settled. **The table above
+does not change** — the answers were never the problem, the plist was.
 
 ⚠️ **Turning ads on changes this again.** Personalised AdMob ads add Usage Data →
 Advertising Data, mark Device ID as used for tracking, flip `NSPrivacyTracking`
@@ -373,6 +393,23 @@ chevron is 6.84 and reads as enabled.
 
 **Accessibility URL: blank.** A thin page describing work not yet done is worse
 than none.
+
+## Price: Free, no in-app purchases
+
+**Pricing and Availability → Price Schedule → Free.** App Store Connect will not
+let the app be submitted until a tier is chosen, and no tier is chosen by default
+— which is what "You must choose a price tier in Pricing" means.
+
+Free is not a placeholder. The Android app is free with interstitials, the
+business model is the same one, and `FeatureFlags.adsEnabled` being false in 1.0
+makes this release free in the plainest sense: no price, no ads, nothing to buy.
+Charging for a first version of a browser-plus-player, in a category where VLC
+and Infuse set the free floor, sells nothing.
+
+There are no in-app purchases and no subscriptions, so the IAP section stays
+empty and the "Paid Apps" agreement is not needed — only the Free Apps agreement,
+which the account already has. A price can be changed later without a new build;
+adding IAP cannot.
 
 ## Availability — the EU and mainland China are out for 1.0
 

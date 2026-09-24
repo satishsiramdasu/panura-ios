@@ -130,11 +130,29 @@ targets:
         # HTTPS and the system's own crypto only — no encryption of our own — so
         # the app is exempt. Without this key every single upload stops and asks.
         ITSAppUsesNonExemptEncryption: false
-        # Shown by the ATT prompt, which is only ever raised when ads are on.
-        # Apple rejects an app that calls ATTrackingManager without this string.
-        NSUserTrackingUsageDescription: >-
-          Panura asks so ads can be kept relevant. Say no and you still get the
-          same app, with generic ads instead.
+        # NSUserTrackingUsageDescription is deliberately ABSENT, and putting it
+        # back without turning ads on will block submission again.
+        #
+        # App Store Connect refuses "Add for Review" for any build carrying this
+        # key unless the App Privacy answers say data IS used for tracking. This
+        # app never asks: `AdManager.startIfEnabled` returns on
+        # `FeatureFlags.adsEnabled` *before* it reaches ATT, so with ads off the
+        # prompt cannot be raised, nothing is tracked, and
+        # `PrivacyInfo.xcprivacy` declares `NSPrivacyTracking` false. Declaring
+        # tracking to clear the block would be a false statement to App Review —
+        # 2.3 Accurate Metadata — and would put a "Data Used to Track You" panel
+        # on a listing for an app that does not.
+        #
+        # The string is kept here because turning ads on means restoring it, and
+        # the wording was already settled:
+        #
+        #   Panura asks so ads can be kept relevant. Say no and you still get
+        #   the same app, with generic ads instead.
+        #
+        # Restoring it is one of the five things ads require — the others are in
+        # PrivacyInfo.xcprivacy and store/app-store-listing.md. Apple rejects an
+        # app that calls ATTrackingManager with no string, so it goes back the
+        # same release the flag flips, not later.
     # Firebase config, copied into the bundle only if it exists.
     #
     # Not a source entry, even an `optional: true` one: that flag only stops
