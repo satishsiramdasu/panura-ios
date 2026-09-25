@@ -556,33 +556,52 @@ The app requests:
   Discovery only runs while the "Play on TV" screen is open.
 - Background audio, only when the user turns background play on in Settings.
 
-App Transport Security allows arbitrary loads because the app is a browser and
-must reach sites that are still HTTP. It is not used to weaken any connection of
-our own.
+App Transport Security allows arbitrary loads because a browser must reach sites
+that are still HTTP; no connection of our own is weakened.
 
-This build does not show ads. The Google Mobile Ads SDK is linked but gated off
-at compile time (FeatureFlags.adsEnabled = false), so it is never initialised,
-no ad is requested, and the App Tracking Transparency prompt is never shown.
+This build shows no ads: the Google Mobile Ads SDK is linked but gated off at
+compile time, never initialised, and the App Tracking Transparency prompt is
+never shown.
 
-Firebase Crashlytics and Analytics are used for crash reports and aggregate
-usage statistics. Neither is linked to an identity (there are no accounts) or
-used for tracking, as declared in the privacy label. Browsing history and the
-pages a user visits are never sent anywhere; the only playback events we log
-record the format (for example "hls" or "mkv") and which of the app's two
-playback engines handled it, never an address.
+Firebase Crashlytics and Analytics are used for crash reports and aggregate usage
+statistics, neither linked to an identity (there are no accounts) nor used for
+tracking. Browsing history and the pages a user visits are never sent anywhere.
+The only playback events logged record the format ("hls", "mkv") and which of the
+two engines played it, never an address.
 
-To try the app: open it, type any site with video into the address bar, and press
-play on that site's player. A bar appears at the bottom of the browser naming
-what was found, with a Play button on it. If the page offers several streams the
-bar shows a count instead, and tapping it lists them to choose from. No account
-or sign-in is needed.
+To try it: type any site with video into the address bar and press play on that
+site's own player. A bar appears at the bottom naming what was found, with a Play
+button; if the page offers several streams it shows a count, and tapping it lists
+them. No account or sign-in is needed. A page that demonstrates it end to end is
+panura.app/demo, our own sample page carrying a Creative Commons clip in two
+qualities, so the bar shows 2. archive.org/details/BigBuckBunny_124 works the
+same way if you would rather use a page that is not ours.
 
-A page that demonstrates it end to end, if you would like one: panura.app/demo —
-our own sample page, carrying a Creative Commons clip in two qualities. Press play
-on the page's own player, then press Play on the bar that appears at the bottom of
-the screen; the bar shows a count of 2, and tapping it lists both qualities.
-archive.org/details/BigBuckBunny_124 is a public-domain page that works the same
-way if you would rather use one that is not ours.
+PURPOSE AND AUDIENCE: web players offer no subtitle control, no format range, no
+casting and no resume - Panura's does, and the same player opens the user's own
+videos. For adults who watch video on the web on a phone or iPad.
+
+NO ACCOUNTS of any kind - no registration, login or account deletion. No
+user-generated content, so nothing to report or block. No paid content, no in-app
+purchase, no subscription. Nothing is gated and no credentials are needed.
+
+EXTERNAL SERVICES: Google - Analytics for Firebase, Crashlytics, Cast SDK, and
+address-bar completion via suggestqueries.google.com (search terms only; anything
+containing "://" or beginning "www." is refused). Google Mobile Ads and
+UserMessagingPlatform are linked but compiled off. Filter lists fetched and
+compiled on device into a WKContentRuleList: EasyList, EasyPrivacy, uBlock Origin,
+AdGuard mobile, oisd. Ours: panura.app/version.json (version and changelog),
+panura.app/manifest.json (tunes stream detection; cannot enable a feature), and a
+Cloudflare Worker receiving Report a Problem. VLCKit is a bundled engine, not a
+service. No authentication, payment, AI or content-provider service.
+
+REGIONS: the app behaves identically in every region where it is available.
+Nothing is geo-gated.
+
+PROTECTED THIRD-PARTY MATERIAL: none is shipped, hosted, bundled or indexed. The
+only media we host is on our own demo page, panura.app/demo: a ten-second excerpt
+of "Big Buck Bunny", (c) 2008 Blender Foundation, published under Creative Commons
+Attribution 3.0 and attributed on the page.
 ```
 
 **The detection manifest is deliberately not mentioned in the notes — option B,
@@ -608,6 +627,146 @@ changes functionality after review. This is why `FeatureFlags.adsEnabled` is
 compile-time and must stay compile-time.
 
 ---
+
+## Guideline 2.1 Information Needed — asked 2026-09-25
+
+Not a rejection of anything in the app. It is the questionnaire Apple sends every
+developer account with little review history: a screen recording plus six written
+answers. Nothing was found wrong; nothing in the build or the metadata has to
+change.
+
+The six answers are condensed into the Notes block above, because Apple asks for
+them there as well as in the reply ("for reference on future submissions"). The
+Notes field caps at **4000 characters**, which is why several paragraphs were
+tightened when these were added — it now sits at ~3900 including newlines. Anything
+added later has to come out of something else.
+
+### The recording — what it must and must not show
+
+Apple watches this for 5.2.3 as much as for completeness, so the choice of page
+matters more than the production does.
+
+**Browse panura.app/demo, and archive.org if a second is wanted. Nothing else.**
+Not a site that streams films it has no right to, not one wrapped in pop-ups for
+them — a reviewer seeing that, in a recording *we* chose, learns what the app is
+for from the one piece of evidence we controlled entirely. Everything the notes
+say about no catalogue and no directory is true and stays true; the recording has
+to look like it too.
+
+One take, physical device, latest iOS, starting with the app launching:
+
+1. Launch → Home.
+2. Address bar → `panura.app/demo` → press play on the page's own player → the
+   found bar appears showing **2** → tap it → the quality list → Play.
+3. The player: controls up, subtitle options, aspect, speed, rotate.
+4. Back → **Videos** tab → allow Photos when asked → open one → the same player.
+5. **Play on TV** → the scan. Show a device being found if there is one on the
+   network; if not, let the scan run so it is plain the feature is real.
+6. **Settings** → blocking, playback engine, background audio.
+
+No account flow, no IAP, no UGC reporting to film — there are none, and the reply
+says so rather than leaving Apple to wonder. Keep it two to three minutes; attach
+it in Resolution Center rather than linking to it, so nothing depends on a
+third-party host resolving.
+
+### The reply, in full
+
+```
+Thank you for the review. All six items are answered below, and the same
+information has been added to the Notes field in App Review Information.
+
+1. SCREEN RECORDING
+Attached, recorded on a physical iPhone running the current iOS, beginning with
+the app launching. It shows the typical flow: Home, browsing to a video page,
+the stream being detected, playback in Panura's player with its subtitle and
+aspect controls, a video from the device's own photo library opening in the same
+player, the Play on TV screen, and Settings.
+The app has no account registration, no login and no account deletion, because it
+has no accounts of any kind. It hosts no user-generated content, so there is
+nothing to report or block. There is no paid content, no in-app purchase and no
+subscription: the app is free, and this build shows no ads.
+
+2. PURPOSE AND TARGET AUDIENCE
+Panura is a web browser and a video player in one.
+The problem: video on the open web plays in whatever player the page happens to
+provide. Those players usually offer no subtitle control, no choice of audio
+track, no playback speed, no resume, no background audio, no Picture in Picture
+and no way to send the video to a television — and many formats will not play at
+all. The user's own videos, already on the phone, need a separate app again.
+What Panura does: when a page plays a video, Panura detects the stream that page
+is already loading and offers to play the same video in its own player, which
+handles HLS, DASH, MP4, MKV, AVI, WebM and more, embedded and external subtitles,
+audio-track selection, speed and aspect control, background audio, Picture in
+Picture, and casting to a Chromecast or to an Android TV. That same player opens
+the videos already in the user's photo library.
+Audience: adults who watch video on the web on a phone or iPad. The app is rated
+16+ for unrestricted web access, in the same position as any third-party browser.
+
+3. SETTING UP AND ACCESSING THE MAIN FEATURES
+Nothing is gated. There is no login, no credential and no sample file to install.
+- Detection: open the app, type a site with video into the address bar, and press
+  play on that site's own player. A bar appears at the bottom of the browser
+  naming what was found, with a Play button on it. If the page offers several
+  qualities the bar shows a count instead, and tapping it lists them.
+  A page that demonstrates this end to end: https://panura.app/demo — our own
+  sample page, carrying a Creative Commons clip in two qualities, so the bar
+  shows 2. https://archive.org/details/BigBuckBunny_124 is a public-domain page
+  that works the same way if you would prefer one that is not ours.
+- The user's own videos: the Videos tab, allowing Photos access when asked. Only
+  video assets are read, and only while that tab is open.
+- Play on TV: open Play on TV and the app looks for a Chromecast, or for the
+  Panura receiver on an Android TV, on the same Wi-Fi network. A television on
+  the network is needed to see this one finish.
+- Settings: subtitle appearance, playback engine, background audio, and the ad
+  and tracker blocking used in the browser.
+
+4. EXTERNAL SERVICES, TOOLS AND PLATFORMS
+Google: Google Analytics for Firebase and Firebase Crashlytics (aggregate usage
+statistics and crash reports), the Google Cast SDK (finding and playing to a
+Chromecast), and address-bar completion via suggestqueries.google.com — search
+terms only, never a URL; the code refuses to send anything containing "://" or
+beginning "www.". The Google Mobile Ads SDK and UserMessagingPlatform are linked
+into the binary but disabled at compile time (FeatureFlags.adsEnabled = false) and
+never initialised, so this build requests no ads and shows none.
+Ad and tracker filter lists, downloaded and compiled on the device into a
+WKContentRuleList: EasyList and EasyPrivacy (easylist.to), uBlock Origin's filter
+lists (ublockorigin.github.io), AdGuard's mobile filter (filters.adtidy.org) and
+oisd (small.oisd.nl).
+Our own: panura.app/version.json, the current version and changelog for the
+in-app update notice; panura.app/manifest.json, settings that tune how streams
+are recognised and which cannot enable any feature the reviewed build does not
+already have; and a Cloudflare Worker that receives a Report a Problem message
+(the page address and the text the user typed, nothing identifying).
+Bundled libraries rather than services: VLCKit (VideoLAN) as the second playback
+engine, and a local HTTP server used only to relay a stream to a television on
+the same network. Neither contacts anything of ours.
+There is no authentication service, no payment processor, no AI service, and no
+content provider or data provider — the app has no catalogue for one to supply.
+
+5. REGIONAL DIFFERENCES
+There are none. The app behaves identically in every region where it is
+available: no feature, content or restriction varies by country, and nothing is
+geo-gated or geo-detected. For business reasons the app is not distributed in the
+27 EU member states or in mainland China, which is a choice about where it is
+sold, not a difference in what it does.
+
+6. REGULATED INDUSTRY AND PROTECTED THIRD-PARTY MATERIAL
+Neither applies. The app is not in a regulated industry, and it ships no
+third-party content. It hosts no media, bundles none and indexes none. There is
+no catalogue, no directory, no recommendations and no search across other
+people's sites, and the app never suggests a site to visit — the first screen is
+a browser address bar. What plays is whatever page the user typed in themselves,
+exactly as it would in Safari, plus files already in their own photo library.
+There is no download feature on iOS: nothing browsed to can be saved to the
+device.
+The only media we host anywhere is on our own demo page, https://panura.app/demo:
+a ten-second excerpt of "Big Buck Bunny", © 2008 Blender Foundation, published
+under the Creative Commons Attribution 3.0 licence
+(https://creativecommons.org/licenses/by/3.0/) and attributed on the page itself.
+That licence permits redistribution, including commercially.
+YouTube and its associated domains are explicitly blocked from detection, in line
+with their terms.
+```
 
 ## Screenshots
 
