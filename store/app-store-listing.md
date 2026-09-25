@@ -534,74 +534,66 @@ Paste this into the review notes field. Every paragraph answers a question this
 app will otherwise be asked.
 
 ```
-Panura is a web browser with a video player attached. The user browses to a page
+Panura is a web browser and a video player in one. The user browses to a page
 themselves; when that page plays a video, Panura detects the stream the page is
-already loading and offers to play it in its own player, which handles formats
-and subtitle options the web player does not.
+already loading and offers to play the same video in its own player, which
+handles more formats and gives the subtitle, audio-track, speed and aspect
+control the page's own player does not. That same player opens videos already in
+the user's photo library. For adults who watch video on the web.
 
-No content is hosted, indexed, bundled or recommended by us. There is no
-catalogue, no directory, and no search across other people's sites; the app
-never suggests a site to visit. The first screen is a browser address bar.
+No content is hosted, bundled, indexed or recommended by us. There is no
+catalogue, no directory, no recommendations and no search across other people's
+sites, and the app never suggests a site to visit. The first screen is a browser
+address bar. The only media we host anywhere is on our own demo page,
+panura.app/demo: a ten-second excerpt of "Big Buck Bunny", (c) 2008 Blender
+Foundation, under Creative Commons Attribution 3.0 and attributed there.
 
-There is NO download feature on iOS. Nothing the user browses to can be saved to
-the device. (The Videos tab plays videos that are already in the user's own
-photo library, via PHPhotoLibrary, and nothing else.)
+There is NO download feature on iOS. Nothing browsed to can be saved to the
+device. The Videos tab plays videos already in the user's photo library, via
+PHPhotoLibrary, and nothing else.
 
-YouTube and its associated domains are explicitly blocked from detection, in
-line with their terms.
+YouTube and its associated domains are explicitly blocked from detection, in line
+with their terms.
 
-The app requests:
-- Photos, to list and play the user's own videos in the Videos tab.
-- Local Network, to discover a Chromecast or a Panura receiver on an Android TV.
-  Discovery only runs while the "Play on TV" screen is open.
-- Background audio, only when the user turns background play on in Settings.
+NO ACCOUNTS of any kind - no registration, login or account deletion. No
+user-generated content, so nothing to report or block. No paid content, no
+in-app purchase, no subscription. Nothing is gated and no credentials are needed.
 
-App Transport Security allows arbitrary loads because a browser must reach sites
-that are still HTTP; no connection of our own is weakened.
+TO TRY IT: type any site with video into the address bar and press play on that
+site's own player. A bar appears at the bottom naming what was found, with a Play
+button; if the page offers several streams it shows a count, and tapping it lists
+them. panura.app/demo demonstrates it end to end - that page carries its clip in
+two qualities, so the bar shows 2. archive.org/details/BigBuckBunny_124 works the
+same way if you would rather use a page that is not ours.
+
+PERMISSIONS: Photos, to list and play the user's own videos in the Videos tab.
+Local Network, to find a Chromecast or a Panura receiver on an Android TV, and
+only while "Play on TV" is open. Background audio, only when the user turns
+background play on. App Transport Security allows arbitrary loads because a
+browser must reach sites that are still HTTP; no connection of our own is
+weakened.
 
 This build shows no ads: the Google Mobile Ads SDK is linked but gated off at
 compile time, never initialised, and the App Tracking Transparency prompt is
 never shown.
 
-Firebase Crashlytics and Analytics are used for crash reports and aggregate usage
-statistics, neither linked to an identity (there are no accounts) nor used for
-tracking. Browsing history and the pages a user visits are never sent anywhere.
-The only playback events logged record the format ("hls", "mkv") and which of the
-two engines played it, never an address.
+EXTERNAL SERVICES: Google - Analytics for Firebase and Crashlytics (aggregate
+usage statistics and crash reports, linked to no identity and not used for
+tracking), the Cast SDK, and address-bar completion via
+suggestqueries.google.com (search terms only; anything containing "://" or
+beginning "www." is refused). Filter lists fetched and compiled on the device:
+EasyList, EasyPrivacy, uBlock Origin, AdGuard mobile, oisd. Ours:
+panura.app/version.json (version and changelog), panura.app/manifest.json (tunes
+stream detection and cannot enable a feature), and a Cloudflare Worker receiving
+Report a Problem. VLCKit is a bundled playback engine, not a service. No
+authentication, payment, AI or content-provider service.
 
-To try it: type any site with video into the address bar and press play on that
-site's own player. A bar appears at the bottom naming what was found, with a Play
-button; if the page offers several streams it shows a count, and tapping it lists
-them. No account or sign-in is needed. A page that demonstrates it end to end is
-panura.app/demo, our own sample page carrying a Creative Commons clip in two
-qualities, so the bar shows 2. archive.org/details/BigBuckBunny_124 works the
-same way if you would rather use a page that is not ours.
-
-PURPOSE AND AUDIENCE: web players offer no subtitle control, no format range, no
-casting and no resume - Panura's does, and the same player opens the user's own
-videos. For adults who watch video on the web on a phone or iPad.
-
-NO ACCOUNTS of any kind - no registration, login or account deletion. No
-user-generated content, so nothing to report or block. No paid content, no in-app
-purchase, no subscription. Nothing is gated and no credentials are needed.
-
-EXTERNAL SERVICES: Google - Analytics for Firebase, Crashlytics, Cast SDK, and
-address-bar completion via suggestqueries.google.com (search terms only; anything
-containing "://" or beginning "www." is refused). Google Mobile Ads and
-UserMessagingPlatform are linked but compiled off. Filter lists fetched and
-compiled on device into a WKContentRuleList: EasyList, EasyPrivacy, uBlock Origin,
-AdGuard mobile, oisd. Ours: panura.app/version.json (version and changelog),
-panura.app/manifest.json (tunes stream detection; cannot enable a feature), and a
-Cloudflare Worker receiving Report a Problem. VLCKit is a bundled engine, not a
-service. No authentication, payment, AI or content-provider service.
+Browsing history and the pages a user visits are never sent anywhere. The only
+playback events logged record the format ("hls", "mkv") and which of the two
+engines played it, never an address.
 
 REGIONS: the app behaves identically in every region where it is available.
 Nothing is geo-gated.
-
-PROTECTED THIRD-PARTY MATERIAL: none is shipped, hosted, bundled or indexed. The
-only media we host is on our own demo page, panura.app/demo: a ten-second excerpt
-of "Big Buck Bunny", (c) 2008 Blender Foundation, published under Creative Commons
-Attribution 3.0 and attributed on the page.
 ```
 
 **The detection manifest is deliberately not mentioned in the notes — option B,
