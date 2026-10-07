@@ -50,3 +50,6 @@ To actually **run on a device or ship**, you still need:
 
 ## App Store note
 The download-from-arbitrary-sites feature conflicts with App Store Review (Guideline 5.2 / adult content). For App Store submission that piece must be gated/removed; for sideload/AltStore/TestFlight the full feature set can ship.
+
+
+<!-- Security scan triggered at 2026-10-07 11:13:38 -->
