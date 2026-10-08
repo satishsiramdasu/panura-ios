@@ -385,6 +385,42 @@ enum ExtractionScript {
         };
       } catch (e) {}
 
+      // Whether a response body is worth reading - the difference between a
+      // playlist and a megabyte of video.
+      //
+      // `clone()` tees the stream and buffers the copy until something consumes
+      // it, so cloning a media segment holds a second copy of every byte the
+      // player fetches and then decodes it as UTF-8 for nothing. On a site whose
+      // player pulls segments through fetch - mobile YouTube above all - that
+      // ran on every segment while playback was starting and cost about ten
+      // seconds before the first frame. Desktop players went through XHR and
+      // never showed it, because the XHR hook above has had this guard since it
+      // was written; that difference is what looked like a user-agent problem
+      // and is not one.
+      //
+      // Type first, because it is the reliable signal. Length second, for the
+      // CDNs that serve a playlist as octet-stream or with no type at all.
+      var MAX_BODY = 4 * 1024 * 1024;
+      var MAX_UNTYPED = 512 * 1024;
+      function bodyWorthReading(response) {
+        try {
+          var headers = response.headers;
+          if (!headers) return false;
+          var type = (headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+          var length = parseInt(headers.get('content-length') || '', 10);
+          // Media, images and fonts never contain a playlist or a subtitle.
+          if (/^(video|audio|image|font)\//.test(type)) return false;
+          if (type === 'application/wasm' || type === 'application/zip') return false;
+          // No type, or the catch-all one. Some CDNs serve playlists this way
+          // and some serve segments this way, so size decides it: a master
+          // playlist is kilobytes and a segment is not.
+          if (type === '' || type === 'application/octet-stream' || type === 'binary/octet-stream') {
+            return length > 0 && length <= MAX_UNTYPED;
+          }
+          return !(length > MAX_BODY);
+        } catch (e) { return false; }
+      }
+
       try {
         var origFetch = window.fetch;
         if (origFetch) {
@@ -394,15 +430,21 @@ enum ExtractionScript {
               if (u) { report(u, '', false, 'fetch'); reportSub(u, '', ''); }
             } catch (e) {}
             return origFetch.apply(this, arguments).then(function (response) {
-              // Clone so the page still consumes its own body normally.
               try {
                 // response.url is post-redirect, unlike the request URL above.
                 var finalUrl = response.url || '';
-                response.clone().text().then(function (body) {
-                  scanPlaylist(body, finalUrl);
-                  if (finalUrl) report(finalUrl, '', false, 'fetch-response');
-                  scanSubsInText(body);
-                }).catch(function () {});
+                // Reported whether or not the body is read: that half costs
+                // nothing, it is what finds most streams, and it used to be
+                // lost whenever reading the body threw.
+                if (finalUrl) report(finalUrl, '', false, 'fetch-response');
+                // Cloned only when there is a reason to. The page consumes its
+                // own body normally either way.
+                if (bodyWorthReading(response)) {
+                  response.clone().text().then(function (body) {
+                    scanPlaylist(body, finalUrl);
+                    scanSubsInText(body);
+                  }).catch(function () {});
+                }
               } catch (e) {}
               return response;
             });

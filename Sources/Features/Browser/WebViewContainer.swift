@@ -84,6 +84,17 @@ struct WebViewContainer: UIViewRepresentable {
             ))
         }
 
+        // A page's own full-screen video: reports the system player's full
+        // screen, which `fullscreenState` never sees, and nudges the page to
+        // measure the window it actually got. Unconditional, and deliberately
+        // not under `block_page_fullscreen` — that setting governs taking full
+        // screen away, and this takes nothing.
+        contentController.addUserScript(WKUserScript(
+            source: PageFullscreenScript.source,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        ))
+
         // Text selection's Copy / Look Up menu on a long press, always. The
         // link and image menu is `allowsLinkPreview` instead — see makeUIView.
         //
@@ -141,20 +152,16 @@ struct WebViewContainer: UIViewRepresentable {
         // `Version/17.0 Safari/605.1.15` for a day, which was simply wrong, so
         // the numbers are worth keeping right whatever else is true.
         //
-        // ⚠️ **It did not fix the ten-second stall, so do not chase the UA for
-        // that.** Mobile YouTube takes about ten seconds to start a video while
-        // desktop mode starts at once, and the canonical-UA theory - that
-        // YouTube parses the UA to pick codecs, MSE behaviour and player bundle,
-        // and gives an unrecognised Safari a conservative path - was tested on
-        // device on 2026-09-24 and is false: the stall is unchanged with these
-        // tokens. Unresolved and deferred, deliberately. The remaining
-        // difference from real Safari is `Version`'s position (Safari puts it
-        // before `Mobile`, and appending cannot reach that spot without
-        // rebuilding the whole string and hard-coding the OS) - but after the
-        // above, that is a guess with a poor prior, not the next step. Look at
-        // what the player actually waits on instead: which requests are in
-        // flight during those ten seconds, and whether the content blocker or
-        // InlineVideoScript is holding one of them up.
+        // ⚠️ **The ten-second stall on mobile YouTube was never about the UA.**
+        // The canonical-UA theory - that YouTube reads the UA to pick codecs,
+        // MSE behaviour and player bundle, and gives an unrecognised Safari a
+        // conservative path - was tested on device on 2026-09-24 and was false.
+        // The cause was `ExtractionScript`'s fetch hook cloning and decoding
+        // every response body, media segments included, which the XHR hook
+        // beside it had always guarded against; desktop players went through
+        // XHR, which is the whole of why desktop mode looked faster. Fixed
+        // there. These tokens stay because they are correct, not because they
+        // fixed anything.
         config.applicationNameForUserAgent = "Version/18.0 Safari/604.1"
         config.allowsInlineMediaPlayback = true
         // The HTML5 Fullscreen API, off by default in WKWebView.
@@ -198,6 +205,15 @@ struct WebViewContainer: UIViewRepresentable {
         // replaces WebKit's default menu, and there is no way to hand the
         // default back, so the *off* state could never restore what it removed.
         webView.allowsLinkPreview = false
+        // The web view already sits inside the safe area - it is a child of a
+        // VStack in BrowserView, under the header and above the found bar - so
+        // the scroll view adjusting for the safe area a second time insets the
+        // page by the home indicator all over again. The page then measures a
+        // viewport shorter than the window it is in, and a player sized from
+        // `innerHeight` comes up short by exactly that much: the black band
+        // under a full-screen video, and a dead strip at the bottom of ordinary
+        // pages.
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         model.attach(webView)
 
         // Pull to refresh, like the Android SwipeRefreshLayout.
@@ -649,6 +665,31 @@ struct WebViewContainer: UIViewRepresentable {
                   let dict = message.body as? [String: Any] else { return }
 
             switch dict["kind"] as? String {
+            case "fullscreen":
+                // The system player's full screen, reported by
+                // PageFullscreenScript because `WKWebView.fullscreenState` does
+                // not see it. Same rule as the KVO path in makeUIView: a video
+                // filling the screen is the one moment on a phone where
+                // landscape is the point, and the app goes back upright when it
+                // closes.
+                let state = dict["state"] as? String
+                Task { @MainActor in
+                    switch state {
+                    case "begin":
+                        OrientationManager.allowAll()
+                    case "end":
+                        // The same wait, for the same reason: narrowing the mask
+                        // forces a rotation, and forcing one into the middle of
+                        // the dismissal leaves the page laid out for a window
+                        // that has gone.
+                        try? await Task.sleep(nanoseconds: 350_000_000)
+                        guard !PlaybackSession.shared.isPlayingSomething else { return }
+                        OrientationManager.reset()
+                    default:
+                        break
+                    }
+                }
+                return
             case "ready":
                 // A frame's sniffer is up. Resolve its rule by the FRAME's own
                 // host (authoritative, from WebKit — not anything the page said)
