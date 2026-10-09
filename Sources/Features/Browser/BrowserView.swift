@@ -49,6 +49,7 @@ struct BrowserView: View {
     /// Same reason: content-blocker lists are attached to a configuration, so
     /// turning the ad blocker on or off means a new web view.
     @AppStorage("ad_block") private var adBlock = true
+    @Environment(\.screenChrome) private var chrome
 
     private var pageUsable: Bool {
         guard let url = model.currentURL?.absoluteString else { return false }
@@ -223,12 +224,21 @@ struct BrowserView: View {
                 // was the better arrangement when this cell was empty, and there
                 // is no arrangement where both ideas fit.
                 leading: {
-                    PanuraGlyph(
-                        onTap: { withAnimation(PanelMetrics.motion) { showMenu.toggle() } },
+                    // The site's mark, not the app's. This is the cell every
+                    // browser uses to say what the page is, and it was saying
+                    // what the app is - on the one screen where the app is the
+                    // least interesting thing present.
+                    //
+                    // The behaviour is unchanged: it still opens the site
+                    // controls, which have no other way in. Only the artwork
+                    // is the page's.
+                    SiteFavicon(
+                        url: model.faviconURL,
                         active: showMenu,
                         marked: siteLowered,
+                        tint: session.privateMode ? PanuraTheme.incognito : nil,
                         label: showMenu ? "Close site controls" : "Site controls and browser menu",
-                        tint: session.privateMode ? PanuraTheme.incognito : nil
+                        onTap: { withAnimation(PanelMetrics.motion) { showMenu.toggle() } }
                     )
                 },
                 trailing: {
@@ -811,7 +821,7 @@ struct BrowserView: View {
         // it: two bars with a gap of app background between them read as two
         // unrelated things.
         .padding(.bottom, castBarShowing ? 8 : 10 + AppChrome.bottomInset)
-        .background(PanuraTheme.surfaceContainer)
+        .background(chrome)
     }
 
     /// Sized like the thing it is — the reason the page was opened — rather

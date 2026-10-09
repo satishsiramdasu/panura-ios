@@ -2,8 +2,8 @@ import SwiftUI
 
 /// The app's one permanent row, above the tabs and above everything else.
 ///
-///     [ mark ] Panura                        [ cast ] [ menu ]
-///              Browse, play, cast
+///     [ mark ] Panura v1.0                   [ cast ] [ menu ]
+///              VIDEO BROWSER
 ///
 /// It replaces the per-screen header as the place the app's own controls live.
 /// Screens still draw a bar of their own where they need one — the browser's
@@ -23,9 +23,16 @@ struct ShellHeader<MenuContent: View>: View {
     /// closure: a `Menu` anchors beside the control it belongs to on both
     /// platforms, where a `confirmationDialog` becomes a bottom sheet on a
     /// phone and points at nothing.
+    /// The ground, which is the tab's own deep tone — so the top of the
+    /// screen belongs to the tab you are in rather than to the app.
+    var ground: Color = AppChrome.bar
     @ViewBuilder var menu: MenuContent
 
     static var height: CGFloat { 58 }
+
+    private var appVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -34,10 +41,27 @@ struct ShellHeader<MenuContent: View>: View {
                 .scaledToFit()
                 .frame(width: 32, height: 32)
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Panura")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(PanuraTheme.onSurface)
+            VStack(alignment: .leading, spacing: 2) {
+                // Up from Home, where it was a largeTitle block taking the top
+                // of a screen you scroll past. The name belongs where it is
+                // true everywhere; Home got the space back for the cards
+                // people actually came for.
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("Panura")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(PanuraTheme.onSurface)
+                    if !appVersion.isEmpty {
+                        Text("v\(appVersion)")
+                            .font(.system(size: 9, weight: .semibold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(
+                                PanuraTheme.accentSoft,
+                                in: RoundedRectangle(cornerRadius: 4)
+                            )
+                            .foregroundStyle(PanuraTheme.accent)
+                    }
+                }
                 subtitle
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -47,7 +71,7 @@ struct ShellHeader<MenuContent: View>: View {
         }
         .padding(.horizontal, 12)
         .frame(height: Self.height)
-        .background(PanuraTheme.surfaceContainer)
+        .background(ground)
     }
 
     @ViewBuilder
@@ -61,14 +85,15 @@ struct ShellHeader<MenuContent: View>: View {
                     .fill(PanuraTheme.accent)
                     .frame(width: 6, height: 6)
                 Text(connectedTV)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(PanuraTheme.accent)
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
         } else {
-            Text("Browse, play, cast")
-                .font(.system(size: 12))
+            Text("VIDEO BROWSER")
+                .font(.system(size: 9, weight: .medium))
+                .tracking(1.6)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 .lineLimit(1)
         }

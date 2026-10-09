@@ -39,32 +39,14 @@ struct RootTabView: View {
         // by tapping its way there — see ScreenshotMode.screen.
         if ScreenshotMode.isActive {
             switch ScreenshotMode.screen {
+            case "web": return .web
             case "videos", "player": return .videos
             case "stream": return .stream
-            // Everything else is the Browser tab, which is where Home lives
-            // now; `browserShowsHome` below decides which half of it is up.
-            default: return .web
+            default: return .home
             }
         }
         #endif
-        return .web
-    }()
-
-    /// Whether the Browser tab is showing Home or a page.
-    ///
-    /// Home stopped being a destination when the tabs arrived: four tabs and a
-    /// Home seat would have spent a fifth of the row on the place you leave
-    /// immediately. It is the Browser tab's landing screen instead, which is
-    /// what it always was in practice — every route out of it ends in the
-    /// browser.
-    ///
-    /// Both halves stay built. `BrowserView` owns the `WKWebView` across
-    /// switches, and rebuilding it to go Home would throw away the page.
-    @State private var browserShowsHome = {
-        #if DEBUG
-        if ScreenshotMode.isActive { return ScreenshotMode.screen != "web" }
-        #endif
-        return true
+        return .home
     }()
 
     /// Watch Later is a sheet, for the reason Settings is one: it is somewhere
@@ -94,10 +76,18 @@ struct RootTabView: View {
     /// destination it also had to carry the app's header, and every screen
     /// pushed inside it then arrived wearing a different one.
     @State private var showSettings = false
+    @ObservedObject private var chrome = ShellChrome.shared
 
     var body: some View {
         shell
-        .background(PanuraTheme.surfaceContainer.ignoresSafeArea())
+        .background(selection.chromeDeep.ignoresSafeArea())
+        // The header hides the moment you leave Home, and comes back when you
+        // return to it. Driven from the selection rather than from inside
+        // `select` so it is also right on launch and after a deep link.
+        .onChange(of: selection) { destination in
+            chrome.destinationChanged(to: destination)
+        }
+        .onAppear { chrome.destinationChanged(to: selection) }
         // One bottom edge for everything in the stack — the screen's, not the
         // safe area's. The cast bar's own ground has to reach the bottom of the
         // display, and it is the last thing on the screen now that the bottom
@@ -168,14 +158,29 @@ struct RootTabView: View {
     private var shell: some View {
         ZStack {
             VStack(spacing: 0) {
-                ShellHeader(connectedTV: castDeviceName) { menuRows }
+                // Both collapse their height in place rather than sliding over
+                // the content, so nothing either of them covers can end up out
+                // of reach - the same rule the browser's address bar follows.
+                ShellHeader(
+                    connectedTV: castDeviceName,
+                    ground: selection.chromeDeep
+                ) { menuRows }
+                    .frame(height: chrome.headerVisible ? ShellHeader<EmptyView>.height : 0)
+                    .opacity(chrome.headerVisible ? 1 : 0)
+                    .clipped()
+
                 ShellTabBar(
                     tabs: Self.tabs,
-                    selection: Binding(get: { selection }, set: { select($0) }),
-                    planned: FeatureFlags.showsPlannedTabs ? Self.plannedTabs : [],
-                    plannedActive: Self.plannedTabs.contains(selection),
-                    onSelectPlanned: { select($0) }
+                    selection: $selection,
+                    more: Self.moreTabs,
+                    planned: Self.plannedTabs,
+                    onSelect: select,
+                    ground: selection.chromeDeep
                 )
+                .frame(height: chrome.tabsVisible ? ShellTabBar.height : 0)
+                .opacity(chrome.tabsVisible ? 1 : 0)
+                .clipped()
+
                 content
             }
             // Above every screen, because the mark that opens it is in the
@@ -186,10 +191,18 @@ struct RootTabView: View {
 
     /// The seats in the strip, in order. Four is the ceiling at phone width:
     /// a fifth takes the labels below legible size on a 375pt screen.
-    private static let tabs: [AppDestination] = [.web, .videos, .stream]
+    private static let tabs: [AppDestination] = [.home, .web, .videos]
 
-    /// Behind the `+`. Neither is built — see `FeatureFlags.showsPlannedTabs`.
-    private static let plannedTabs: [AppDestination] = [.iptv, .ftp]
+    /// Behind `More`, and working. Network Stream is one form and one button -
+    /// worth keeping, not worth a quarter of the row, and Home already carries
+    /// a card for it.
+    private static let moreTabs: [AppDestination] = [.stream]
+
+    /// Behind `More`, under their own heading, and not built - see
+    /// `FeatureFlags.showsPlannedTabs`, which must be off for a submission.
+    private static var plannedTabs: [AppDestination] {
+        FeatureFlags.showsPlannedTabs ? [.iptv, .ftp] : []
+    }
 
     /// Everything that is not a place.
     ///
@@ -346,23 +359,16 @@ struct RootTabView: View {
     /// until it has faded, or the incoming one shows through it.
     private var destinations: some View {
         ZStack {
-            // Both halves of the Browser tab. Only one is ever up, and the
-            // one that is down is still built — the web view cannot survive
-            // being torn down and remade every time somebody goes Home.
-            layer(.web, visible: browserShowsHome) {
+            layer(.home) {
                 HomeView(
                     onOpenBrowser: openInBrowser,
                     onOpenSection: select
                 )
             }
-            layer(.web, visible: !browserShowsHome) {
+            layer(.web) {
                 BrowserView(
                     pendingAddress: $pendingAddress,
-                    onGoHome: {
-                        withAnimation(.easeInOut(duration: 0.22)) {
-                            browserShowsHome = true
-                        }
-                    },
+                    onGoHome: { select(.home) },
                     onOpenSettings: { screen in
                         settingsDeepLink = screen
                         showSettings = true
@@ -378,16 +384,12 @@ struct RootTabView: View {
         }
     }
 
-    /// - Parameter visible: a second condition, for the two layers that share
-    ///   the Browser tab. Home and the browser are both `.web`, so the tab
-    ///   alone cannot say which of them is up.
     @ViewBuilder
     private func layer<Content: View>(
         _ destination: AppDestination,
-        visible: Bool = true,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        let active = selection == destination && visible
+        let active = selection == destination
         content()
             // The bottom bar used to hold this strip for everyone. The browser
             // is the exception: it owns its own bottom edge, because the
@@ -398,6 +400,9 @@ struct RootTabView: View {
                 }
             }
             .environment(\.destinationIsActive, active)
+            // So a screen can colour its own bar to match the tab it belongs
+            // to, without having to know which destination it is.
+            .environment(\.screenChrome, destination.chrome)
             .opacity(active ? 1 : 0)
             // A hidden layer must not eat taps meant for the visible one, and an
             // invisible screen should not be reachable by VoiceOver either.
@@ -410,10 +415,7 @@ struct RootTabView: View {
     /// asked — Home's pill, Watch Later, a resume card.
     private func openInBrowser(_ address: String) {
         pendingAddress = address
-        withAnimation(.easeInOut(duration: 0.22)) {
-            browserShowsHome = false
-            selection = .web
-        }
+        withAnimation(.easeInOut(duration: 0.22)) { selection = .web }
     }
 
     private func select(_ destination: AppDestination) {
@@ -426,23 +428,6 @@ struct RootTabView: View {
             return
         case .watchLater:
             showWatchLater = true
-            return
-        // The tab exists; which half of it is up is `browserShowsHome`, and
-        // pressing the tab you are already on should not throw a page away.
-        case .home:
-            withAnimation(.easeInOut(duration: 0.22)) {
-                browserShowsHome = true
-                selection = .web
-            }
-            return
-        // Asked for the browser while already in that tab, which can only be
-        // Home's own "Web Browser" card — the tab ignores a press on itself.
-        // From anywhere else it is a tab switch, and the half you left is the
-        // half you come back to.
-        case .web where selection == .web:
-            withAnimation(.easeInOut(duration: 0.22)) {
-                browserShowsHome = false
-            }
             return
         default:
             break

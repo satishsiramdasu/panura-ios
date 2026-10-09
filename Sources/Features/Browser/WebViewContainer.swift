@@ -84,6 +84,15 @@ struct WebViewContainer: UIViewRepresentable {
             ))
         }
 
+        // The page's own icon, for the leading cell of the address pill.
+        // Main frame only - an advert iframe's icon is not this page's - and at
+        // document end, because the head has to have been parsed.
+        contentController.addUserScript(WKUserScript(
+            source: FaviconScript.source,
+            injectionTime: .atDocumentEnd,
+            forMainFrameOnly: true
+        ))
+
         // A page's own full-screen video: reports the system player's full
         // screen, which `fullscreenState` never sees, and nudges the page to
         // measure the window it actually got. Unconditional, and deliberately
@@ -347,8 +356,19 @@ struct WebViewContainer: UIViewRepresentable {
             // Rubber-banding at either end is not a scroll in that direction;
             // reading it as one hides the bar on a bounce.
             let bottom = scrollView.contentSize.height - scrollView.bounds.height
-            guard y > 0, y < bottom else { return }
-            BrowserSession.shared.scrolled(by: y - lastScrollY)
+            // The top is a state rather than a direction, and it is what brings
+            // the whole shell back - so it is reported even though arriving
+            // there is not a scroll upward.
+            if y <= 0 {
+                BrowserSession.shared.showBar()
+                ShellChrome.shared.scrolled(by: 0, atTop: true)
+                lastScrollY = y
+                return
+            }
+            guard y < bottom else { return }
+            let delta = y - lastScrollY
+            BrowserSession.shared.scrolled(by: delta)
+            ShellChrome.shared.scrolled(by: delta, atTop: false)
             lastScrollY = y
         }
 
@@ -430,6 +450,8 @@ struct WebViewContainer: UIViewRepresentable {
         func webView(_ webView: WKWebView, didStartProvisionalNavigation nav: WKNavigation!) {
             model.isLoading = true
             lastRouteKey = nil
+            // The icon belongs to the page being left, like the findings do.
+            model.faviconURL = nil
             // Main-frame navigation: findings belong to the page we're leaving.
             model.clearFindings()
             // Safe to reset unconditionally: extraction web views are created
@@ -665,6 +687,20 @@ struct WebViewContainer: UIViewRepresentable {
                   let dict = message.body as? [String: Any] else { return }
 
             switch dict["kind"] as? String {
+            case "favicon":
+                // Checked against the page it came from: the 1.5s re-read can
+                // land after the user has navigated away, and an icon applied
+                // to the wrong address is worse than no icon.
+                guard let raw = dict["url"] as? String,
+                      let url = URL(string: raw),
+                      let page = dict["page"] as? String
+                else { return }
+                Task { @MainActor in
+                    guard model.currentURL?.absoluteString == page
+                            || model.currentURL == nil else { return }
+                    model.faviconURL = url
+                }
+                return
             case "fullscreen":
                 // The system player's full screen, reported by
                 // PageFullscreenScript because `WKWebView.fullscreenState` does

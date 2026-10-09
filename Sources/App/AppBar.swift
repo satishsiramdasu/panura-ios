@@ -60,6 +60,55 @@ enum AppDestination: Hashable, CaseIterable {
         }
     }
 
+    /// The colour this destination owns.
+    ///
+    /// Three things wear it: the tab while it is selected, the screen's ground,
+    /// and whatever bar that screen draws across its top - the browser's address
+    /// row, the Videos toolbar. One colour for the three is what makes the tab
+    /// read as the front of the panel rather than a lit button, and the panel's
+    /// own controls read as part of the panel rather than as furniture resting
+    /// on it.
+    ///
+    /// All of them are dark and barely saturated on purpose. The hue only has
+    /// to be enough to tell one tab from the next at a glance; any more and the
+    /// app stops being a dark app with an amber accent and starts being four
+    /// differently coloured apps behind one header.
+    var chrome: Color {
+        switch self {
+        // Home wears the app's own colour and no tint at all. It is where the
+        // brand lives, and a Home that borrowed a hue would make the amber
+        // accent look like one more tab colour rather than the app's.
+        case .home: return PanuraTheme.surfaceContainerHigh
+        case .web: return Color(hex: 0x16202C)
+        case .videos: return Color(hex: 0x16231C)
+        case .stream: return Color(hex: 0x122125)
+        case .watchLater: return Color(hex: 0x1E1829)
+        case .settings: return PanuraTheme.surfaceContainerHigh
+        case .iptv: return Color(hex: 0x271A27)
+        case .ftp: return Color(hex: 0x112321)
+        }
+    }
+
+    /// The darker half of the pair: the header and the ground the tabs are cut
+    /// out of.
+    ///
+    /// Same hue, further down. The strip only reads as a strip if what is
+    /// behind it is darker than the tab in front of it, and carrying the hue
+    /// down rather than falling back to neutral black is what makes the whole
+    /// top of the screen belong to the tab you are in.
+    var chromeDeep: Color {
+        switch self {
+        case .home: return AppChrome.bar
+        case .web: return Color(hex: 0x0C1218)
+        case .videos: return Color(hex: 0x0C1410)
+        case .stream: return Color(hex: 0x0A1316)
+        case .watchLater: return Color(hex: 0x120E19)
+        case .settings: return AppChrome.bar
+        case .iptv: return Color(hex: 0x170F17)
+        case .ftp: return Color(hex: 0x0A1413)
+        }
+    }
+
     /// The tile behind the glyph, so a list of five can be found by colour
     /// rather than read top to bottom every time.
     var tint: Color {
@@ -85,6 +134,24 @@ enum AppDestination: Hashable, CaseIterable {
 /// the controls.
 enum AppChrome {
     static let bottomInset: CGFloat = 16
+
+    /// The ground the header and the tab strip sit on.
+    ///
+    /// Darker than every screen, which is the whole job: the tabs are cut out
+    /// of this, and a selected one is filled with its screen's colour, so the
+    /// strip only reads as a strip if what is behind it is darker than anything
+    /// in front of it.
+    static let bar = Color(hex: 0x0A0A0A)
+
+    /// Four seats across, whatever the screen width, with a fifth left peeking
+    /// over the edge rather than squeezed in.
+    ///
+    /// Four is what fits a 375pt phone with a readable label under each glyph.
+    /// Sizing to the count instead would shrink every tab as the row grew, so
+    /// the day a fifth arrives the other four would get worse - and nothing
+    /// would say there was more to see. A fixed width and a scroll view says
+    /// it by showing the edge of the next one.
+    static let tabsPerRow: CGFloat = 4
 
     /// A 375-point phone: iPhone SE 2 and 3, the 12 and 13 mini, and the 8.
     ///

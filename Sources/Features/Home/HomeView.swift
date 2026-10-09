@@ -27,15 +27,10 @@ struct HomeView: View {
     /// Said once, when a card turns out to be dead.
     @State private var resumeToast: String?
 
-    private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-    }
-
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
-                    brandBlock
                     bookmarksSection
                     if !store.continueWatching.isEmpty { continueWatchingSection }
                     // Before the destinations, where the cast card used to
@@ -49,6 +44,12 @@ struct HomeView: View {
                     PickVideoCard().padding(.horizontal, 16)
                     quickAccessSection
                     housekeepingRow
+                    // Last, under the cards. They were beside the name at the
+                    // very top, which gave the two least-pressed controls on
+                    // the screen the best position on it - and the name has
+                    // gone up to the app header, so there is nothing left to
+                    // sit beside.
+                    communityRow
                 }
                 .padding(.vertical, 20)
             }
@@ -373,45 +374,34 @@ struct HomeView: View {
             .frame(width: 38, height: 38)
     }
 
-    private var brandBlock: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .top, spacing: 4) {
-                    Text("Panura").font(.largeTitle.bold())
-                    if !appVersion.isEmpty {
-                        Text("v\(appVersion)")
-                            .font(.system(size: 10, weight: .semibold))
-                            .padding(.horizontal, 4).padding(.vertical, 1)
-                            .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 4))
-                            .foregroundStyle(PanuraTheme.accent)
-                    }
-                }
-                Text("VIDEO BROWSER")
-                    .font(.caption2.weight(.medium))
-                    .tracking(2)
-                    .foregroundStyle(.secondary)
+    /// Share and Telegram, at the foot of the screen.
+    ///
+    /// They used to be a column beside the app's name at the very top, which
+    /// gave the two least-pressed controls on Home the most valuable position
+    /// on it. The name has moved to the app header, and these follow the cards
+    /// instead of preceding them - which is also where a person who has
+    /// finished looking at their videos actually is.
+    private var communityRow: some View {
+        HStack(spacing: 10) {
+            ShareLink(
+                item: URL(string: "https://panura.app")!,
+                // No "download". There is no download feature on iOS - the
+                // code was deleted rather than gated, because saving media
+                // from third-party sites is what Review 5.2.3 names - and
+                // the FAQ two screens away says so outright. This was the
+                // one string in the app promising the opposite, in the one
+                // place users forward to other people.
+                message: Text("Panura Player — browse, play & cast web videos.")
+            ) {
+                linkLabel("Share App", systemImage: "square.and.arrow.up")
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 10) {
-                ShareLink(
-                    item: URL(string: "https://panura.app")!,
-                    // No "download". There is no download feature on iOS — the
-                    // code was deleted rather than gated, because saving media
-                    // from third-party sites is what Review 5.2.3 names — and
-                    // the FAQ two screens away says so outright. This was the
-                    // one string in the app promising the opposite, in the one
-                    // place users forward to other people.
-                    message: Text("Panura Player — browse, play & cast web videos.")
-                ) {
-                    linkLabel("Share App", systemImage: "square.and.arrow.up")
-                }
-                Button {
-                    UIApplication.shared.open(URL(string: "https://t.me/panura_player")!)
-                } label: {
-                    linkLabel("Telegram", systemImage: "paperplane.fill")
-                }
+            Button {
+                UIApplication.shared.open(URL(string: "https://t.me/panura_player")!)
+            } label: {
+                linkLabel("Telegram", systemImage: "paperplane.fill")
             }
         }
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 20)
     }
 
@@ -419,6 +409,9 @@ struct HomeView: View {
         Label(title, systemImage: systemImage)
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(PanuraTheme.accent)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(PanuraTheme.surfaceVariant, in: Capsule())
     }
 
     // MARK: bookmarks

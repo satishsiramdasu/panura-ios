@@ -38,6 +38,7 @@ struct LocalVideosView: View {
 
     /// One line, said once — casting gives no other sign from this screen.
     @State private var toast: String?
+    @Environment(\.screenChrome) private var chrome
     @State private var toastTask: Task<Void, Never>?
 
     private let gridColumns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
@@ -63,20 +64,25 @@ struct LocalVideosView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PanuraTheme.background)
+            .scrollAwayContainer()
             // Search and the three controls belong to the bar, not to the
             // grid. Under it with no space they read as one dark mass glued to
             // the header; in it, on the bar's own surface and closed by a
             // hairline, they read as the bar they are — and the grid gets a
             // clean edge to scroll under.
+            // No "Videos" title row any more. The tab above says where you
+            // are, in the same place on every screen, and a second heading
+            // underneath it said it twice and cost a row of thumbnails.
             .safeAreaInset(edge: .top, spacing: 0) {
-                VStack(spacing: 0) {
-                    PanuraHeader("Videos")
-                    if showsToolbar {
+                if showsToolbar {
+                    VStack(spacing: 0) {
                         toolbar
-                        Divider()
+                        Divider().overlay(PanuraTheme.outlineVariant)
                     }
+                    // The tab's own colour, so the bar reads as part of the
+                    // panel the tab opens rather than as furniture on top of it.
+                    .background(chrome)
                 }
-                .background(PanuraTheme.surfaceContainer)
             }
             .navigationBarHidden(true)
             .overlay(alignment: .bottom) {
@@ -177,6 +183,11 @@ struct LocalVideosView: View {
                         }
                     }
                     .padding(12)
+                    // Scrolling the library down takes the app header and then
+                    // the tabs with it, and the top brings them back. A
+                    // `UIScrollView` would be observed directly; a SwiftUI one
+                    // exposes nothing, so its offset is measured.
+                    .scrollAwayChrome()
                 }
             }
             // Shown for the whole of selection mode, empty selection included:

@@ -45,6 +45,10 @@ struct PanuraHeader<Content: View>: View {
 
     static var height: CGFloat { 52 }
 
+    /// The colour of the tab this screen belongs to, so the bar reads as part
+    /// of the panel the tab opens rather than as furniture resting on it.
+    @Environment(\.screenChrome) private var chrome
+
     var body: some View {
         HStack(spacing: AppChrome.headerSpacing) {
             glyph
@@ -53,7 +57,7 @@ struct PanuraHeader<Content: View>: View {
         }
         .padding(.horizontal, AppChrome.headerPadding)
         .frame(height: Self.height)
-        .background(PanuraTheme.surfaceContainer)
+        .background(chrome)
     }
 
     @ViewBuilder

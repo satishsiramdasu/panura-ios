@@ -199,9 +199,20 @@ private struct DestinationActiveKey: EnvironmentKey {
     static let defaultValue = true
 }
 
+/// The colour of the tab you are standing in, handed down so a screen's own
+/// bar can match the tab above it without knowing which destination it is.
+private struct ScreenChromeKey: EnvironmentKey {
+    static let defaultValue = PanuraTheme.surfaceContainer
+}
+
 extension EnvironmentValues {
     var destinationIsActive: Bool {
         get { self[DestinationActiveKey.self] }
         set { self[DestinationActiveKey.self] = newValue }
+    }
+
+    var screenChrome: Color {
+        get { self[ScreenChromeKey.self] }
+        set { self[ScreenChromeKey.self] = newValue }
     }
 }

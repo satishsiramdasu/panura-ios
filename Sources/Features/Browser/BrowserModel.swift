@@ -12,6 +12,12 @@ final class BrowserModel: ObservableObject {
         didSet { BrowserSession.shared.pageChanged(to: currentURL) }
     }
     @Published var pageTitle = ""
+    /// The current page's own icon, reported by `FaviconScript`.
+    ///
+    /// Cleared the moment a navigation starts, so the pill never shows the
+    /// previous site's mark against this site's address - which is the one
+    /// thing a favicon must never do.
+    @Published var faviconURL: URL?
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var desktopMode = false
