@@ -1,18 +1,32 @@
 import UIKit
 import SwiftUI
 
-/// The app's shell: every destination stacked, one bar under them, and the
-/// sections grid hanging above that bar.
+/// The app's shell: one header, a row of tabs under it, and every destination
+/// stacked below that.
 ///
-/// Mirrors Android's `HomeScreen` after the nav rebuild — Home, Web and Videos
-/// in the bar, Network Stream and Settings behind the grid. It is deliberately
-/// NOT a `TabView`: five co-equal tabs said all five were places you switch
-/// between, when only three are, and a `UITabBar` cannot draw the one-label
-/// pill the bar now uses to say where you are.
+///     ShellHeader     mark · Panura · tagline or the TV      cast   menu
+///     ShellTabBar     Browser   Videos   Network   +
+///     content         the destination, then the cast bar
+///
+/// **The drawer is gone.** Navigation used to be a slide-over list on the phone
+/// and a rail on the iPad, with every destination in it including the ones you
+/// visit constantly. A list is the right shape for places you go rarely and the
+/// wrong one for places you live in — it hid the three main destinations behind
+/// a press, and the rail then spent iPad width restating them. The tabs say
+/// where you can be without being asked, and what is left over — Settings,
+/// Watch Later, Help, Report, Rate, About — is a menu, because none of those is
+/// a place you stay.
+///
+/// Home went with it, into the Browser tab as its landing screen. Four seats is
+/// the ceiling at phone width and Home is the one you leave immediately.
+///
+/// Still deliberately NOT a `TabView`: a `UITabBar` cannot draw a tab that
+/// joins the panel beneath it, and that join is what says the strip and the
+/// content are one thing.
 ///
 /// Every destination stays composed and is hidden by opacity rather than being
 /// rebuilt. The browser owns a live `WKWebView`, a page mid-load and a set of
-/// detections; taking a trip to Home must not cost any of that.
+/// detections; a trip to Home or to Videos must not cost any of that.
 ///
 /// iOS ships no download feature at all — saving streamed content is the
 /// clearest App Review 5.2.3 problem in this app, and a flag-gated feature still
@@ -25,18 +39,39 @@ struct RootTabView: View {
         // by tapping its way there — see ScreenshotMode.screen.
         if ScreenshotMode.isActive {
             switch ScreenshotMode.screen {
-            case "web": return .web
             case "videos", "player": return .videos
             case "stream": return .stream
-            // Settings is a sheet now; the screenshot run opens it from Home
-            // in `.task` below rather than by landing on it.
-            case "settings": return .home
-            default: return .home
+            // Everything else is the Browser tab, which is where Home lives
+            // now; `browserShowsHome` below decides which half of it is up.
+            default: return .web
             }
         }
         #endif
-        return .home
+        return .web
     }()
+
+    /// Whether the Browser tab is showing Home or a page.
+    ///
+    /// Home stopped being a destination when the tabs arrived: four tabs and a
+    /// Home seat would have spent a fifth of the row on the place you leave
+    /// immediately. It is the Browser tab's landing screen instead, which is
+    /// what it always was in practice — every route out of it ends in the
+    /// browser.
+    ///
+    /// Both halves stay built. `BrowserView` owns the `WKWebView` across
+    /// switches, and rebuilding it to go Home would throw away the page.
+    @State private var browserShowsHome = {
+        #if DEBUG
+        if ScreenshotMode.isActive { return ScreenshotMode.screen != "web" }
+        #endif
+        return true
+    }()
+
+    /// Watch Later is a sheet, for the reason Settings is one: it is somewhere
+    /// you go from wherever you are and come straight back out of. As a
+    /// destination it would be a place with no tab, and nothing in the strip
+    /// would look selected while you were in it.
+    @State private var showWatchLater = false
     /// Address typed on Home, waiting for the Browser to pick it up. The browser
     /// owns its WebView across switches, so the hand-off has to be state here
     /// rather than a fresh `BrowserView(url:)`.
@@ -60,183 +95,8 @@ struct RootTabView: View {
     /// pushed inside it then arrived wearing a different one.
     @State private var showSettings = false
 
-    @ObservedObject private var drawer = DrawerState.shared
-
-    /// Push the drawer back where it came from.
-    ///
-    /// The way it opened, reversed - which is how a drawer is expected to close,
-    /// and a tap on the sliver of app showing beside it was the only way to do
-    /// it. 24 points before it counts, so it never fires on the little sideways
-    /// drift of a finger that meant to press a row.
-    private var closeDrag: some Gesture {
-        DragGesture(minimumDistance: 24)
-            .onEnded { value in
-                guard value.translation.width < -40 else { return }
-                dismissDrawer()
-            }
-    }
-
-    /// Regular width means an iPad with room to spare - never a phone, and not
-    /// an iPad in Split View or Slide Over, which report compact and so get the
-    /// phone's drawer back. That is right for both: a sidebar on a half-width
-    /// iPad window would leave the app less room than a phone has.
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    /// iPad only, and the idiom check is not redundant.
-    ///
-    /// A large iPhone reports `.regular` width in landscape. Keyed on the size
-    /// class alone, rotating the phone swapped `pushLayout` for `sidebarLayout`
-    /// - a different view tree, so every child was rebuilt, the web view with
-    /// them, and the browser reloaded its start page. Turning the phone sideways
-    /// threw away the page you were reading.
-    private var usesSidebar: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad && sizeClass == .regular
-    }
-    /// The sidebar starts open on an iPad, but only the first time. Reopening
-    /// it on every rotation would overrule someone who had just closed it.
-    /// Whether the one-time "here is what the rail's glyphs are" opening has
-    /// happened.
-    ///
-    /// `@AppStorage`, not `@State`, and that is the whole fix: as `@State` this
-    /// reset with every process, so the comment below said "a first launch" while
-    /// the code meant "every launch" — an iPad popped the full menu open on each
-    /// cold start and the rail, which is supposed to be the resting state, was
-    /// never what anybody saw.
-    @AppStorage("ipad_drawer_intro_shown") private var drawerIntroShown = false
-
-    /// Puts the drawer away after a row is pressed.
-    ///
-    /// It used to do nothing on an iPad, and that was right while closing meant
-    /// the sidebar vanished - pressing a row was no reason to take the
-    /// furniture away. Closing now means collapsing to the rail, which is
-    /// where the iPad rests anyway, so both platforms want it: the phone gets
-    /// its content back and the iPad gets its width back, and neither loses the
-    /// way in.
-    private func dismissDrawer() {
-        drawer.close()
-    }
-
-    /// The phone: the app slides off the drawer rather than the drawer over the
-    /// app, which is what keeps the way out under the thumb that opened it.
-    private var pushLayout: some View {
-        ZStack(alignment: .leading) {
-            // Underneath, revealed by the app moving off it. A drawer that
-            // slides over the app hides how to get back; one the app slides off
-            // keeps the way out under the thumb that opened it.
-            if drawer.isOpen {
-                AppDrawerPanel(
-                    destinations: drawerDestinations,
-                    actions: drawerActions,
-                    onAbout: {
-                        dismissDrawer()
-                        settingsDeepLink = .about
-                        showSettings = true
-                    }
-                )
-                .frame(width: DrawerState.width)
-                .transition(.move(edge: .leading))
-                // Alongside the rows rather than instead of them: a drag that
-                // starts on a row still closes the drawer, and a tap on the same
-                // row still opens what it names.
-                .simultaneousGesture(closeDrag)
-            }
-
-            shell
-                .offset(x: drawer.isOpen ? DrawerState.width : 0)
-                // Rounded and lifted only while it is aside, so the app reads as
-                // a card resting on the drawer rather than a screen cut in half.
-                .clipShape(
-                    RoundedRectangle(cornerRadius: drawer.isOpen ? 22 : 0, style: .continuous)
-                )
-                .shadow(color: .black.opacity(drawer.isOpen ? 0.45 : 0), radius: 22, x: -6)
-                // Nothing on a screen that is half off the screen should be
-                // operable. This used to be an overlay carrying the tap that
-                // closes the drawer, and the overlay was hit-tested against the
-                // shell's *unoffset* frame — the whole screen — so it sat on top
-                // of the drawer and swallowed every tap meant for a row. The
-                // drawer looked dead. The tap-to-close is its own view below,
-                // inset past the drawer, where it can only cover the app.
-                // `disabled` would not be enough: it stops SwiftUI controls
-                // and says nothing to a UIKit view, so the web page underneath
-                // would still scroll under a finger.
-                .allowsHitTesting(!drawer.isOpen)
-
-            if drawer.isOpen {
-                Color.black.opacity(0.001)
-                    .contentShape(Rectangle())
-                    .onTapGesture { drawer.close() }
-                    .gesture(closeDrag)
-                    .padding(.leading, DrawerState.width)
-                    .ignoresSafeArea()
-            }
-        }
-    }
-
-    /// The iPad: the drawer is furniture, not an interruption.
-    ///
-    /// It takes its width out of the layout instead of sliding the app off the
-    /// screen, so both are usable at once - which is the whole difference. The
-    /// phone's drawer has to be dismissed before anything else can be touched,
-    /// because it is covering the app. This one is beside it, so there is
-    /// nothing to dismiss: no scrim, no tap-to-close, no swipe, and no row that
-    /// puts it away when pressed.
-    private var sidebarLayout: some View {
-        HStack(spacing: 0) {
-            // Always present, never inserted or removed.
-            //
-            // It used to be wrapped in `if drawer.isOpen`, which put a view in
-            // and took it out of the HStack - and anything that changes what is
-            // in a container re-identifies what is beside it, so `shell` was
-            // rebuilt on every toggle, web view and all. The panel is now
-            // permanent and only its *width* changes, so the app beside it is
-            // the same view throughout.
-            AppDrawerPanel(
-                destinations: drawerDestinations,
-                actions: drawerActions,
-                onAbout: {
-                    settingsDeepLink = .about
-                    showSettings = true
-                },
-                collapsed: !drawer.isOpen
-            )
-            .frame(width: drawer.isOpen ? DrawerState.width : DrawerState.railWidth)
-            .clipped()
-            Divider().overlay(PanuraTheme.surfaceVariant)
-            // Takes the remainder and nothing more.
-            //
-            // An `HStack` hands a child its ideal width before it compresses
-            // anything, and the browser's chrome carries fixed widths of its
-            // own - so shell could claim more than was left beside the rail and
-            // the overflow simply hung off the right edge of the screen, which
-            // reads as a web page with a strip missing. The explicit
-            // `maxWidth: .infinity` plus priority says: fit what is left. The
-            // clip is the backstop, so a future fixed width inside cannot
-            // silently do it again.
-            shell
-                .frame(maxWidth: .infinity)
-                .layoutPriority(1)
-                .clipped()
-        }
-    }
-
     var body: some View {
-        Group {
-            if usesSidebar { sidebarLayout } else { pushLayout }
-        }
-        .onAppear {
-            // The rail is the resting state and needs no opening; this only
-            // still exists so the very first launch on an iPad shows the full
-            // menu once, as an introduction to what the rail's glyphs are.
-            guard usesSidebar, !drawerIntroShown else { return }
-            #if DEBUG
-            // Home is the one screenshot that wants the menu open — it is the
-            // screen where the labelled menu is the thing being shown. Every
-            // other shot wants the rail, and a simulator that has never launched
-            // before would otherwise take the introduction on all four.
-            if ScreenshotMode.isActive, ScreenshotMode.screen != "home" { return }
-            #endif
-            drawerIntroShown = true
-            drawer.isOpen = true
-        }
+        shell
         .background(PanuraTheme.surfaceContainer.ignoresSafeArea())
         // One bottom edge for everything in the stack — the screen's, not the
         // safe area's. The cast bar's own ground has to reach the bottom of the
@@ -259,6 +119,12 @@ struct RootTabView: View {
             ReportIssueSheet(pageURL: nil, source: "menu")
         }
         .sheet(isPresented: $showFAQ) { FAQView() }
+        .sheet(isPresented: $showWatchLater) {
+            WatchLaterView(onOpenBrowser: { address in
+                showWatchLater = false
+                openInBrowser(address)
+            })
+        }
         .sheet(isPresented: $showSettings) {
             SettingsView(deepLink: $settingsDeepLink)
         }
@@ -291,15 +157,76 @@ struct RootTabView: View {
         .screenshotPlayer()
     }
 
-    /// Everything that is not the drawer: the destination you are on, and the
-    /// strip naming the television when there is one.
+    /// The app, top to bottom: who it is, where you can go, where you are, and
+    /// the television when there is one.
+    ///
+    /// One header for the whole app rather than one per screen. A screen still
+    /// draws a bar of its own where it needs one — the browser's address pill
+    /// above all — but that bar is about the screen now, not about the app,
+    /// which is why the mark, the cast control and the menu moved up here and
+    /// stopped being repeated on four screens.
     private var shell: some View {
         ZStack {
-            content
-            // Above every screen, because the mark that opens it is in every
+            VStack(spacing: 0) {
+                ShellHeader(connectedTV: castDeviceName) { menuRows }
+                ShellTabBar(
+                    tabs: Self.tabs,
+                    selection: Binding(get: { selection }, set: { select($0) }),
+                    planned: FeatureFlags.showsPlannedTabs ? Self.plannedTabs : [],
+                    plannedActive: Self.plannedTabs.contains(selection),
+                    onSelectPlanned: { select($0) }
+                )
+                content
+            }
+            // Above every screen, because the mark that opens it is in the
             // header and the panel has to cover what it is about.
             CastPanelOverlay()
         }
+    }
+
+    /// The seats in the strip, in order. Four is the ceiling at phone width:
+    /// a fifth takes the labels below legible size on a 375pt screen.
+    private static let tabs: [AppDestination] = [.web, .videos, .stream]
+
+    /// Behind the `+`. Neither is built — see `FeatureFlags.showsPlannedTabs`.
+    private static let plannedTabs: [AppDestination] = [.iptv, .ftp]
+
+    /// Everything that is not a place.
+    ///
+    /// No Cast row: the control for it is in the same header, four centimetres
+    /// away, and a menu that repeats what the bar already offers teaches people
+    /// the bar is not to be trusted.
+    @ViewBuilder
+    private var menuRows: some View {
+        Button {
+            settingsDeepLink = nil
+            showSettings = true
+        } label: { Label("Settings", systemImage: "gearshape") }
+
+        Button { showWatchLater = true } label: {
+            Label("Watch Later", systemImage: "clock")
+        }
+
+        Button { showFAQ = true } label: {
+            Label("Help", systemImage: "questionmark.circle")
+        }
+
+        Button { showReport = true } label: {
+            Label("Report a problem", systemImage: "exclamationmark.bubble")
+        }
+
+        // Only once there is a listing to open. A Rate row that goes nowhere is
+        // worse than no Rate row.
+        if VersionStore.storeLinkReady {
+            Button {
+                UIApplication.shared.open(VersionStore.storeURL)
+            } label: { Label("Rate Panura", systemImage: "star") }
+        }
+
+        Button {
+            settingsDeepLink = .about
+            showSettings = true
+        } label: { Label("About", systemImage: "info.circle") }
     }
 
     private var content: some View {
@@ -419,19 +346,23 @@ struct RootTabView: View {
     /// until it has faded, or the incoming one shows through it.
     private var destinations: some View {
         ZStack {
-            layer(.home) {
+            // Both halves of the Browser tab. Only one is ever up, and the
+            // one that is down is still built — the web view cannot survive
+            // being torn down and remade every time somebody goes Home.
+            layer(.web, visible: browserShowsHome) {
                 HomeView(
-                    onOpenBrowser: { address in
-                        pendingAddress = address
-                        select(.web)
-                    },
+                    onOpenBrowser: openInBrowser,
                     onOpenSection: select
                 )
             }
-            layer(.web) {
+            layer(.web, visible: !browserShowsHome) {
                 BrowserView(
                     pendingAddress: $pendingAddress,
-                    onGoHome: { select(.home) },
+                    onGoHome: {
+                        withAnimation(.easeInOut(duration: 0.22)) {
+                            browserShowsHome = true
+                        }
+                    },
                     onOpenSettings: { screen in
                         settingsDeepLink = screen
                         showSettings = true
@@ -439,22 +370,24 @@ struct RootTabView: View {
                 )
             }
             layer(.videos) { LocalVideosView() }
-            layer(.watchLater) {
-                WatchLaterView(onOpenBrowser: { address in
-                    pendingAddress = address
-                    select(.web)
-                })
-            }
             layer(.stream) { StreamView() }
+            if FeatureFlags.showsPlannedTabs {
+                layer(.iptv) { ComingSoonView(destination: .iptv) }
+                layer(.ftp) { ComingSoonView(destination: .ftp) }
+            }
         }
     }
 
+    /// - Parameter visible: a second condition, for the two layers that share
+    ///   the Browser tab. Home and the browser are both `.web`, so the tab
+    ///   alone cannot say which of them is up.
     @ViewBuilder
     private func layer<Content: View>(
         _ destination: AppDestination,
+        visible: Bool = true,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        let active = selection == destination
+        let active = selection == destination && visible
         content()
             // The bottom bar used to hold this strip for everyone. The browser
             // is the exception: it owns its own bottom edge, because the
@@ -473,73 +406,52 @@ struct RootTabView: View {
             .zIndex(active ? 1 : 0)
     }
 
+    /// Opens an address in the browser half of the Browser tab, from wherever
+    /// asked — Home's pill, Watch Later, a resume card.
+    private func openInBrowser(_ address: String) {
+        pendingAddress = address
+        withAnimation(.easeInOut(duration: 0.22)) {
+            browserShowsHome = false
+            selection = .web
+        }
+    }
+
     private func select(_ destination: AppDestination) {
         session.showBar()
-        dismissDrawer()
-        // Settings opens over whatever you were doing and hands it back when it
-        // closes, rather than replacing it.
-        guard destination != .settings else {
+        switch destination {
+        // Both open over whatever you were doing and hand it back when they
+        // close, rather than replacing it.
+        case .settings:
             showSettings = true
             return
+        case .watchLater:
+            showWatchLater = true
+            return
+        // The tab exists; which half of it is up is `browserShowsHome`, and
+        // pressing the tab you are already on should not throw a page away.
+        case .home:
+            withAnimation(.easeInOut(duration: 0.22)) {
+                browserShowsHome = true
+                selection = .web
+            }
+            return
+        // Asked for the browser while already in that tab, which can only be
+        // Home's own "Web Browser" card — the tab ignores a press on itself.
+        // From anywhere else it is a tab switch, and the half you left is the
+        // half you come back to.
+        case .web where selection == .web:
+            withAnimation(.easeInOut(duration: 0.22)) {
+                browserShowsHome = false
+            }
+            return
+        default:
+            break
         }
         withAnimation(.easeInOut(duration: 0.22)) {
             selection = destination
         }
     }
 
-    /// The five places you can be, in one list.
-    ///
-    /// All of them, including the three that used to have seats in a bottom
-    /// bar. Splitting destinations across a bar and a grid meant the split was
-    /// by how often a place is visited rather than by what it is, and left
-    /// Settings and Stream reachable only through a button that named neither.
-    private var drawerDestinations: [AppDrawerPanel.Item] {
-        AppDestination.allCases.map { destination in
-            let here = selection == destination
-            return AppDrawerPanel.Item(
-                icon: destination.icon(selected: here),
-                label: destination.title,
-                detail: destination.detail,
-                tint: destination.tint,
-                isCurrent: here
-            ) { select(destination) }
-        }
-    }
-
-    /// Everything that is not a place.
-    ///
-    /// No Cast row: the mark for it is in the header of every screen, two
-    /// centimetres above this list, and a drawer that repeats what the bar
-    /// already offers teaches people the bar is not to be trusted.
-    private var drawerActions: [AppDrawerPanel.Item] {
-        var items: [AppDrawerPanel.Item] = [
-            AppDrawerPanel.Item(
-                icon: "questionmark.circle.fill", label: "Help",
-                detail: "Answers, and how to reach us",
-                tint: .blue
-            ) { dismissDrawer(); showFAQ = true },
-            AppDrawerPanel.Item(
-                icon: "exclamationmark.bubble.fill", label: "Report a problem",
-                detail: "A site that will not play, or anything broken",
-                tint: .orange
-            ) { dismissDrawer(); showReport = true },
-        ]
-        // Only once there is a listing to open. A Rate row that goes nowhere is
-        // worse than no Rate row.
-        if VersionStore.storeLinkReady {
-            items.append(
-                AppDrawerPanel.Item(
-                    icon: "star.fill", label: "Rate Panura",
-                    detail: "Leave a review on the App Store",
-                    tint: .yellow
-                ) {
-                    dismissDrawer()
-                    UIApplication.shared.open(VersionStore.storeURL)
-                }
-            )
-        }
-        return items
-    }
 
     /// The TV in use, for the bar and the dialog that names it.
     private var castDeviceName: String? {

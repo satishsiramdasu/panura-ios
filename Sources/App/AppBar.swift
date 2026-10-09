@@ -9,6 +9,9 @@ import SwiftUI
 /// all five, in one list, with room to say what each one is for.
 enum AppDestination: Hashable, CaseIterable {
     case home, web, videos, stream, watchLater, settings
+    /// Behind the shell's `+`. Neither is built yet — see `ComingSoonView`, and
+    /// `FeatureFlags.showsPlannedTabs`, which must be off for a submission.
+    case iptv, ftp
 
     var title: String {
         switch self {
@@ -23,6 +26,8 @@ enum AppDestination: Hashable, CaseIterable {
         case .stream: return "Network Stream"
         case .watchLater: return "Watch Later"
         case .settings: return "Settings"
+        case .iptv: return "IPTV"
+        case .ftp: return "FTP"
         }
     }
 
@@ -37,6 +42,8 @@ enum AppDestination: Hashable, CaseIterable {
         case .stream: return "Play a link straight from its address"
         case .watchLater: return "Pages and videos you set aside"
         case .settings: return "Playback, browser, subtitles, gestures"
+        case .iptv: return "Play a playlist you supply yourself"
+        case .ftp: return "Open a server on your own network"
         }
     }
 
@@ -48,6 +55,8 @@ enum AppDestination: Hashable, CaseIterable {
         case .stream: return "link"
         case .watchLater: return selected ? "clock.fill" : "clock"
         case .settings: return selected ? "gearshape.fill" : "gearshape"
+        case .iptv: return selected ? "tv.fill" : "tv"
+        case .ftp: return selected ? "folder.fill" : "folder"
         }
     }
 
@@ -61,6 +70,8 @@ enum AppDestination: Hashable, CaseIterable {
         case .stream: return .cyan
         case .watchLater: return .purple
         case .settings: return .gray
+        case .iptv: return .pink
+        case .ftp: return .teal
         }
     }
 }

@@ -1,14 +1,19 @@
 import SwiftUI
 
-/// The app's one header, on every screen — port of Android's `PanuraTopAppBar`
-/// and the Home/browser address bars, which are all the same 52pt row:
+/// A screen's own bar — port of Android's `PanuraTopAppBar` and the
+/// Home/browser address bars, which are all the same 52pt row:
 ///
-///     [ app glyph ] [ title, or an address pill ] [ cast ]
+///     [ app glyph ] [ title, or an address pill ]
 ///
 /// Written once and used everywhere for the reason Android gives: a screen that
 /// styles its own header makes switching destinations look like leaving the app.
-/// The glyph and the cast control hold the same pixel on every screen, so only
-/// the middle changes as you move.
+/// The glyph holds the same pixel on every screen, so only the middle changes as
+/// you move.
+///
+/// **The app's own controls are no longer here.** The menu and the cast button
+/// used to bracket this row on all four screens; `ShellHeader` draws them once,
+/// above the tabs, and what is left is about the screen rather than about the
+/// app. Nothing was removed from the app — it stopped being drawn four times.
 ///
 /// The glyph is the app's own launcher artwork — the adaptive icon's foreground,
 /// trimmed of its safe-zone padding — so the header wears the same mark as the
@@ -40,46 +45,15 @@ struct PanuraHeader<Content: View>: View {
 
     static var height: CGFloat { 52 }
 
-    @ObservedObject private var drawer = DrawerState.shared
-
     var body: some View {
         HStack(spacing: AppChrome.headerSpacing) {
-            menuButton
             glyph
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
-            CastToolbarButton()
-                .frame(width: 44, height: 44)
         }
         .padding(.horizontal, AppChrome.headerPadding)
         .frame(height: Self.height)
         .background(PanuraTheme.surfaceContainer)
-    }
-
-    /// Opens the navigation drawer, and closes it again.
-    ///
-    /// Left of the mark, where the app's own controls live, and on every screen
-    /// in the same place — it replaces a bottom bar, so it has to be as findable
-    /// as one.
-    ///
-    /// The same glyph whether the drawer is open or shut. It used to swap to a
-    /// cross, which made the one control that has to be recognisable everywhere
-    /// into two different-looking buttons, and read as "close the app" rather
-    /// than "close the menu". Tapping away and swiping both dismiss the drawer
-    /// anyway; the button is a switch, and a switch does not change shape when
-    /// it is on.
-    private var menuButton: some View {
-        Button { drawer.toggle() } label: {
-            MenuGlyph()
-            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-            // 38 square with nothing drawn behind it. The footprint is what
-            // `PanelMetrics.glyphCentre` measures from, so it stays even though
-            // the circle that used to fill it is gone.
-            .frame(width: 38, height: 38)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(drawer.isOpen ? "Close menu" : "Menu")
     }
 
     @ViewBuilder
@@ -217,24 +191,5 @@ struct AddressPill<Leading: View, Trailing: View>: View {
         .padding(.horizontal, 6)
         .frame(height: 44)
         .background(background, in: Capsule())
-    }
-}
-
-/// Three bars, left aligned, the middle one longest.
-///
-/// Drawn rather than named: no SF Symbol has this stagger — `line.3.horizontal`
-/// is three equal lines and reads as a list, and `line.3.horizontal.decrease`
-/// centres its lines and shortens each one in turn, which is the filter mark.
-private struct MenuGlyph: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4.5) {
-            bar(15)
-            bar(20)
-            bar(15)
-        }
-    }
-
-    private func bar(_ width: CGFloat) -> some View {
-        Capsule().frame(width: width, height: 2.2)
     }
 }
