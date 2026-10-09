@@ -17,6 +17,7 @@ struct IPTVView: View {
     @State private var group: String?
     @State private var editing: IPTVSource?
     @State private var editingPassword = ""
+    @State private var openSeries: XtreamSeries?
 
     var body: some View {
         Group {
@@ -25,6 +26,9 @@ struct IPTVView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(PanuraTheme.background)
         .safeAreaInset(edge: .top, spacing: 0) { bar }
+        .sheet(item: $openSeries) { show in
+            IPTVSeriesSheet(show: show)
+        }
         .sheet(item: $editing) { source in
             IPTVSourceForm(
                 source: source,
@@ -204,7 +208,7 @@ struct IPTVView: View {
 
     private var visible: [M3UChannel] {
         let text = query.trimmingCharacters(in: .whitespaces)
-        return store.channels.filter { channel in
+        return store.listed.filter { channel in
             if let group, channel.group != group { return false }
             guard !text.isEmpty else { return true }
             return channel.name.range(of: text, options: .caseInsensitive) != nil
@@ -214,10 +218,13 @@ struct IPTVView: View {
     @ViewBuilder
     private var channelList: some View {
         VStack(spacing: 0) {
+            if store.hasCatalogue { sectionStrip }
             search
             if !store.groups.isEmpty { groupStrip }
 
-            if store.channels.isEmpty {
+            if store.section == .series {
+                seriesList
+            } else if store.listed.isEmpty {
                 if store.isLoading {
                     VStack(spacing: 8) {
                         ProgressView()
@@ -246,12 +253,108 @@ struct IPTVView: View {
         }
     }
 
+    /// Live, Movies, Series. Only for an account that has the last two — an
+    /// M3U address is a channel list and nothing else, and a switcher with one
+    /// working position is a switcher that teaches people not to press it.
+    private var sectionStrip: some View {
+        Picker("Section", selection: Binding(
+            get: { store.section },
+            set: { wanted in
+                group = nil
+                query = ""
+                Task { await store.loadSection(wanted) }
+            }
+        )) {
+            ForEach(IPTVStore.Section.allCases) { section in
+                Text(section.label).tag(section)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+        .background(chrome)
+    }
+
+    private var visibleSeries: [XtreamSeries] {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        return store.series.filter { show in
+            if let group, show.group != group { return false }
+            guard !text.isEmpty else { return true }
+            return show.name.range(of: text, options: .caseInsensitive) != nil
+        }
+    }
+
+    @ViewBuilder
+    private var seriesList: some View {
+        if store.series.isEmpty {
+            if store.isLoading {
+                VStack(spacing: 8) {
+                    ProgressView()
+                    Text("Loading the series list…")
+                        .font(.footnote)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Text(store.failure ?? "No series in this subscription.")
+                    .font(.footnote)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 32)
+            }
+        } else {
+            List(visibleSeries) { show in
+                Button { openSeries = show } label: { seriesRow(show) }
+                    .buttonStyle(.plain)
+                    .listRowBackground(PanuraTheme.background)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    private func seriesRow(_ show: XtreamSeries) -> some View {
+        HStack(spacing: 12) {
+            AsyncImage(url: show.cover) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "rectangle.stack")
+                        .font(.system(size: 14))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                }
+            }
+            .frame(width: 38, height: 54)
+            .clipped()
+            .background(PanuraTheme.surfaceContainerHigh, in: RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(show.name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(2)
+                if let group = show.group, !group.isEmpty, self.group == nil {
+                    Text(group)
+                        .font(.caption2)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        }
+        .padding(.vertical, 4)
+    }
+
     private var search: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14))
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
-            TextField("Search channels", text: $query)
+            TextField(searchPrompt, text: $query)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !query.isEmpty {
@@ -268,6 +371,14 @@ struct IPTVView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(chrome)
+    }
+
+    private var searchPrompt: String {
+        switch store.section {
+        case .live: return "Search channels"
+        case .movies: return "Search films"
+        case .series: return "Search series"
+        }
     }
 
     private var groupStrip: some View {
@@ -424,5 +535,143 @@ private struct IPTVSourceForm: View {
                 }
             }
         }
+    }
+}
+
+/// One series: its seasons, and the episodes in each.
+///
+/// A sheet rather than a pushed screen because the list underneath it is where
+/// you came from and where you are going back to — and because the IPTV tab
+/// draws its own bar, so a navigation stack here would be a second one.
+private struct IPTVSeriesSheet: View {
+    let show: XtreamSeries
+
+    @ObservedObject private var store = IPTVStore.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var seasons: [XtreamSeason] = []
+    @State private var loading = true
+    /// Which season is open. The first by default — a series with one season
+    /// should not need a tap to show it.
+    @State private var season: Int?
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if loading {
+                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if seasons.isEmpty {
+                    Text("No episodes listed for this series.")
+                        .font(.footnote)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.horizontal, 32)
+                } else {
+                    list
+                }
+            }
+            .background(PanuraTheme.background)
+            .navigationTitle(show.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .task {
+            seasons = await store.episodes(of: show)
+            season = seasons.first?.number
+            loading = false
+        }
+    }
+
+    private var list: some View {
+        VStack(spacing: 0) {
+            if seasons.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(seasons) { entry in
+                            Button { season = entry.number } label: {
+                                Text("Season \(entry.number)")
+                                    .font(.caption.weight(season == entry.number ? .semibold : .regular))
+                                    .foregroundStyle(
+                                        season == entry.number
+                                            ? PanuraTheme.onAccentSoft : PanuraTheme.onSurfaceVariant
+                                    )
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        season == entry.number
+                                            ? PanuraTheme.accentSoft : PanuraTheme.surfaceContainerHigh,
+                                        in: Capsule()
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+            }
+
+            List(episodes) { episode in
+                Button { play(episode) } label: { row(episode) }
+                    .buttonStyle(.plain)
+                    .listRowBackground(PanuraTheme.background)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+        }
+    }
+
+    private var episodes: [XtreamEpisode] {
+        seasons.first { $0.number == season }?.episodes ?? seasons.first?.episodes ?? []
+    }
+
+    private func row(_ episode: XtreamEpisode) -> some View {
+        HStack(spacing: 12) {
+            AsyncImage(url: episode.still) { phase in
+                if case .success(let image) = phase {
+                    image.resizable().scaledToFill()
+                } else {
+                    Image(systemName: "play.rectangle")
+                        .font(.system(size: 14))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                }
+            }
+            .frame(width: 56, height: 32)
+            .clipped()
+            .background(PanuraTheme.surfaceContainerHigh, in: RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(episode.number). \(episode.title)")
+                    .font(.subheadline)
+                    .lineLimit(1)
+                if let plot = episode.plot, !plot.isEmpty {
+                    Text(plot)
+                        .font(.caption2)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(2)
+                }
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "play.circle")
+                .font(.system(size: 18))
+                .foregroundStyle(PanuraTheme.accent)
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func play(_ episode: XtreamEpisode) {
+        dismiss()
+        PlaybackSession.shared.play(
+            MediaItem(
+                title: "\(show.name) — \(episode.title)",
+                url: episode.url,
+                thumbnailURL: episode.still
+            )
+        )
     }
 }

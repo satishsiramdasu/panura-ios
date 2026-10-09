@@ -142,12 +142,30 @@ final class IPTVStore: ObservableObject {
     /// The playlist being looked at, or nil for the list of playlists.
     @Published private(set) var open: IPTVSource?
     @Published private(set) var channels: [M3UChannel] = []
+    @Published private(set) var movies: [M3UChannel] = []
+    @Published private(set) var series: [XtreamSeries] = []
+    /// Which of the three lists is on screen.
+    @Published var section: Section = .live
     @Published private(set) var isLoading = false
     @Published private(set) var failure: String?
     /// When the open playlist's channels were downloaded.
     @Published private(set) var fetchedAt: Date?
     /// What the panel said about the subscription, when it was asked.
     @Published private(set) var account: XtreamClient.Account?
+
+    /// What a panel carries. An M3U address has only the first.
+    enum Section: String, CaseIterable, Identifiable {
+        case live, movies, series
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .live: return "Live"
+            case .movies: return "Movies"
+            case .series: return "Series"
+            }
+        }
+    }
 
     /// Three hours. Long enough that a normal evening never refetches, short
     /// enough that a provider's overnight changes are picked up next day.
@@ -167,13 +185,22 @@ final class IPTVStore: ObservableObject {
         return Date().timeIntervalSince(fetchedAt) > Self.freshness
     }
 
-    /// Every group name in the open playlist, in the order they first appear.
+    /// The rows the section on screen is made of.
+    var listed: [M3UChannel] { section == .movies ? movies : channels }
+
+    /// Whether this account has films and series at all. An M3U address is a
+    /// channel list and nothing else, so the switcher does not appear for one.
+    var hasCatalogue: Bool { open?.kind.usesXtream == true }
+
+    /// Every group name in the section on screen, in the order they first
+    /// appear.
     var groups: [String] {
         var seen: [String] = []
-        for channel in channels {
-            if let group = channel.group, !group.isEmpty, !seen.contains(group) {
-                seen.append(group)
-            }
+        let names: [String?] = section == .series
+            ? series.map(\.group)
+            : listed.map(\.group)
+        for group in names {
+            if let group, !group.isEmpty, !seen.contains(group) { seen.append(group) }
         }
         return seen
     }
@@ -200,7 +227,9 @@ final class IPTVStore: ObservableObject {
 
     func remove(_ source: IPTVSource) {
         sources.removeAll { $0.id == source.id }
-        try? FileManager.default.removeItem(at: Self.cacheURL(source))
+        for section in Section.allCases {
+            try? FileManager.default.removeItem(at: Self.cacheURL(source, section: section))
+        }
         Keychain.remove(source.credentialKey)
         if open?.id == source.id { close() }
         persist()
@@ -216,9 +245,73 @@ final class IPTVStore: ObservableObject {
     func close() {
         open = nil
         channels = []
+        movies = []
+        series = []
+        section = .live
         failure = nil
         fetchedAt = nil
         account = nil
+    }
+
+    /// Films or series, fetched the first time somebody asks to see them.
+    ///
+    /// A panel's film catalogue is routinely larger than its channel list, so
+    /// pulling both on sign-in would make every launch pay for something most
+    /// sessions never open. Cached under their own names, on the same three
+    /// hours as the channels.
+    func loadSection(_ wanted: Section) async {
+        section = wanted
+        guard let source = open, source.kind.usesXtream else { return }
+        switch wanted {
+        case .live:
+            return
+        case .movies where !movies.isEmpty:
+            return
+        case .series where !series.isEmpty:
+            return
+        default:
+            break
+        }
+
+        if wanted == .movies, let cached = Self.readCache(source, section: .movies),
+           Date().timeIntervalSince(cached.at) < Self.freshness {
+            movies = StreamModel.parse(cached.text, base: cached.base)
+            return
+        }
+
+        isLoading = true
+        defer { isLoading = false }
+        failure = nil
+
+        let password = password(for: source)
+        do {
+            if wanted == .movies {
+                let found = try await XtreamClient.movies(
+                    host: source.host, username: source.username, password: password
+                )
+                movies = found
+                Self.writeCache(source, section: .movies, text: XtreamClient.m3u(found))
+            } else {
+                series = try await XtreamClient.series(
+                    host: source.host, username: source.username, password: password
+                )
+            }
+        } catch {
+            failure = (error as? LocalizedError)?.errorDescription
+                ?? "Could not load that list."
+        }
+    }
+
+    /// The seasons of one series. Never cached — it is one small call, and a
+    /// stale episode list is the kind of wrong nobody forgives.
+    func episodes(of show: XtreamSeries) async -> [XtreamSeason] {
+        guard let source = open, source.kind.usesXtream else { return [] }
+        return (try? await XtreamClient.episodes(
+            host: source.host,
+            username: source.username,
+            password: password(for: source),
+            seriesID: show.id
+        )) ?? []
     }
 
     /// Opens a playlist from cache when the cache is young enough, and from the
@@ -318,13 +411,14 @@ final class IPTVStore: ObservableObject {
         let at: Date
     }
 
-    private static func cacheURL(_ source: IPTVSource) -> URL {
+    private static func cacheURL(_ source: IPTVSource, section: Section = .live) -> URL {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        return caches.appendingPathComponent("iptv-\(source.id.uuidString).m3u")
+        let suffix = section == .live ? "" : "-" + section.rawValue
+        return caches.appendingPathComponent("iptv-\(source.id.uuidString)\(suffix).m3u")
     }
 
-    private static func readCache(_ source: IPTVSource) -> Cached? {
-        let file = cacheURL(source)
+    private static func readCache(_ source: IPTVSource, section: Section = .live) -> Cached? {
+        let file = cacheURL(source, section: section)
         // An Xtream cache holds absolute URLs, so the base is only ever used by
         // the M3U kind — where a relative entry is still legal.
         let base = source.kind.usesXtream
@@ -340,7 +434,9 @@ final class IPTVStore: ObservableObject {
         return Cached(text: text, base: base, at: at ?? .distantPast)
     }
 
-    private static func writeCache(_ source: IPTVSource, text: String) {
-        try? text.write(to: cacheURL(source), atomically: true, encoding: .utf8)
+    private static func writeCache(
+        _ source: IPTVSource, section: Section = .live, text: String
+    ) {
+        try? text.write(to: cacheURL(source, section: section), atomically: true, encoding: .utf8)
     }
 }

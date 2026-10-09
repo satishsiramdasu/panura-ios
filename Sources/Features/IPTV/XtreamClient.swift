@@ -103,6 +103,10 @@ enum XtreamClient {
 
     // MARK: calls
 
+    // Internal rather than private: `XtreamCatalogue` is this client's films
+    // and series half, split into its own file because it is fetched on demand
+    // rather than on sign-in. Same type, same rules, other file.
+
     private static func account(
         base: String, username: String, password: String
     ) async throws -> Account {
@@ -128,7 +132,7 @@ enum XtreamClient {
         )
     }
 
-    private static func rows(
+    static func rows(
         base: String, username: String, password: String, action: String
     ) async throws -> [[String: Any]] {
         let object = try await json(base: base, username: username, password: password, action: action)
@@ -137,7 +141,7 @@ enum XtreamClient {
         return (object as? [[String: Any]]) ?? []
     }
 
-    private static func json(
+    static func json(
         base: String, username: String, password: String, action: String?
     ) async throws -> Any {
         var text = "\(base)/player_api.php?username=\(escape(username))&password=\(escape(password))"
@@ -163,7 +167,7 @@ enum XtreamClient {
     // MARK: loose reading
 
     /// `"5"`, `5` and `5.0` all mean five.
-    private static func string(_ value: Any?) -> String? {
+    static func string(_ value: Any?) -> String? {
         switch value {
         case let text as String: return text.isEmpty ? nil : text
         case let number as NSNumber: return number.stringValue
@@ -171,7 +175,7 @@ enum XtreamClient {
         }
     }
 
-    private static func integer(_ value: Any?) -> Int? {
+    static func integer(_ value: Any?) -> Int? {
         switch value {
         case let number as NSNumber: return number.intValue
         case let text as String: return Int(text)
@@ -181,7 +185,7 @@ enum XtreamClient {
 
     /// Credentials go in a path segment as well as a query, so they are escaped
     /// for the stricter of the two.
-    private static func escape(_ value: String) -> String {
+    static func escape(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? value
     }
 
