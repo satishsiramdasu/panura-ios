@@ -174,25 +174,28 @@ struct RootTabView: View {
                 // Both collapse their height in place rather than sliding over
                 // the content, so nothing either of them covers can end up out
                 // of reach - the same rule the browser's address bar follows.
-                ShellHeader(
-                    connectedTV: castDeviceName,
-                    ground: deepChrome
-                ) { menuRows }
-                    .frame(height: chrome.headerVisible ? ShellHeader<EmptyView>.height : 0)
-                    .opacity(chrome.headerVisible ? 1 : 0)
-                    .clipped()
+                // One block, one height. The header and the strip used to
+                // collapse on separate flags, which put two things in motion in
+                // the same corner at two different moments; they are the top of
+                // the app, so they go together.
+                VStack(spacing: 0) {
+                    ShellHeader(
+                        connectedTV: castDeviceName,
+                        ground: deepChrome
+                    ) { menuRows }
 
-                ShellTabBar(
-                    tabs: tabSet.tabs,
-                    selection: $selection,
-                    addable: tabSet.offerable,
-                    onSelect: select,
-                    onAdd: addTab,
-                    ground: deepChrome,
-                    privateBrowsing: session.privateMode
-                )
-                .frame(height: chrome.tabsVisible ? ShellTabBar.height : 0)
-                .opacity(chrome.tabsVisible ? 1 : 0)
+                    ShellTabBar(
+                        tabs: tabSet.tabs,
+                        selection: $selection,
+                        addable: tabSet.offerable,
+                        onSelect: select,
+                        onAdd: addTab,
+                        ground: deepChrome,
+                        privateBrowsing: session.privateMode
+                    )
+                }
+                .frame(height: chrome.visible ? Self.chromeHeight : 0, alignment: .bottom)
+                .opacity(chrome.visible ? 1 : 0)
                 .clipped()
 
                 content
@@ -207,6 +210,12 @@ struct RootTabView: View {
     /// destination's, violet while the browser is private.
     private var deepChrome: Color {
         selection.chromeDeep(privateBrowsing: session.privateMode)
+    }
+
+    /// Header plus strip. Collapsed as one height, so the strip slides out
+    /// under the header rather than the two of them racing.
+    private static var chromeHeight: CGFloat {
+        ShellHeader<EmptyView>.height + ShellTabBar.height
     }
 
     /// Puts a tab in the strip and goes to it, in one motion.

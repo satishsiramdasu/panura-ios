@@ -9,30 +9,30 @@ import SwiftUI
 ///
 /// Every other tab is a reading surface: a web page, a library of videos. There
 /// the chrome earns its height or it goes — but only ever because the reader
-/// asked. Scrolling down takes the header and then the tabs, leaving the
+/// asked. Scrolling down takes the header and the strip together, leaving the
 /// screen's own bar — the browser's address row, the Videos toolbar — as the
-/// only thing above the content. Scrolling back up returns the tabs, and
-/// reaching the top returns everything.
+/// only thing above the content. Scrolling back up brings them back together.
+///
+/// **One piece, not two.** They used to come and go separately: the strip
+/// returned on any upward scroll and the header waited for the top. On paper
+/// that is more considerate; in the hand it meant two different things moving
+/// at two different moments in the same corner of the screen, and the strip
+/// spent its time half-committed — the one thing a reader notices is furniture
+/// that cannot decide. The header and the strip are the top of the app. They
+/// go as one.
 ///
 /// **A tab switch hides nothing.** It used to: arriving anywhere but Home
 /// dropped the header at once, on the reasoning that you had just said where
 /// you wanted to be. In the hand it read as the app twitching — you press
 /// Videos and the thing you pressed through slides away under your finger,
-/// before you have looked at anything. Worse, the first scroll report from the
-/// screen you landed on put it straight back, so a switch was a slide up and a
-/// slide down for nothing. Chrome moves on scroll and on nothing else now.
-///
-/// Two separate flags rather than one, because they come back at different
-/// moments: the tabs return on any upward scroll, the header only at the top.
-/// Collapsing them into one would mean either the header flickering back on
-/// every small scroll up, or the tabs being unreachable without scrolling all
-/// the way home.
+/// before you have looked at anything. Chrome moves on scroll and on nothing
+/// else now.
 @MainActor
 final class ShellChrome: ObservableObject {
     static let shared = ShellChrome()
 
-    @Published private(set) var headerVisible = true
-    @Published private(set) var tabsVisible = true
+    /// The header and the strip, together.
+    @Published private(set) var visible = true
 
     /// Which tab is on screen.
     ///
@@ -47,9 +47,27 @@ final class ShellChrome: ObservableObject {
     /// Whether the tab on screen hides its chrome at all. False on Home.
     private var scrollAway = false
 
+    /// How far the finger has gone in its current direction.
+    ///
+    /// The chrome used to move on a single event's delta exceeding eight
+    /// points, which is what a web page does the instant it is flicked and what
+    /// a grid of thumbnails dragged deliberately never does — a steady drag
+    /// reports one or two points at a time, so the strip simply would not
+    /// shift, and the only way to move it was to flick hard. Accumulating until
+    /// the movement adds up, and starting again whenever the direction changes,
+    /// is the difference between a threshold on speed and a threshold on
+    /// intent. Only the second one is what was meant.
+    private var travel: CGFloat = 0
+
     private init() {}
 
     private static let motion = Animation.easeOut(duration: 0.22)
+
+    /// Far enough down to mean it. Roughly a thumbnail's worth.
+    private static let hideAfter: CGFloat = 40
+    /// Shorter coming back: wanting the chrome is a thing you want *now*,
+    /// where wanting it out of the way is a thing you want for a while.
+    private static let showAfter: CGFloat = 16
 
     /// The tab changed: everything comes back, and nothing slides.
     ///
@@ -60,8 +78,8 @@ final class ShellChrome: ObservableObject {
     func destinationChanged(to destination: AppDestination) {
         current = destination
         scrollAway = destination != .home
-        headerVisible = true
-        tabsVisible = true
+        travel = 0
+        visible = true
     }
 
     /// - Parameters:
@@ -71,32 +89,35 @@ final class ShellChrome: ObservableObject {
     ///   - destination: the screen reporting. Dropped unless it is the one on
     ///     screen — see `current`.
     ///
-    /// The 8-point threshold is the one `BrowserSession` already uses for the
-    /// address bar: small enough to feel immediate, large enough that a page
-    /// still settling does not flap the chrome.
+    /// Measured in distance travelled rather than in how fast any one event
+    /// was — see `travel`.
     func scrolled(by delta: CGFloat, atTop: Bool, from destination: AppDestination) {
         guard destination == current, scrollAway else { return }
+
         if atTop {
-            guard !headerVisible || !tabsVisible else { return }
-            withAnimation(Self.motion) {
-                headerVisible = true
-                tabsVisible = true
-            }
+            travel = 0
+            show()
             return
         }
-        if delta > 8 {
-            guard headerVisible || tabsVisible else { return }
-            withAnimation(Self.motion) {
-                headerVisible = false
-                tabsVisible = false
-            }
-        } else if delta < -8 {
-            // The tabs come back on the way up; the header waits for the top.
-            // Otherwise the name of the app reappears every time somebody
-            // nudges a page back a line.
-            guard !tabsVisible else { return }
-            withAnimation(Self.motion) { tabsVisible = true }
+
+        // A change of direction starts the count again, so twenty points down
+        // followed by twenty back up is not forty of anything.
+        if delta > 0 ? travel < 0 : travel > 0 { travel = 0 }
+        travel += delta
+
+        if travel >= Self.hideAfter {
+            travel = 0
+            guard visible else { return }
+            withAnimation(Self.motion) { visible = false }
+        } else if travel <= -Self.showAfter {
+            travel = 0
+            show()
         }
+    }
+
+    private func show() {
+        guard !visible else { return }
+        withAnimation(Self.motion) { visible = true }
     }
 }
 
