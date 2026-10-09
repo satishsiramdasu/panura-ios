@@ -42,7 +42,12 @@ struct ShellTabBar: View {
     /// it is the one shape in the app that has to read as a physical tab.
     private let corner: CGFloat = 14
     private let gutter: CGFloat = 8
-    private let gap: CGFloat = 4
+    /// Negative: the tabs overlap. A gap between them makes four separate
+    /// buttons; tucking each one behind its neighbour makes a stack of pages,
+    /// which is the whole idea — the selected one is the page in front and the
+    /// rest are filed behind it. The overlap is small enough that no label
+    /// loses a letter at 375pt, where a seat is still about 90 points wide.
+    private let gap: CGFloat = -8
 
     private var showsMore: Bool { !more.isEmpty || !planned.isEmpty }
     private var moreActive: Bool {
@@ -55,8 +60,12 @@ struct ShellTabBar: View {
                 HStack(alignment: .bottom, spacing: gap) {
                     ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
                         tabButton(tab, at: index, width: width)
+                            .zIndex(stacking(at: index))
                     }
-                    if showsMore { moreButton(width: width) }
+                    if showsMore {
+                        moreButton(width: width)
+                            .zIndex(stacking(at: tabs.count))
+                    }
                 }
                 .padding(.horizontal, gutter)
             }
@@ -141,6 +150,18 @@ struct ShellTabBar: View {
         return moreActive ? tabs.count : nil
     }
 
+    /// Who is in front of whom.
+    ///
+    /// The selected tab is the page on top; every other one is filed further
+    /// back the further it is from the selected one, so the overlaps all run
+    /// toward where you are standing instead of all running left to right.
+    /// Without this the row is still a stack, but one whose order has nothing
+    /// to do with anything.
+    private func stacking(at index: Int) -> Double {
+        guard let active = activeIndex else { return 0 }
+        return active == index ? 100 : -Double(abs(active - index))
+    }
+
     /// An unselected tab, shaded toward the selected one.
     ///
     /// Each one is brightest on the edge facing where you are and falls away
@@ -148,12 +169,16 @@ struct ShellTabBar: View {
     /// behind the open one, lit by it, rather than as four buttons of which one
     /// happens to be on. It also means the tab next to the selected one is the
     /// lightest unselected tab on screen, which is true - it is the nearest.
+    ///
+    /// Deliberately faint. The first pass ran this ramp nearly to full strength
+    /// and it read as exactly what it is, a gradient painted on a button - the
+    /// shading is not what says "page". The edge is.
     private func leaning(from index: Int) -> LinearGradient {
-        let far = PanuraTheme.surfaceContainerHigh.opacity(0.22)
+        let far = PanuraTheme.surfaceContainerHigh.opacity(0.20)
         // The open panel's own colour, weak. Borrowing the hue rather than
         // lightening neutrally is what points at it; a grey ramp would only
         // look like a gradient.
-        let near = selection.chrome(privateBrowsing: privateBrowsing).opacity(0.85)
+        let near = selection.chrome(privateBrowsing: privateBrowsing).opacity(0.55)
         guard let active = activeIndex, active != index else {
             return LinearGradient(colors: [far, far], startPoint: .leading, endPoint: .trailing)
         }
@@ -162,6 +187,27 @@ struct ShellTabBar: View {
             colors: [far, near],
             startPoint: activeIsRight ? .leading : .trailing,
             endPoint: activeIsRight ? .trailing : .leading
+        )
+    }
+
+    /// The lit edge that makes a tab a sheet of paper.
+    ///
+    /// This is the piece that was missing. A tab is a rectangle of a slightly
+    /// different colour, and nothing about a colour says it has a thickness or
+    /// that something is behind it — a lifted edge does, which is why every
+    /// physical-looking tab strip has one. With the tabs overlapping, each
+    /// edge also lands on top of its neighbour, which is what turns four
+    /// shapes into a stack.
+    ///
+    /// Brightest at the top and gone by the bottom, for a plain reason: the
+    /// bottom of this shape is the join with the bar underneath, and a hairline
+    /// drawn across it would be a seam in the one place the whole design is
+    /// trying not to have one.
+    private func edge(active: Bool) -> LinearGradient {
+        LinearGradient(
+            colors: [Color.white.opacity(active ? 0.10 : 0.16), .clear],
+            startPoint: .top,
+            endPoint: .bottom
         )
     }
 
@@ -194,18 +240,29 @@ struct ShellTabBar: View {
         // Rounded on top only. Rounded at the bottom too and it would be a pill
         // sitting above the panel; this one has to join it.
         .background(
-            UnevenRoundedRectangle(
-                topLeadingRadius: corner,
-                bottomLeadingRadius: 0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius: corner,
-                style: .continuous
-            )
-            // Both cases arrive resolved: the destination's own colour when
-            // this is where you are, and a ramp toward it when it is not.
-            .fill(fill)
+            ZStack {
+                // Opaque first. An unselected tab's fill is a translucent ramp,
+                // and now that the tabs overlap, translucency would let the one
+                // behind show through the one in front - which is the opposite
+                // of a stack.
+                seatShape.fill(ground)
+                // Both cases arrive resolved: the destination's own colour when
+                // this is where you are, and a ramp toward it when it is not.
+                seatShape.fill(fill)
+                seatShape.strokeBorder(edge(active: active), lineWidth: 1)
+            }
         )
         .contentShape(Rectangle())
+    }
+
+    private var seatShape: UnevenRoundedRectangle {
+        UnevenRoundedRectangle(
+            topLeadingRadius: corner,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: 0,
+            topTrailingRadius: corner,
+            style: .continuous
+        )
     }
 
     /// "Network Stream" is the label from when it had a whole drawer row. A
