@@ -58,6 +58,26 @@ struct ShellTabBar: View {
     /// of the strip would shift under the user's thumb for no reason.
     private let overlapBudget: CGFloat = 30
 
+    /// Extra width the selected tab takes, over and above its seat.
+    ///
+    /// Two jobs. Standing still it is what makes the front page of the stack
+    /// look like the front page - wider as well as lighter, the way a tab you
+    /// have pulled forward actually is. Moving, it is the slide: selecting the
+    /// tab to your right grows that one and shrinks this one, so the whole row
+    /// shoves rightward in one motion rather than one tab going dark and
+    /// another lighting up.
+    ///
+    /// Taken out of the seat width rather than added to the row, so the strip
+    /// is the same width whichever tab is selected.
+    private let selectedBonus: CGFloat = 16
+
+    /// How the row rearranges itself when the selection moves.
+    ///
+    /// A spring rather than a curve: the row is being shoved, and a shove
+    /// overshoots slightly and settles. Short enough that it is finished before
+    /// the screen underneath has finished changing.
+    private static let slide = Animation.spring(response: 0.34, dampingFraction: 0.84)
+
     private var showsMore: Bool { !more.isEmpty || !planned.isEmpty }
     private var moreActive: Bool {
         more.contains(selection) || planned.contains(selection)
@@ -82,6 +102,12 @@ struct ShellTabBar: View {
                     }
                 }
                 .padding(.horizontal, gutter)
+                // Everything that moves on a selection change moves together:
+                // the widths, the tuck each tab takes, the fills and the lit
+                // edges. Declared here rather than left to whoever set the
+                // selection, so a tab opened from Home's cards or a deep link
+                // slides exactly like one that was pressed.
+                .animation(Self.slide, value: selection)
             }
             // The row scrolls; the ground under it does not, or the darker bar
             // would slide out from behind the tabs with them.
@@ -99,7 +125,7 @@ struct ShellTabBar: View {
     /// overlaps give back — never a share of the actual count, which is what
     /// keeps a fifth peeking instead of squeezing.
     private func seatWidth(in total: CGFloat) -> CGFloat {
-        let usable = total - gutter * 2 + overlapBudget
+        let usable = total - gutter * 2 + overlapBudget - selectedBonus
         return max(64, usable / AppChrome.tabsPerRow)
     }
 
@@ -135,7 +161,7 @@ struct ShellTabBar: View {
                 ? AnyShapeStyle(tab.chrome(privateBrowsing: privateBrowsing))
                 : AnyShapeStyle(leaning(from: index)),
             at: index,
-            width: width
+            width: selection == tab ? width + selectedBonus : width
         )
         .onTapGesture {
             guard selection != tab else { return }
@@ -171,7 +197,7 @@ struct ShellTabBar: View {
                     ? AnyShapeStyle(selection.chrome(privateBrowsing: privateBrowsing))
                     : AnyShapeStyle(leaning(from: tabs.count)),
                 at: tabs.count,
-                width: width
+                width: moreActive ? width + selectedBonus : width
             )
         }
         .menuOrder(.fixed)
