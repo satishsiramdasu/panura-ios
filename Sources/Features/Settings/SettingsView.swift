@@ -99,6 +99,8 @@ struct SettingsView: View {
 
     @State private var confirmReset = false
     @State private var didReset = false
+    /// The one switch on the root — see the section it is in.
+    @AppStorage(TabSet.restoreKey) private var restoreLastTab = true
     @State private var path: [SettingsScreen] = []
     @Environment(\.dismiss) private var dismiss
 
@@ -124,6 +126,24 @@ struct SettingsView: View {
     private var content: some View {
         NavigationStack(path: $path) {
             List {
+                // The one exception to "nothing is set on the root". This
+                // switch is about the shell itself - which tab opens - and the
+                // shell has no preferences screen; a screen created to hold a
+                // single toggle is worse than the toggle being here, and it is
+                // the first thing the app does, so it reads well first.
+                Section {
+                    PreferenceToggle(
+                        title: "Open where I left off",
+                        description: "Start on the last tab you were using",
+                        icon: "arrow.uturn.backward",
+                        isOn: $restoreLastTab
+                    )
+                } header: {
+                    Text("Startup")
+                } footer: {
+                    Text("The browser is the exception: the app opens on Home and offers the page you were reading, rather than loading it again by itself.")
+                }
+
                 Section("Settings") {
                     PreferenceLink(
                         title: "Web Browser",
@@ -249,6 +269,7 @@ struct SettingsView: View {
             "mark_last_played", "show_extension", "videos_layout", "player_engine_mode",
             "auto_play_click", "block_page_fullscreen", "ad_block",
             "desktop_mode_default", "detection_enabled",
+            TabSet.restoreKey,
             // Every per-site override too: "back to defaults" that left a site
             // with detection switched off would not be back to defaults.
             "site_settings",

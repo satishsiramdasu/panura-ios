@@ -1,6 +1,6 @@
 import Foundation
 
-/// Which tabs this person has in their strip.
+/// Which tabs this person has in their strip, and which one the app opens on.
 ///
 /// Three are always there — Home, Browser, Videos — because they are what the
 /// app is. Everything else is opt-in: the `+` at the end of the row offers what
@@ -20,7 +20,7 @@ final class TabSet: ObservableObject {
     static let shared = TabSet()
 
     /// Always present, always in this order, never removable.
-    static let fixed: [AppDestination] = [.home, .web, .videos]
+    nonisolated static let fixed: [AppDestination] = [.home, .web, .videos]
 
     /// The pool the `+` offers from.
     ///
@@ -33,11 +33,17 @@ final class TabSet: ObservableObject {
     /// button, used once and left; it has a card on Home and opens as a sheet
     /// from there, which is the right shape for somewhere you go and come
     /// straight back out of.
-    static var addable: [AppDestination] {
+    nonisolated static var addable: [AppDestination] {
         FeatureFlags.showsPlannedTabs ? [.iptv, .ftp] : []
     }
 
-    private static let storageKey = "shell.added_tabs"
+    nonisolated static let storageKey = "shell.added_tabs"
+    nonisolated static let lastTabKey = "shell.last_tab"
+
+    /// Whether the app opens on the tab it was left on. On by default — it is
+    /// what every app with tabs does, and the alternative is throwing away
+    /// something the user has already told us.
+    nonisolated static let restoreKey = "restore_last_tab"
 
     @Published private(set) var added: [AppDestination]
 
@@ -50,13 +56,52 @@ final class TabSet: ObservableObject {
     }
 
     private init() {
-        let keys = UserDefaults.standard.stringArray(forKey: Self.storageKey) ?? []
-        // Filtered against the pool as it stands now, not as it stood when this
-        // was written: a tab that has since been withdrawn — the flag turned
-        // off, a feature dropped — must not come back out of storage and put a
-        // seat in the row that leads nowhere.
-        let pool = Self.addable
-        added = keys.compactMap(AppDestination.init(key:)).filter { pool.contains($0) }
+        added = Self.storedTabs()
+    }
+
+    /// The tabs that were added, as storage has them.
+    ///
+    /// Filtered against the pool as it stands now, not as it stood when they
+    /// were written: a tab that has since been withdrawn — the flag turned off,
+    /// a feature dropped — must not come back out of storage and put a seat in
+    /// the row that leads nowhere.
+    nonisolated static func storedTabs() -> [AppDestination] {
+        let keys = UserDefaults.standard.stringArray(forKey: storageKey) ?? []
+        let pool = addable
+        return keys.compactMap(AppDestination.init(key:)).filter { pool.contains($0) }
+    }
+
+    /// The tab to open on.
+    ///
+    /// **Never the browser.** A browser tab restored on launch is an empty
+    /// start page — the web view is not reopened on the page it was left on,
+    /// because reloading a site unasked spends somebody's data on a guess and
+    /// lands them on something they had finished with. So the app opens on
+    /// Home, where that page is offered as a card they can take or ignore.
+    /// Every other tab restores: Videos, and anything added from the `+`, is a
+    /// place with its own content already waiting.
+    ///
+    /// `nonisolated` and reading storage directly rather than the instance, so
+    /// the shell can ask for it while building its initial state.
+    nonisolated static func openingTab() -> AppDestination {
+        let defaults = UserDefaults.standard
+        guard defaults.flag(restoreKey, default: true),
+              let key = defaults.string(forKey: lastTabKey),
+              let last = AppDestination(key: key),
+              last != .web,
+              (fixed + storedTabs()).contains(last)
+        else { return .home }
+        return last
+    }
+
+    /// Remembers where the user is, for the next launch.
+    ///
+    /// The browser is written down like anywhere else and simply not restored —
+    /// recording where somebody actually was and deciding separately what to do
+    /// with it beats pretending they were somewhere else.
+    func remember(_ destination: AppDestination) {
+        guard tabs.contains(destination) else { return }
+        UserDefaults.standard.set(destination.key, forKey: Self.lastTabKey)
     }
 
     func add(_ destination: AppDestination) {

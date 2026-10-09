@@ -41,6 +41,10 @@ struct HomeView: View {
                     // Bookmarks and Continue Watching - the three ways to be
                     // playing something within one tap - and Explore stays
                     // below as the list of places to go instead.
+                    // Above Pick a video, because it is the more specific
+                    // offer: one named page somebody was actually reading
+                    // beats a picker over the whole library.
+                    if let last = store.lastVisited { continueBrowsingCard(last) }
                     PickVideoCard().padding(.horizontal, 16)
                     quickAccessSection
                     housekeepingRow
@@ -443,6 +447,61 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    // MARK: carry on browsing
+
+    /// The page the browser was last on, offered rather than reopened.
+    ///
+    /// The app does not restore the browser tab and does not reload the site —
+    /// an app that silently fetches a page on launch spends somebody's data on
+    /// a guess, and lands them on a video site they were finished with. This is
+    /// the same fact as a tap instead: one line, the page's own name, the host
+    /// underneath, and nothing happens until it is pressed.
+    ///
+    /// It is absent after private browsing and after Clear History, because it
+    /// reads from history and both of those leave none.
+    private func continueBrowsingCard(_ entry: SiteEntry) -> some View {
+        Button { onOpenBrowser(entry.url) } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.uturn.left.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(PanuraTheme.accent)
+                    .frame(width: 42, height: 42)
+                    .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Continue where you left off")
+                        .font(.caption)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(1)
+                    // The page's own name first and its host under it. A title
+                    // is what somebody remembers reading; a host is how they
+                    // check it is the right one.
+                    Text(entry.title.isEmpty ? entry.url : entry.title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if let host = URL(string: entry.url)?.host {
+                        Text(host)
+                            .font(.caption2)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            }
+            .padding(12)
+            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 16))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .accessibilityLabel("Continue browsing \(entry.title.isEmpty ? entry.url : entry.title)")
     }
 
     // MARK: continue watching

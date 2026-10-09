@@ -342,6 +342,18 @@ final class BrowsingStore: ObservableObject {
 
     var expiredWatching: [ResumeEntry] { resumes.filter(\.isExpired) }
 
+    /// The last page this person was on, for Home's "carry on" card.
+    ///
+    /// Read off history rather than stored separately, which gets three things
+    /// right for free: private browsing writes no history and so leaves no
+    /// card, Clear History clears the card with it, and there is no second copy
+    /// of the same fact to keep in step. The browser is not reopened on that
+    /// page — it is offered, which is a different thing: an app that silently
+    /// reloads a site on launch spends somebody's data on a guess.
+    var lastVisited: SiteEntry? {
+        history.max { $0.lastVisit < $1.lastVisit }
+    }
+
     // MARK: bookmarks
 
     func isBookmark(_ url: String) -> Bool {
