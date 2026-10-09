@@ -142,7 +142,9 @@ final class NetworkBrowser: NSObject, ObservableObject {
         // completion handler, which is why the browser is an NSObject.
         let parser = VLCMediaParser.shared()
         parser.delegate = self
-        parser.queueMedia(media, options: Self.parseOnly)
+        // Returns a libvlc status that is only ever interesting when the
+        // parser is torn down, which is not something this does.
+        _ = parser.queue(media, options: Self.parseOnly)
 
         timeout = Task { [weak self] in
             try? await Task.sleep(for: Self.patience)
@@ -214,7 +216,7 @@ final class NetworkBrowser: NSObject, ObservableObject {
 }
 
 extension NetworkBrowser: VLCMediaParserDelegate {
-    nonisolated func mediaFinishedParsing(_ media: VLCMedia, withStatus status: VLCMediaParsedStatus) {
+    nonisolated func mediaFinishedParsing(_ media: VLCMedia, with status: VLCMediaParsedStatus) {
         Task { @MainActor in
             // The shared parser may still be finishing something this browser
             // has already moved on from.
