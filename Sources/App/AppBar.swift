@@ -27,7 +27,10 @@ enum AppDestination: Hashable, CaseIterable {
         case .watchLater: return "Watch Later"
         case .settings: return "Settings"
         case .iptv: return "IPTV"
-        case .ftp: return "FTP"
+        // Not "FTP". The screen browses SMB, SFTP and FTP through one form, and
+        // SMB is what a home NAS actually speaks - naming the tab after the
+        // oldest of the three would send people past the one they want.
+        case .ftp: return "Server"
         }
     }
 
@@ -43,7 +46,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .watchLater: return "Pages and videos you set aside"
         case .settings: return "Playback, browser, subtitles, gestures"
         case .iptv: return "Play a playlist you supply yourself"
-        case .ftp: return "Open a server on your own network"
+        case .ftp: return "Play from a NAS or server on your network"
         }
     }
 

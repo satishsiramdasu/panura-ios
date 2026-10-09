@@ -404,8 +404,17 @@ struct RootTabView: View {
             // nobody has added is not composed at all, which is the difference
             // between an opt-in tab and a hidden one.
             ForEach(tabSet.added, id: \.self) { destination in
-                layer(destination) { ComingSoonView(destination: destination) }
+                layer(destination) { added(destination) }
             }
+        }
+    }
+
+    /// A tab somebody added from the `+`.
+    @ViewBuilder
+    private func added(_ destination: AppDestination) -> some View {
+        switch destination {
+        case .ftp: NetworkServerView()
+        default: ComingSoonView(destination: destination)
         }
     }
 

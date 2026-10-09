@@ -195,6 +195,13 @@ enum PlayerEngineKind: String, CaseIterable, Identifiable {
     /// extensions (a playlist as .txt, segments as .css or .woff), which is why
     /// the hand-over also listens to the player itself.
     static func needsVLC(_ item: MediaItem) -> Bool {
+        // Schemes AVFoundation has never spoken. Not a hint like the list
+        // below - an mp4 on an SMB share is a perfectly ordinary mp4 and Auto
+        // would hand it to the Apple player, which cannot open the URL at all.
+        if let scheme = item.url.scheme?.lowercased(),
+           ["smb", "sftp", "ftp", "ftps", "nfs"].contains(scheme) {
+            return true
+        }
         let path = item.url.path.lowercased()
         return ["mkv", "avi", "webm", "flv", "wmv", "rmvb", "ts", "mpg", "mpeg", "vob", "ogv", "divx"]
             .contains { path.hasSuffix("." + $0) }

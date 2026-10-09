@@ -118,7 +118,7 @@ targets:
         # SERVICE_TYPE exactly, minus the trailing dot.
         NSLocalNetworkUsageDescription: >-
           Panura needs your local network to find and cast to your Panura Android
-          TV. Nothing leaves your network.
+          TV, and to open servers you add yourself. Nothing leaves your network.
         NSBonjourServices:
           - _panura._tcp
           - _googlecast._tcp
