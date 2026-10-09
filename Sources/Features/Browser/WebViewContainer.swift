@@ -361,14 +361,14 @@ struct WebViewContainer: UIViewRepresentable {
             // there is not a scroll upward.
             if y <= 0 {
                 BrowserSession.shared.showBar()
-                ShellChrome.shared.scrolled(by: 0, atTop: true)
+                ShellChrome.shared.scrolled(by: 0, atTop: true, from: .web)
                 lastScrollY = y
                 return
             }
             guard y < bottom else { return }
             let delta = y - lastScrollY
             BrowserSession.shared.scrolled(by: delta)
-            ShellChrome.shared.scrolled(by: delta, atTop: false)
+            ShellChrome.shared.scrolled(by: delta, atTop: false, from: .web)
             lastScrollY = y
         }
 

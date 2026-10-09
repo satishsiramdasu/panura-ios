@@ -64,7 +64,6 @@ struct LocalVideosView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(PanuraTheme.background)
-            .scrollAwayContainer()
             // Search and the three controls belong to the bar, not to the
             // grid. Under it with no space they read as one dark mass glued to
             // the header; in it, on the bar's own surface and closed by a
@@ -187,8 +186,13 @@ struct LocalVideosView: View {
                     // the tabs with it, and the top brings them back. A
                     // `UIScrollView` would be observed directly; a SwiftUI one
                     // exposes nothing, so its offset is measured.
-                    .scrollAwayChrome()
+                    .scrollAwayChrome(.videos)
                 }
+                // The space the offset above is measured in is the scroll
+                // view's own frame, not the screen's. Measured against the
+                // screen, the toolbar coming or going moved the grid and
+                // counted as a scroll.
+                .scrollAwayContainer()
             }
             // Shown for the whole of selection mode, empty selection included:
             // it is what says the mode is on, and what gets out of it.
