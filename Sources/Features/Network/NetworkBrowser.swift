@@ -13,17 +13,27 @@ import VLCKit
 /// as the listing. That is how VLC's own apps draw their network tabs, and it
 /// means there is no FTP or SMB protocol code in this app at all.
 ///
-/// Three things that are not obvious and cost an afternoon each:
+/// **Parsing is not on `VLCMedia` in VLCKit 4.** It was in 3.x
+/// (`parseWithOptions:`); 4.0 moved it to a separate `VLCMediaParser` that you
+/// queue media on and which reports through its own delegate. `VLCMedia` kept
+/// only `parsedStatus` and `subitems`. Worth stating because every tutorial and
+/// every answer online is written against 3.x and none of it compiles.
 ///
-/// 1. **The media must be retained for the whole parse.** It is asynchronous
-///    and reports through a delegate; let it deallocate and `subitems` simply
-///    never arrives — no error, just an empty list for ever.
+/// Four things that are not obvious and cost an afternoon each:
+///
+/// 1. **The media must be retained for the whole parse.** It is asynchronous;
+///    let it deallocate and `subitems` simply never arrives — no error, just an
+///    empty list for ever.
 /// 2. **Directory URLs end in a slash.** Without it libVLC may open the path as
 ///    a file and return nothing.
-/// 3. **Never pass the interaction option.** It makes libVLC ask for
-///    credentials through its dialog API, and with no `VLCDialogProvider`
-///    installed the parse waits for an answer that never comes. Credentials go
-///    in the URL instead — see `NetworkServer.url(password:path:)`.
+/// 3. **Never pass `VLCMediaDoInteract`.** It makes libVLC ask for credentials
+///    through its dialog API, and with no `VLCDialogProvider` installed the
+///    parse waits for an answer that never comes. Credentials go in the URL
+///    instead — see `NetworkServer.url(password:path:)`.
+/// 4. **The options are passed by raw value on purpose.** `VLCMediaParsingOptions`
+///    is an alpha `NS_OPTIONS` whose Swift case names depend on how the importer
+///    strips the shared prefix; the numbers are in the header and cannot be
+///    renamed out from under us.
 @MainActor
 final class NetworkBrowser: NSObject, ObservableObject {
     struct Entry: Identifiable, Hashable {
@@ -50,6 +60,13 @@ final class NetworkBrowser: NSObject, ObservableObject {
     /// see the note above, reason one.
     private var pending: VLCMedia?
     private var timeout: Task<Void, Never>?
+
+    /// `VLCMediaParsingOptions.VLCMediaParse` — 0x01 in the header.
+    ///
+    /// Parse only. `VLCMediaFetchNetwork` (0x04) would also pull metadata and
+    /// artwork for every entry over the wire, which on a folder of four hundred
+    /// films is a great deal of network for two columns of text we do not draw.
+    private static let parseOnly = VLCMediaParsingOptions(rawValue: 0x01)
 
     /// How long to wait before calling it a failure.
     ///
@@ -114,10 +131,18 @@ final class NetworkBrowser: NSObject, ObservableObject {
         failure = nil
         isLoading = true
 
-        let media = VLCMedia(url: url)
-        media.delegate = self
+        guard let media = VLCMedia(url: url) else {
+            isLoading = false
+            failure = "That address is not valid."
+            return
+        }
         pending = media
-        media.parse(options: [.parseNetwork])
+        // One shared parser for the app. Nothing else in Panura parses media,
+        // so taking its delegate is safe — and it is a delegate rather than a
+        // completion handler, which is why the browser is an NSObject.
+        let parser = VLCMediaParser.shared()
+        parser.delegate = self
+        parser.queueMedia(media, options: Self.parseOnly)
 
         timeout = Task { [weak self] in
             try? await Task.sleep(for: Self.patience)
@@ -132,7 +157,7 @@ final class NetworkBrowser: NSObject, ObservableObject {
     private func cancel() {
         timeout?.cancel()
         timeout = nil
-        pending?.delegate = nil
+        if let pending { VLCMediaParser.shared().cancelParsing(for: pending) }
         pending = nil
         isLoading = false
     }
@@ -145,7 +170,9 @@ final class NetworkBrowser: NSObject, ObservableObject {
         }
         var found: [Entry] = []
         for index in 0..<list.count {
-            guard let item = list.media(at: index), let url = item.url else { continue }
+            // `mediaAtIndex:` takes an NSUInteger while `count` is an NSInteger,
+            // so the two do not meet without this.
+            guard let item = list.media(at: UInt(index)), let url = item.url else { continue }
             let directory = item.mediaType == .directory
             let name = item.metaData.title ?? url.lastPathComponent
             guard directory || Self.playable.contains(url.pathExtension.lowercased()) else {
@@ -186,11 +213,36 @@ final class NetworkBrowser: NSObject, ObservableObject {
     }
 }
 
-extension NetworkBrowser: VLCMediaDelegate {
-    nonisolated func mediaDidFinishParsing(_ aMedia: VLCMedia) {
+extension NetworkBrowser: VLCMediaParserDelegate {
+    nonisolated func mediaFinishedParsing(_ media: VLCMedia, withStatus status: VLCMediaParsedStatus) {
         Task { @MainActor in
-            guard aMedia === self.pending else { return }
-            self.collect(aMedia)
+            // The shared parser may still be finishing something this browser
+            // has already moved on from.
+            guard media === self.pending else { return }
+            guard status == .done else {
+                self.timeout?.cancel()
+                self.timeout = nil
+                self.pending = nil
+                self.isLoading = false
+                self.failure = Self.message(for: status)
+                return
+            }
+            self.collect(media)
+        }
+    }
+
+    /// Why libVLC gave up, in words somebody can act on.
+    private static func message(for status: VLCMediaParsedStatus) -> String {
+        switch status {
+        case .timeout:
+            return "The server took too long to answer."
+        case .cancelled:
+            return "Stopped."
+        default:
+            // Covers failed and skipped, which are the same thing to a user:
+            // the address, the share name or the sign-in is wrong.
+            return "Could not open that. Check the address, the share name, "
+                + "and whether it needs a username and password."
         }
     }
 }
