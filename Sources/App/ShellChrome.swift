@@ -11,7 +11,15 @@ import SwiftUI
 /// the chrome earns its height or it goes — but only ever because the reader
 /// asked. Scrolling down takes the header and the strip together, leaving the
 /// screen's own bar — the browser's address row, the Videos toolbar — as the
-/// only thing above the content. Scrolling back up brings them back together.
+/// only thing above the content. **They come back at the top and nowhere
+/// else.**
+///
+/// Returning them on any upward scroll was tried and is worse: a reader
+/// backing up a line to re-read something is not asking for the app's name,
+/// and chrome that arrives on a nudge is chrome that is forever half-arriving.
+/// The top is an unambiguous statement — you have finished reading — which is
+/// why it is the only one taken. Getting there is a tap: a screen that can be
+/// scrolled a long way carries a button for it.
 ///
 /// **One piece, not two.** They used to come and go separately: the strip
 /// returned on any upward scroll and the header waited for the top. On paper
@@ -65,9 +73,6 @@ final class ShellChrome: ObservableObject {
 
     /// Far enough down to mean it. Roughly a thumbnail's worth.
     private static let hideAfter: CGFloat = 40
-    /// Shorter coming back: wanting the chrome is a thing you want *now*,
-    /// where wanting it out of the way is a thing you want for a while.
-    private static let showAfter: CGFloat = 16
 
     /// The tab changed: everything comes back, and nothing slides.
     ///
@@ -96,28 +101,23 @@ final class ShellChrome: ObservableObject {
 
         if atTop {
             travel = 0
-            show()
+            guard !visible else { return }
+            withAnimation(Self.motion) { visible = true }
             return
         }
 
-        // A change of direction starts the count again, so twenty points down
-        // followed by twenty back up is not forty of anything.
-        if delta > 0 ? travel < 0 : travel > 0 { travel = 0 }
-        travel += delta
-
-        if travel >= Self.hideAfter {
+        // Downward only, and any movement back up starts the count again:
+        // forty points has to be forty points of going away, not the net of a
+        // drag that wandered.
+        guard delta > 0 else {
             travel = 0
-            guard visible else { return }
-            withAnimation(Self.motion) { visible = false }
-        } else if travel <= -Self.showAfter {
-            travel = 0
-            show()
+            return
         }
-    }
-
-    private func show() {
-        guard !visible else { return }
-        withAnimation(Self.motion) { visible = true }
+        travel += delta
+        guard travel >= Self.hideAfter else { return }
+        travel = 0
+        guard visible else { return }
+        withAnimation(Self.motion) { visible = false }
     }
 }
 

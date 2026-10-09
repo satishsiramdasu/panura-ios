@@ -39,6 +39,7 @@ struct LocalVideosView: View {
     /// One line, said once — casting gives no other sign from this screen.
     @State private var toast: String?
     @Environment(\.screenChrome) private var chrome
+    @ObservedObject private var shell = ShellChrome.shared
     @State private var toastTask: Task<Void, Never>?
 
     private let gridColumns = [GridItem(.adaptive(minimum: 150), spacing: 12)]
@@ -153,6 +154,40 @@ struct LocalVideosView: View {
         }
     }
 
+    /// Where the top of the list is, for `toTopButton`.
+    private static let topAnchor = "videos.top"
+
+    /// Back to the top, and with it the header and the tabs.
+    ///
+    /// The chrome comes back at the top and nowhere else, which is only fair
+    /// if the top is somewhere you can get to. In a library of three hundred
+    /// videos it otherwise is not - and this is the screen where that bites,
+    /// because a web page at least keeps its own address bar within reach.
+    ///
+    /// Shown only while the chrome is away, which is exactly when it is the
+    /// answer to something. A permanent button here would be one more thing
+    /// sitting over the thumbnails for the rest of the time.
+    private func toTopButton(_ scroller: ScrollViewProxy) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.3)) {
+                scroller.scrollTo(Self.topAnchor, anchor: .top)
+            }
+        } label: {
+            Image(systemName: "chevron.up")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(PanuraTheme.onSurface)
+                .frame(width: 42, height: 42)
+                .background(Circle().fill(PanuraTheme.surfaceContainerHighest))
+                .overlay(Circle().strokeBorder(PanuraTheme.outlineVariant, lineWidth: 1))
+                .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 16)
+        .padding(.bottom, 16)
+        .transition(.scale(scale: 0.8).combined(with: .opacity))
+        .accessibilityLabel("Back to top")
+    }
+
     // MARK: grid
 
     /// The toolbar has nothing to act on until the library is readable.
@@ -172,22 +207,37 @@ struct LocalVideosView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    // One `LazyVGrid` for both: a list is a grid of one column,
-                    // and sharing the container keeps scroll position and
-                    // selection across a switch instead of rebuilding the screen.
-                    LazyVGrid(columns: model.layout == .grid ? gridColumns : listColumns, spacing: 12) {
-                        ForEach(Array(model.visible.enumerated()), id: \.element.id) { index, item in
-                            cell(item, at: index)
+                ScrollViewReader { scroller in
+                    ScrollView {
+                        // Nothing to look at: somewhere for the button below to
+                        // aim at. The first cell is not it - the grid starts
+                        // below its own padding, so scrolling to that stops
+                        // twelve points short of the actual top and the chrome
+                        // never hears that it has arrived.
+                        Color.clear
+                            .frame(height: 0)
+                            .id(Self.topAnchor)
+
+                        // One `LazyVGrid` for both: a list is a grid of one
+                        // column, and sharing the container keeps scroll
+                        // position and selection across a switch instead of
+                        // rebuilding the screen.
+                        LazyVGrid(columns: model.layout == .grid ? gridColumns : listColumns, spacing: 12) {
+                            ForEach(Array(model.visible.enumerated()), id: \.element.id) { index, item in
+                                cell(item, at: index)
+                            }
                         }
+                        .padding(12)
+                        // Scrolling the library down takes the app header and
+                        // the tabs with it, and the top brings them back. This
+                        // finds the `UIScrollView` it is sitting in and watches
+                        // that - see `ScrollAwayChrome`, which explains why it
+                        // is not measured the SwiftUI way.
+                        .scrollAwayChrome(.videos)
                     }
-                    .padding(12)
-                    // Scrolling the library down takes the app header and then
-                    // the tabs with it, and the top brings them back. This finds
-                    // the `UIScrollView` it is sitting in and watches that - see
-                    // `ScrollAwayChrome`, which explains why it is not measured
-                    // the SwiftUI way.
-                    .scrollAwayChrome(.videos)
+                    .overlay(alignment: .bottomTrailing) {
+                        if !shell.visible { toTopButton(scroller) }
+                    }
                 }
             }
             // Shown for the whole of selection mode, empty selection included:
