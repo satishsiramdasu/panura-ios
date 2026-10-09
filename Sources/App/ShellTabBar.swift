@@ -98,6 +98,7 @@ struct ShellTabBar: View {
             fill: selection == tab
                 ? AnyShapeStyle(tab.chrome(privateBrowsing: privateBrowsing))
                 : AnyShapeStyle(leaning(from: index)),
+            at: index,
             width: width
         )
         .onTapGesture {
@@ -133,6 +134,7 @@ struct ShellTabBar: View {
                 fill: moreActive
                     ? AnyShapeStyle(selection.chrome(privateBrowsing: privateBrowsing))
                     : AnyShapeStyle(leaning(from: tabs.count)),
+                at: tabs.count,
                 width: width
             )
         }
@@ -203,11 +205,29 @@ struct ShellTabBar: View {
     /// bottom of this shape is the join with the bar underneath, and a hairline
     /// drawn across it would be a seam in the one place the whole design is
     /// trying not to have one.
-    private func edge(active: Bool) -> LinearGradient {
-        LinearGradient(
-            colors: [Color.white.opacity(active ? 0.10 : 0.16), .clear],
-            startPoint: .top,
-            endPoint: .bottom
+    ///
+    /// **And gone on whichever side is tucked underneath.** A tab is overlapped
+    /// by whichever neighbour is nearer the selected one, so one of its two
+    /// sides is behind another tab - but the corner radius is larger than the
+    /// overlap, so a border drawn all the way round came creeping out from
+    /// behind the tab in front as a stray lit curve. An edge you can see on a
+    /// side that is underneath something is exactly the thing that tells you it
+    /// is not really underneath it. So the lit side is the exposed one, and the
+    /// gradient runs diagonally from that top corner to nothing well before it
+    /// reaches the covered one.
+    private func edge(active: Bool, at index: Int) -> LinearGradient {
+        let lit = Color.white.opacity(active ? 0.10 : 0.16)
+        // The selected tab is in front of everything; both its sides show.
+        guard !active, let selected = activeIndex, selected != index else {
+            return LinearGradient(colors: [lit, .clear], startPoint: .top, endPoint: .bottom)
+        }
+        // The neighbour nearer the selected tab is the one on top of this, so
+        // the side facing the selection is the covered one.
+        let selectionIsRight = selected > index
+        return LinearGradient(
+            stops: [.init(color: lit, location: 0), .init(color: .clear, location: 0.55)],
+            startPoint: selectionIsRight ? .topLeading : .topTrailing,
+            endPoint: selectionIsRight ? .bottomTrailing : .bottomLeading
         )
     }
 
@@ -218,6 +238,7 @@ struct ShellTabBar: View {
         label: String,
         active: Bool,
         fill: AnyShapeStyle,
+        at index: Int,
         width: CGFloat
     ) -> some View {
         VStack(spacing: 3) {
@@ -249,7 +270,7 @@ struct ShellTabBar: View {
                 // Both cases arrive resolved: the destination's own colour when
                 // this is where you are, and a ramp toward it when it is not.
                 seatShape.fill(fill)
-                seatShape.strokeBorder(edge(active: active), lineWidth: 1)
+                seatShape.strokeBorder(edge(active: active, at: index), lineWidth: 1)
             }
         )
         .contentShape(Rectangle())
