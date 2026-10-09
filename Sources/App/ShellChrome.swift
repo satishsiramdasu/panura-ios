@@ -1,3 +1,4 @@
+import UIKit
 import SwiftUI
 
 /// Whether the app header and the tab strip are on screen.
@@ -101,53 +102,119 @@ final class ShellChrome: ObservableObject {
 
 /// Reports a SwiftUI scroll view's offset to `ShellChrome`.
 ///
-/// The browser has no need of this — its scroll view is a real `UIScrollView`
-/// and `WebViewContainer` already observes `contentOffset` for the address bar,
-/// so it reports from there. This is for the screens built out of SwiftUI
-/// scroll views, which expose nothing and have to be measured.
+/// **It finds the real `UIScrollView` and watches that.** The first attempt
+/// measured the content with a `GeometryReader` in a named coordinate space and
+/// published the offset through a `PreferenceKey`, which is the usual SwiftUI
+/// answer and did nothing at all here: the grid is a `LazyVGrid`, and a
+/// preference written from the background of a lazy container is not reliably
+/// republished as that container scrolls. There is no way to tell from the
+/// SwiftUI side whether it will be.
+///
+/// A `ScrollView` is a `UIScrollView` with SwiftUI's layout inside it, so a
+/// zero-size `UIView` dropped into the content can walk up its own superviews,
+/// find it, and observe `contentOffset` directly — exactly what
+/// `WebViewContainer` does for the browser's address bar, and that has worked
+/// since the day it was written. One mechanism for both screens instead of two,
+/// and the one that is left is the one that is not guessing.
 private struct ScrollAwayChrome: ViewModifier {
     /// Which screen this is, so `ShellChrome` can ignore it while it is one of
     /// the composed-but-hidden layers.
     let destination: AppDestination
-    @State private var last: CGFloat = 0
 
     func body(content: Content) -> some View {
-        content
-            .background(
-                GeometryReader { geo in
-                    Color.clear.preference(
-                        key: ScrollOffsetKey.self,
-                        // Negated so positive means "scrolled downward through
-                        // the content", matching what the browser reports.
-                        value: -geo.frame(in: .named(ScrollOffsetKey.space)).minY
-                    )
-                }
-            )
-            .onPreferenceChange(ScrollOffsetKey.self) { y in
-                let delta = y - last
-                last = y
-                ShellChrome.shared.scrolled(by: delta, atTop: y <= 1, from: destination)
-            }
+        content.background(
+            ScrollProbe(destination: destination)
+                .frame(width: 0, height: 0)
+                .allowsHitTesting(false)
+        )
     }
 }
 
-private struct ScrollOffsetKey: PreferenceKey {
-    static let space = "panura.scroll"
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+private struct ScrollProbe: UIViewRepresentable {
+    let destination: AppDestination
+
+    func makeUIView(context: Context) -> ScrollProbeView {
+        let view = ScrollProbeView()
+        view.destination = destination
+        return view
+    }
+
+    func updateUIView(_ view: ScrollProbeView, context: Context) {
+        view.destination = destination
+    }
+}
+
+/// Nothing to look at: it exists to be somewhere inside a `UIScrollView`.
+private final class ScrollProbeView: UIView {
+    var destination: AppDestination = .home
+    private var observation: NSKeyValueObservation?
+    private var last: CGFloat = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        backgroundColor = .clear
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    // Both, because which one lands after the scroll view exists depends on how
+    // SwiftUI got round to hosting this, and attaching twice is prevented by
+    // the nil check rather than by guessing right.
+    override func didMoveToSuperview() {
+        super.didMoveToSuperview()
+        attach()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        attach()
+    }
+
+    private func attach() {
+        guard observation == nil, let scroll = enclosingScrollView else { return }
+        last = scroll.contentOffset.y
+        // KVO rather than the delegate: SwiftUI owns the delegate, and taking
+        // it would break its own scrolling.
+        observation = scroll.observe(\.contentOffset, options: [.new]) { [weak self] observed, _ in
+            self?.offsetChanged(observed)
+        }
+    }
+
+    private var enclosingScrollView: UIScrollView? {
+        var next = superview
+        while let view = next {
+            if let scroll = view as? UIScrollView { return scroll }
+            next = view.superview
+        }
+        return nil
+    }
+
+    /// The same reading the browser takes, for the same reasons — see
+    /// `WebViewContainer.scrolled`.
+    private func offsetChanged(_ scroll: UIScrollView) {
+        let y = scroll.contentOffset.y
+        let delta = y - last
+        last = y
+        // The top is a state rather than a direction, and it is what brings the
+        // whole shell back, so it is reported even though arriving there is not
+        // a scroll upward.
+        let atTop = y <= 0
+        // Rubber-banding at the bottom is not a scroll downward; reading it as
+        // one hides the chrome on a bounce.
+        guard atTop || y < scroll.contentSize.height - scroll.bounds.height else { return }
+        let target = destination
+        let reported: CGFloat = atTop ? 0 : delta
+        Task { @MainActor in
+            ShellChrome.shared.scrolled(by: reported, atTop: atTop, from: target)
+        }
     }
 }
 
 extension View {
-    /// Put this on the *content* inside a scroll view, and
-    /// `scrollAwayContainer()` on the scroll view itself.
+    /// Put this on the content inside a `ScrollView`.
     func scrollAwayChrome(_ destination: AppDestination) -> some View {
         modifier(ScrollAwayChrome(destination: destination))
-    }
-
-    /// The coordinate space the offset above is measured in.
-    func scrollAwayContainer() -> some View {
-        coordinateSpace(name: ScrollOffsetKey.space)
     }
 }

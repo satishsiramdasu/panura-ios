@@ -183,16 +183,12 @@ struct LocalVideosView: View {
                     }
                     .padding(12)
                     // Scrolling the library down takes the app header and then
-                    // the tabs with it, and the top brings them back. A
-                    // `UIScrollView` would be observed directly; a SwiftUI one
-                    // exposes nothing, so its offset is measured.
+                    // the tabs with it, and the top brings them back. This finds
+                    // the `UIScrollView` it is sitting in and watches that - see
+                    // `ScrollAwayChrome`, which explains why it is not measured
+                    // the SwiftUI way.
                     .scrollAwayChrome(.videos)
                 }
-                // The space the offset above is measured in is the scroll
-                // view's own frame, not the screen's. Measured against the
-                // screen, the toolbar coming or going moved the grid and
-                // counted as a scroll.
-                .scrollAwayContainer()
             }
             // Shown for the whole of selection mode, empty selection included:
             // it is what says the mode is on, and what gets out of it.
