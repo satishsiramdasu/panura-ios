@@ -18,19 +18,19 @@ import SwiftUI
 /// is the only honest way to say there is more without making what is already
 /// there worse.
 ///
-/// The trailing `More` is a menu, not a destination of its own: the places that
-/// do not earn a seat live behind it, and it lights up like any other tab while
-/// you are standing in one of them.
+/// The trailing `+` is not a destination and never lights up. It offers the
+/// tabs this person has not taken yet, and choosing one *adds* it — the seat
+/// appears in the row and the app goes straight to it. Once there is nothing
+/// left to offer the `+` goes too, rather than sitting there opening an empty
+/// menu. See `TabSet`.
 struct ShellTabBar: View {
     let tabs: [AppDestination]
     @Binding var selection: AppDestination
-    /// Behind `More`, and real — Network Stream is a working screen that simply
-    /// is not worth a quarter of the row.
-    var more: [AppDestination] = []
-    /// Behind `More`, under their own heading, and not built. Empty in a build
-    /// with `FeatureFlags.showsPlannedTabs` off.
-    var planned: [AppDestination] = []
+    /// What the `+` has left to offer. Empty means no `+` at all.
+    var addable: [AppDestination] = []
     var onSelect: (AppDestination) -> Void = { _ in }
+    /// Put this destination in the strip and go to it.
+    var onAdd: (AppDestination) -> Void = { _ in }
     /// The ground the tabs are cut out of: the selected tab's deep tone.
     var ground: Color = AppChrome.bar
     /// Private browsing, which repaints the Browser tab violet rather than
@@ -78,36 +78,45 @@ struct ShellTabBar: View {
     /// the screen underneath has finished changing.
     private static let slide = Animation.spring(response: 0.34, dampingFraction: 0.84)
 
-    private var showsMore: Bool { !more.isEmpty || !planned.isEmpty }
-    private var moreActive: Bool {
-        more.contains(selection) || planned.contains(selection)
-    }
+    private var showsAdd: Bool { !addable.isEmpty }
+
     var body: some View {
         GeometryReader { geo in
             let width = seatWidth(in: geo.size.width)
             let laps = overlaps()
             // Spacing 0: the overlaps are not uniform, so each seat pulls
             // itself left by its own amount instead.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .bottom, spacing: 0) {
-                    ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
-                        tabButton(tab, at: index, width: width)
-                            .padding(.leading, index == 0 ? 0 : -laps[index - 1])
-                            .zIndex(stacking(at: index))
+            ScrollViewReader { scroller in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: 0) {
+                        ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                            tabButton(tab, at: index, width: width)
+                                .padding(.leading, index == 0 ? 0 : -laps[index - 1])
+                                .zIndex(stacking(at: index))
+                                .id(tab)
+                        }
+                        if showsAdd {
+                            addButton(width: width)
+                                .padding(.leading, tabs.isEmpty ? 0 : -laps[tabs.count - 1])
+                                .zIndex(stacking(at: tabs.count))
+                        }
                     }
-                    if showsMore {
-                        moreButton(width: width)
-                            .padding(.leading, tabs.isEmpty ? 0 : -laps[tabs.count - 1])
-                            .zIndex(stacking(at: tabs.count))
-                    }
+                    .padding(.horizontal, gutter)
+                    // Everything that moves on a selection change moves
+                    // together: the widths, the tuck each tab takes, the fills
+                    // and the lit edges. Declared here rather than left to
+                    // whoever set the selection, so a tab opened from Home's
+                    // cards or a deep link slides exactly like one that was
+                    // pressed.
+                    .animation(Self.slide, value: selection)
+                    .animation(Self.slide, value: tabs)
                 }
-                .padding(.horizontal, gutter)
-                // Everything that moves on a selection change moves together:
-                // the widths, the tuck each tab takes, the fills and the lit
-                // edges. Declared here rather than left to whoever set the
-                // selection, so a tab opened from Home's cards or a deep link
-                // slides exactly like one that was pressed.
-                .animation(Self.slide, value: selection)
+                // A fifth tab is half off the edge by design, and the one you
+                // have just added is the fifth. Nothing to do when the row fits
+                // - `scrollTo` on content that does not scroll is a no-op.
+                .onChange(of: selection) { tab in
+                    withAnimation(Self.slide) { scroller.scrollTo(tab, anchor: .center) }
+                }
             }
             // The row scrolls; the ground under it does not, or the darker bar
             // would slide out from behind the tabs with them.
@@ -141,7 +150,7 @@ struct ShellTabBar: View {
     /// The shares always sum to `overlapBudget`, so the row's width does not
     /// move when the selection does.
     private func overlaps() -> [CGFloat] {
-        let seats = tabs.count + (showsMore ? 1 : 0)
+        let seats = tabs.count + (showsAdd ? 1 : 0)
         guard seats > 1 else { return [] }
         let selected = activeIndex ?? 0
         let weights = (1..<seats).map { join -> CGFloat in
@@ -155,7 +164,7 @@ struct ShellTabBar: View {
     private func tabButton(_ tab: AppDestination, at index: Int, width: CGFloat) -> some View {
         seat(
             icon: tab.icon(selected: selection == tab),
-            label: shortTitle(tab),
+            label: tab.title,
             active: selection == tab,
             fill: selection == tab
                 ? AnyShapeStyle(tab.chrome(privateBrowsing: privateBrowsing))
@@ -172,36 +181,35 @@ struct ShellTabBar: View {
         .accessibilityAddTraits(selection == tab ? [.isSelected] : [])
     }
 
-    private func moreButton(width: CGFloat) -> some View {
+    /// The `+`. Never selected, because it is not a place — it is the one
+    /// control in the strip that changes the strip.
+    ///
+    /// It was a `More` grid holding the destinations that had not earned a
+    /// seat, which made it a drawer with four things in it and taught people
+    /// that the row was not the whole story. Offering those same destinations
+    /// as something to *add* says the opposite: the row is the whole story, and
+    /// it is yours to set.
+    private func addButton(width: CGFloat) -> some View {
         Menu {
-            ForEach(more, id: \.self) { tab in
-                Button { onSelect(tab) } label: {
-                    Label(tab.title, systemImage: tab.icon(selected: false))
-                }
-            }
-            if !planned.isEmpty {
-                Section("Not built yet") {
-                    ForEach(planned, id: \.self) { tab in
-                        Button { onSelect(tab) } label: {
-                            Label(tab.title, systemImage: tab.icon(selected: false))
-                        }
+            Section("Add a tab") {
+                ForEach(addable, id: \.self) { tab in
+                    Button { onAdd(tab) } label: {
+                        Label(tab.title, systemImage: tab.icon(selected: false))
                     }
                 }
             }
         } label: {
             seat(
-                icon: "square.grid.2x2",
-                label: "More",
-                active: moreActive,
-                fill: moreActive
-                    ? AnyShapeStyle(selection.chrome(privateBrowsing: privateBrowsing))
-                    : AnyShapeStyle(leaning(from: tabs.count)),
+                icon: "plus",
+                label: "Add",
+                active: false,
+                fill: AnyShapeStyle(leaning(from: tabs.count)),
                 at: tabs.count,
-                width: moreActive ? width + selectedBonus : width
+                width: width
             )
         }
         .menuOrder(.fixed)
-        .accessibilityLabel("More")
+        .accessibilityLabel("Add a tab")
     }
 
     /// Where the selected seat is sitting, counting `More` as the last one.
@@ -209,10 +217,7 @@ struct ShellTabBar: View {
     /// nil is impossible in practice - something is always selected - but a
     /// destination reached by deep link that has no seat would land here, and a
     /// row of tabs all leaning nowhere is the right answer for it.
-    private var activeIndex: Int? {
-        if let i = tabs.firstIndex(of: selection) { return i }
-        return moreActive ? tabs.count : nil
-    }
+    private var activeIndex: Int? { tabs.firstIndex(of: selection) }
 
     /// Who is in front of whom.
     ///
@@ -348,9 +353,4 @@ struct ShellTabBar: View {
         )
     }
 
-    /// "Network Stream" is the label from when it had a whole drawer row. A
-    /// seat has about seven characters.
-    private func shortTitle(_ tab: AppDestination) -> String {
-        tab == .stream ? "Network" : tab.title
-    }
 }

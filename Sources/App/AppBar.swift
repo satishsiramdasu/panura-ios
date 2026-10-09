@@ -47,6 +47,31 @@ enum AppDestination: Hashable, CaseIterable {
         }
     }
 
+    /// What this destination is called in storage.
+    ///
+    /// Spelled out rather than taken from a `RawValue`, because these strings
+    /// outlive the source: they are written into `UserDefaults` by `TabSet`,
+    /// and renaming a case must not quietly empty somebody's tab strip.
+    var key: String {
+        switch self {
+        case .home: return "home"
+        case .web: return "web"
+        case .videos: return "videos"
+        case .stream: return "stream"
+        case .watchLater: return "watchLater"
+        case .settings: return "settings"
+        case .iptv: return "iptv"
+        case .ftp: return "ftp"
+        }
+    }
+
+    init?(key: String) {
+        guard let match = AppDestination.allCases.first(where: { $0.key == key }) else {
+            return nil
+        }
+        self = match
+    }
+
     func icon(selected: Bool) -> String {
         switch self {
         case .home: return selected ? "house.fill" : "house"

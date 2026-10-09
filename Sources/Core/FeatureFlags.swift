@@ -9,7 +9,11 @@ import Foundation
 enum FeatureFlags {
     static let adsEnabled = false
 
-    /// The shell's `+` tab, listing IPTV and FTP.
+    /// What the shell's `+` has to offer: IPTV and FTP.
+    ///
+    /// Off, the pool is empty — and an empty pool means `TabSet.offerable` is
+    /// empty, which means no `+` in the strip at all. The flag removes the
+    /// whole mechanism rather than leaving a button that offers nothing.
     ///
     /// ⚠️ **Must be `false` for any App Store submission while those screens
     /// are still placeholders.** Guideline 2.1 App Completeness rejects an app

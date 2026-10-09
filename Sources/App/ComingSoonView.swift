@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What a tab behind the `+` shows until somebody builds it.
+/// What a tab added from the `+` shows until somebody builds it.
 ///
 /// It exists so the shell can be laid out and walked through before either
 /// feature is written, and it says so plainly rather than pretending to be an

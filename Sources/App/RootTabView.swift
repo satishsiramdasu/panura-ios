@@ -41,7 +41,6 @@ struct RootTabView: View {
             switch ScreenshotMode.screen {
             case "web": return .web
             case "videos", "player": return .videos
-            case "stream": return .stream
             default: return .home
             }
         }
@@ -76,7 +75,12 @@ struct RootTabView: View {
     /// destination it also had to carry the app's header, and every screen
     /// pushed inside it then arrived wearing a different one.
     @State private var showSettings = false
+    /// Network Stream, which is a sheet for the same reason Watch Later is:
+    /// a URL field and a Play button, used once and left. As a tab it was a
+    /// quarter of the row spent on something nobody opens twice in a session.
+    @State private var showStream = false
     @ObservedObject private var chrome = ShellChrome.shared
+    @ObservedObject private var tabSet = TabSet.shared
 
     var body: some View {
         shell
@@ -109,6 +113,7 @@ struct RootTabView: View {
             ReportIssueSheet(pageURL: nil, source: "menu")
         }
         .sheet(isPresented: $showFAQ) { FAQView() }
+        .sheet(isPresented: $showStream) { StreamView() }
         .sheet(isPresented: $showWatchLater) {
             WatchLaterView(onOpenBrowser: { address in
                 showWatchLater = false
@@ -122,6 +127,11 @@ struct RootTabView: View {
             #if DEBUG
             if ScreenshotMode.isActive, ScreenshotMode.screen == "settings" {
                 showSettings = true
+            }
+            // Both of these are sheets rather than destinations, so the capture
+            // run opens them instead of launching into them.
+            if ScreenshotMode.isActive, ScreenshotMode.screen == "stream" {
+                showStream = true
             }
             #endif
         }
@@ -170,11 +180,11 @@ struct RootTabView: View {
                     .clipped()
 
                 ShellTabBar(
-                    tabs: Self.tabs,
+                    tabs: tabSet.tabs,
                     selection: $selection,
-                    more: Self.moreTabs,
-                    planned: Self.plannedTabs,
+                    addable: tabSet.offerable,
                     onSelect: select,
+                    onAdd: addTab,
                     ground: deepChrome,
                     privateBrowsing: session.privateMode
                 )
@@ -196,19 +206,13 @@ struct RootTabView: View {
         selection.chromeDeep(privateBrowsing: session.privateMode)
     }
 
-    /// The seats in the strip, in order. Four is the ceiling at phone width:
-    /// a fifth takes the labels below legible size on a 375pt screen.
-    private static let tabs: [AppDestination] = [.home, .web, .videos]
-
-    /// Behind `More`, and working. Network Stream is one form and one button -
-    /// worth keeping, not worth a quarter of the row, and Home already carries
-    /// a card for it.
-    private static let moreTabs: [AppDestination] = [.stream]
-
-    /// Behind `More`, under their own heading, and not built - see
-    /// `FeatureFlags.showsPlannedTabs`, which must be off for a submission.
-    private static var plannedTabs: [AppDestination] {
-        FeatureFlags.showsPlannedTabs ? [.iptv, .ftp] : []
+    /// Puts a tab in the strip and goes to it, in one motion.
+    ///
+    /// Adding and arriving are the same gesture on purpose. Somebody who picks
+    /// IPTV from the `+` wants IPTV, not a new button to press afterwards.
+    private func addTab(_ destination: AppDestination) {
+        tabSet.add(destination)
+        select(destination)
     }
 
     /// Everything that is not a place.
@@ -362,8 +366,9 @@ struct RootTabView: View {
         return PlayerClock.format(Double(durationMs - positionMs) / 1000) + " left"
     }
 
-    /// All five, always composed. The outgoing one keeps the higher `zIndex`
-    /// until it has faded, or the incoming one shows through it.
+    /// Every tab in the strip, always composed. The outgoing one keeps the
+    /// higher `zIndex` until it has faded, or the incoming one shows through
+    /// it.
     private var destinations: some View {
         ZStack {
             layer(.home) {
@@ -383,10 +388,11 @@ struct RootTabView: View {
                 )
             }
             layer(.videos) { LocalVideosView() }
-            layer(.stream) { StreamView() }
-            if FeatureFlags.showsPlannedTabs {
-                layer(.iptv) { ComingSoonView(destination: .iptv) }
-                layer(.ftp) { ComingSoonView(destination: .ftp) }
+            // Only the ones that are actually in the strip. A destination
+            // nobody has added is not composed at all, which is the difference
+            // between an opt-in tab and a hidden one.
+            ForEach(tabSet.added, id: \.self) { destination in
+                layer(destination) { ComingSoonView(destination: destination) }
             }
         }
     }
@@ -431,13 +437,16 @@ struct RootTabView: View {
     private func select(_ destination: AppDestination) {
         session.showBar()
         switch destination {
-        // Both open over whatever you were doing and hand it back when they
+        // These open over whatever you were doing and hand it back when they
         // close, rather than replacing it.
         case .settings:
             showSettings = true
             return
         case .watchLater:
             showWatchLater = true
+            return
+        case .stream:
+            showStream = true
             return
         default:
             break
