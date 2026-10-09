@@ -33,6 +33,10 @@ struct ShellTabBar: View {
     var onSelect: (AppDestination) -> Void = { _ in }
     /// The ground the tabs are cut out of: the selected tab's deep tone.
     var ground: Color = AppChrome.bar
+    /// Private browsing, which repaints the Browser tab violet rather than
+    /// amber. Passed in rather than read from `BrowserSession` here, so the
+    /// strip stays a function of what it is handed.
+    var privateBrowsing: Bool = false
 
     /// How far the tab tops are rounded. Matched to nothing else on purpose —
     /// it is the one shape in the app that has to read as a physical tab.
@@ -49,8 +53,8 @@ struct ShellTabBar: View {
             let width = seatWidth(in: geo.size.width)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .bottom, spacing: gap) {
-                    ForEach(tabs, id: \.self) { tab in
-                        tabButton(tab, width: width)
+                    ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
+                        tabButton(tab, at: index, width: width)
                     }
                     if showsMore { moreButton(width: width) }
                 }
@@ -77,12 +81,14 @@ struct ShellTabBar: View {
         return max(64, usable / perRow)
     }
 
-    private func tabButton(_ tab: AppDestination, width: CGFloat) -> some View {
+    private func tabButton(_ tab: AppDestination, at index: Int, width: CGFloat) -> some View {
         seat(
             icon: tab.icon(selected: selection == tab),
             label: shortTitle(tab),
             active: selection == tab,
-            fill: tab.chrome,
+            fill: selection == tab
+                ? AnyShapeStyle(tab.chrome(privateBrowsing: privateBrowsing))
+                : AnyShapeStyle(leaning(from: index)),
             width: width
         )
         .onTapGesture {
@@ -115,12 +121,48 @@ struct ShellTabBar: View {
                 icon: "square.grid.2x2",
                 label: "More",
                 active: moreActive,
-                fill: selection.chrome,
+                fill: moreActive
+                    ? AnyShapeStyle(selection.chrome(privateBrowsing: privateBrowsing))
+                    : AnyShapeStyle(leaning(from: tabs.count)),
                 width: width
             )
         }
         .menuOrder(.fixed)
         .accessibilityLabel("More")
+    }
+
+    /// Where the selected seat is sitting, counting `More` as the last one.
+    ///
+    /// nil is impossible in practice - something is always selected - but a
+    /// destination reached by deep link that has no seat would land here, and a
+    /// row of tabs all leaning nowhere is the right answer for it.
+    private var activeIndex: Int? {
+        if let i = tabs.firstIndex(of: selection) { return i }
+        return moreActive ? tabs.count : nil
+    }
+
+    /// An unselected tab, shaded toward the selected one.
+    ///
+    /// Each one is brightest on the edge facing where you are and falls away
+    /// from it, so the row has a direction: the strip reads as a run of panels
+    /// behind the open one, lit by it, rather than as four buttons of which one
+    /// happens to be on. It also means the tab next to the selected one is the
+    /// lightest unselected tab on screen, which is true - it is the nearest.
+    private func leaning(from index: Int) -> LinearGradient {
+        let far = PanuraTheme.surfaceContainerHigh.opacity(0.22)
+        // The open panel's own colour, weak. Borrowing the hue rather than
+        // lightening neutrally is what points at it; a grey ramp would only
+        // look like a gradient.
+        let near = selection.chrome(privateBrowsing: privateBrowsing).opacity(0.85)
+        guard let active = activeIndex, active != index else {
+            return LinearGradient(colors: [far, far], startPoint: .leading, endPoint: .trailing)
+        }
+        let activeIsRight = active > index
+        return LinearGradient(
+            colors: [far, near],
+            startPoint: activeIsRight ? .leading : .trailing,
+            endPoint: activeIsRight ? .trailing : .leading
+        )
     }
 
     /// One tab, selected or not. Shared so the `More` menu's label cannot drift
@@ -129,7 +171,7 @@ struct ShellTabBar: View {
         icon: String,
         label: String,
         active: Bool,
-        fill: Color,
+        fill: AnyShapeStyle,
         width: CGFloat
     ) -> some View {
         VStack(spacing: 3) {
@@ -143,7 +185,12 @@ struct ShellTabBar: View {
         .foregroundStyle(active ? PanuraTheme.onSurface : PanuraTheme.onSurfaceVariant)
         .frame(width: width)
         .padding(.vertical, 8)
-        .frame(height: Self.height - 4, alignment: .center)
+        // The full height of the strip, with nothing under it. It used to be
+        // `height - 4`, and a horizontal `ScrollView` pins its content to the
+        // top - so those four points became a band of the strip's near-black
+        // ground between the selected tab and the bar it is supposed to join,
+        // which is the one thing this shape exists to avoid.
+        .frame(height: Self.height, alignment: .center)
         // Rounded on top only. Rounded at the bottom too and it would be a pill
         // sitting above the panel; this one has to join it.
         .background(
@@ -154,10 +201,9 @@ struct ShellTabBar: View {
                 topTrailingRadius: corner,
                 style: .continuous
             )
-            // An unselected tab sits between the two: lighter than the
-            // ground so it reads as a tab, darker than the selected one so it
-            // reads as behind it.
-            .fill(active ? fill : PanuraTheme.surfaceContainerHigh.opacity(0.55))
+            // Both cases arrive resolved: the destination's own colour when
+            // this is where you are, and a ramp toward it when it is not.
+            .fill(fill)
         )
         .contentShape(Rectangle())
     }

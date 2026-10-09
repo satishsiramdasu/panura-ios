@@ -80,7 +80,7 @@ struct RootTabView: View {
 
     var body: some View {
         shell
-        .background(selection.chromeDeep.ignoresSafeArea())
+        .background(deepChrome.ignoresSafeArea())
         // The header hides the moment you leave Home, and comes back when you
         // return to it. Driven from the selection rather than from inside
         // `select` so it is also right on launch and after a deep link.
@@ -163,7 +163,7 @@ struct RootTabView: View {
                 // of reach - the same rule the browser's address bar follows.
                 ShellHeader(
                     connectedTV: castDeviceName,
-                    ground: selection.chromeDeep
+                    ground: deepChrome
                 ) { menuRows }
                     .frame(height: chrome.headerVisible ? ShellHeader<EmptyView>.height : 0)
                     .opacity(chrome.headerVisible ? 1 : 0)
@@ -175,7 +175,8 @@ struct RootTabView: View {
                     more: Self.moreTabs,
                     planned: Self.plannedTabs,
                     onSelect: select,
-                    ground: selection.chromeDeep
+                    ground: deepChrome,
+                    privateBrowsing: session.privateMode
                 )
                 .frame(height: chrome.tabsVisible ? ShellTabBar.height : 0)
                 .opacity(chrome.tabsVisible ? 1 : 0)
@@ -187,6 +188,12 @@ struct RootTabView: View {
             // header and the panel has to cover what it is about.
             CastPanelOverlay()
         }
+    }
+
+    /// The tone behind the header and the tab strip: the selected
+    /// destination's, violet while the browser is private.
+    private var deepChrome: Color {
+        selection.chromeDeep(privateBrowsing: session.privateMode)
     }
 
     /// The seats in the strip, in order. Four is the ceiling at phone width:
@@ -402,7 +409,10 @@ struct RootTabView: View {
             .environment(\.destinationIsActive, active)
             // So a screen can colour its own bar to match the tab it belongs
             // to, without having to know which destination it is.
-            .environment(\.screenChrome, destination.chrome)
+            .environment(
+                \.screenChrome,
+                destination.chrome(privateBrowsing: session.privateMode)
+            )
             .opacity(active ? 1 : 0)
             // A hidden layer must not eat taps meant for the visible one, and an
             // invisible screen should not be reachable by VoiceOver either.

@@ -69,23 +69,35 @@ enum AppDestination: Hashable, CaseIterable {
     /// own controls read as part of the panel rather than as furniture resting
     /// on it.
     ///
-    /// All of them are dark and barely saturated on purpose. The hue only has
-    /// to be enough to tell one tab from the next at a glance; any more and the
-    /// app stops being a dark app with an amber accent and starts being four
+    /// **The hue is the one `tint` already gives the destination's card on
+    /// Home**, taken a long way down in value: amber for the browser, green for
+    /// Videos, blue for IPTV, teal for FTP, purple for Watch Later. Home's card
+    /// is the app's own amber, and Home takes no tint at all - which is the one
+    /// deliberate break, because Home is where the brand lives and a tinted
+    /// Home would make the accent look like one more tab colour rather than
+    /// the app's. The first pass invented a second palette for the tabs, so
+    /// the card you pressed and the panel it opened disagreed about what colour
+    /// that place is.
+    ///
+    /// All of them stay dark and barely saturated. The hue only has to be
+    /// enough to tell one tab from the next at a glance; any more and the app
+    /// stops being a dark app with an amber accent and starts being four
     /// differently coloured apps behind one header.
-    var chrome: Color {
+    ///
+    /// - Parameter privateBrowsing: repaints the Browser tab violet. Private
+    ///   mode is the more important fact about the browser while it is on, and
+    ///   the rest of that screen - pill, mark, menu row - already says so.
+    func chrome(privateBrowsing: Bool = false) -> Color {
+        if privateBrowsing, self == .web { return PanuraTheme.incognitoSurface }
         switch self {
-        // Home wears the app's own colour and no tint at all. It is where the
-        // brand lives, and a Home that borrowed a hue would make the amber
-        // accent look like one more tab colour rather than the app's.
         case .home: return PanuraTheme.surfaceContainerHigh
-        case .web: return Color(hex: 0x16202C)
-        case .videos: return Color(hex: 0x16231C)
-        case .stream: return Color(hex: 0x122125)
-        case .watchLater: return Color(hex: 0x1E1829)
+        case .web: return Color(hex: 0x2A2113)
+        case .videos: return Color(hex: 0x15291C)
+        case .stream: return Color(hex: 0x12272C)
+        case .watchLater: return Color(hex: 0x201932)
         case .settings: return PanuraTheme.surfaceContainerHigh
-        case .iptv: return Color(hex: 0x271A27)
-        case .ftp: return Color(hex: 0x112321)
+        case .iptv: return Color(hex: 0x16223A)
+        case .ftp: return Color(hex: 0x112826)
         }
     }
 
@@ -96,16 +108,17 @@ enum AppDestination: Hashable, CaseIterable {
     /// behind it is darker than the tab in front of it, and carrying the hue
     /// down rather than falling back to neutral black is what makes the whole
     /// top of the screen belong to the tab you are in.
-    var chromeDeep: Color {
+    func chromeDeep(privateBrowsing: Bool = false) -> Color {
+        if privateBrowsing, self == .web { return Color(hex: 0x14101E) }
         switch self {
         case .home: return AppChrome.bar
-        case .web: return Color(hex: 0x0C1218)
-        case .videos: return Color(hex: 0x0C1410)
-        case .stream: return Color(hex: 0x0A1316)
-        case .watchLater: return Color(hex: 0x120E19)
+        case .web: return Color(hex: 0x15110A)
+        case .videos: return Color(hex: 0x0A1710)
+        case .stream: return Color(hex: 0x08161A)
+        case .watchLater: return Color(hex: 0x110D1D)
         case .settings: return AppChrome.bar
-        case .iptv: return Color(hex: 0x170F17)
-        case .ftp: return Color(hex: 0x0A1413)
+        case .iptv: return Color(hex: 0x0A1121)
+        case .ftp: return Color(hex: 0x081715)
         }
     }
 
@@ -119,7 +132,10 @@ enum AppDestination: Hashable, CaseIterable {
         case .stream: return .cyan
         case .watchLater: return .purple
         case .settings: return .gray
-        case .iptv: return .pink
+        // Blue, not pink. It is the tab's colour too now, and a pink header
+        // over an amber-accented dark app was the one combination in the set
+        // that read as a mistake.
+        case .iptv: return .blue
         case .ftp: return .teal
         }
     }
