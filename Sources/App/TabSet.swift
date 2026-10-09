@@ -2,9 +2,9 @@ import Foundation
 
 /// Which tabs this person has in their strip, and which one the app opens on.
 ///
-/// Three are always there — Home, Browser, Videos — because they are what the
-/// app is. Everything else is opt-in: the `+` at the end of the row offers what
-/// is left, and choosing one puts it in the strip for good and takes you
+/// Four are always there — Home, Browser, Videos, IPTV — because they are what
+/// the app is. Everything else is opt-in: the `+` at the end of the row offers
+/// what is left, and choosing one puts it in the strip for good and takes you
 /// straight to it. When there is nothing left to offer, the `+` goes away
 /// rather than opening an empty menu.
 ///
@@ -13,29 +13,30 @@ import Foundation
 /// quarter of the row than our guess about who wants IPTV.
 ///
 /// The ceiling is arithmetic, not a rule: `fixed + addable` is every tab there
-/// can ever be, so the row cannot grow past five while the pool is two. Four
-/// fill the width and a fifth peeks — see `AppChrome.tabsPerRow`.
+/// can ever be, so the row cannot grow past five. Four and a half fit the
+/// width — see `AppChrome.tabsPerRow` and `AppChrome.tabPeek`.
 @MainActor
 final class TabSet: ObservableObject {
     static let shared = TabSet()
 
     /// Always present, always in this order, never removable.
-    nonisolated static let fixed: [AppDestination] = [.home, .web, .videos]
+    ///
+    /// IPTV earns its seat rather than sitting behind the `+`: for most of the
+    /// people this app is for it is the reason the app is open, and putting the
+    /// main feature behind a button that says "add" is asking them to go
+    /// looking for it.
+    nonisolated static let fixed: [AppDestination] = [.home, .web, .videos, .iptv]
 
     /// The pool the `+` offers from.
     ///
-    /// Empty when `FeatureFlags.showsPlannedTabs` is off, which is what must
-    /// happen for a submission — and an empty pool means no `+`, so the flag
-    /// removes the whole mechanism rather than leaving a button that offers
-    /// nothing.
+    /// Server is opt-in. Somebody with a NAS wants it permanently; somebody
+    /// without one should never have to look at it.
     ///
-    /// Network Stream is deliberately not here. It is a URL field and a Play
-    /// button, used once and left; it has a card on Home and opens as a sheet
-    /// from there, which is the right shape for somewhere you go and come
+    /// Network Stream is deliberately not here either. It is a URL field and a
+    /// Play button, used once and left; it has a card on Home and opens as a
+    /// sheet from there, which is the right shape for somewhere you go and come
     /// straight back out of.
-    nonisolated static var addable: [AppDestination] {
-        FeatureFlags.showsPlannedTabs ? [.iptv, .ftp] : []
-    }
+    nonisolated static var addable: [AppDestination] { [.ftp] }
 
     nonisolated static let storageKey = "shell.added_tabs"
     nonisolated static let lastTabKey = "shell.last_tab"
@@ -62,9 +63,10 @@ final class TabSet: ObservableObject {
     /// The tabs that were added, as storage has them.
     ///
     /// Filtered against the pool as it stands now, not as it stood when they
-    /// were written: a tab that has since been withdrawn — the flag turned off,
-    /// a feature dropped — must not come back out of storage and put a seat in
-    /// the row that leads nowhere.
+    /// were written. That covers a tab since withdrawn, and it covers IPTV,
+    /// which somebody may have added from the `+` before it became one of the
+    /// four — left alone it would come back out of storage and sit in the strip
+    /// a second time.
     nonisolated static func storedTabs() -> [AppDestination] {
         let keys = UserDefaults.standard.stringArray(forKey: storageKey) ?? []
         let pool = addable

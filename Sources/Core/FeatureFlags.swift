@@ -8,18 +8,4 @@ import Foundation
 /// away from returning.
 enum FeatureFlags {
     static let adsEnabled = false
-
-    /// What the shell's `+` has to offer: IPTV and FTP.
-    ///
-    /// Off, the pool is empty — and an empty pool means `TabSet.offerable` is
-    /// empty, which means no `+` in the strip at all. The flag removes the
-    /// whole mechanism rather than leaving a button that offers nothing.
-    ///
-    /// ⚠️ **Must be `false` for any App Store submission while those screens
-    /// are still placeholders.** Guideline 2.1 App Completeness rejects an app
-    /// with features that announce themselves and then do nothing, and a tab
-    /// leading to "not built yet" is exactly that. It is on now so the shell
-    /// can be looked at on a device; turn it off before attaching a build, or
-    /// build the screens first.
-    static let showsPlannedTabs = true
 }

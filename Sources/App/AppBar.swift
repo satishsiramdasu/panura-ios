@@ -9,8 +9,8 @@ import SwiftUI
 /// all five, in one list, with room to say what each one is for.
 enum AppDestination: Hashable, CaseIterable {
     case home, web, videos, stream, watchLater, settings
-    /// Behind the shell's `+`. Neither is built yet — see `ComingSoonView`, and
-    /// `FeatureFlags.showsPlannedTabs`, which must be off for a submission.
+    /// IPTV is one of the four fixed tabs; Server is offered by the shell's
+    /// `+`. See `TabSet`.
     case iptv, ftp
 
     var title: String {
@@ -125,7 +125,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .watchLater: return Color(hex: 0x201932)
         case .settings: return PanuraTheme.surfaceContainerHigh
         case .iptv: return Color(hex: 0x16223A)
-        case .ftp: return Color(hex: 0x112826)
+        case .ftp: return Color(hex: 0x2E1826)
         }
     }
 
@@ -146,7 +146,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .watchLater: return Color(hex: 0x110D1D)
         case .settings: return AppChrome.bar
         case .iptv: return Color(hex: 0x0A1121)
-        case .ftp: return Color(hex: 0x081715)
+        case .ftp: return Color(hex: 0x190C14)
         }
     }
 
@@ -164,7 +164,9 @@ enum AppDestination: Hashable, CaseIterable {
         // over an amber-accented dark app was the one combination in the set
         // that read as a mistake.
         case .iptv: return .blue
-        case .ftp: return .teal
+        // Rose, not teal. Teal sits between the green Videos wears and the
+        // blue IPTV wears, and at these values all three read as one colour.
+        case .ftp: return .pink
         }
     }
 }
@@ -199,12 +201,12 @@ enum AppChrome {
 
     /// How much of a seat is left over for the next one to show through.
     ///
-    /// Only applied when there is a fifth seat to show: with four it would be
-    /// a margin down the right-hand side and nothing else. What actually ends
-    /// up visible is rather more than a tenth, because the overlaps hand some
-    /// width back — which is the point. A sliver of a tab says there is more;
-    /// a hairline says the layout is off by a pixel.
-    static let tabPeek: CGFloat = 0.1
+    /// Half. A tenth was a sliver that read as a rendering seam rather than as
+    /// another tab; half of one is unmistakably a tab with its label starting,
+    /// which is what makes somebody flick the row. Only applied when there is a
+    /// fifth seat to show — with four it would be a margin down the right-hand
+    /// side and nothing else.
+    static let tabPeek: CGFloat = 0.5
 
     /// A 375-point phone: iPhone SE 2 and 3, the 12 and 13 mini, and the 8.
     ///

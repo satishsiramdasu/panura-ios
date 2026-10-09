@@ -45,12 +45,13 @@ struct SiteFavicon: View {
 
     @ViewBuilder
     private var mark: some View {
-        if let tint {
-            // Private browsing recolours the cell rather than showing the
-            // site's own colours, because the session is the more important
-            // fact while it is on.
-            fallbackMark.foregroundStyle(tint)
-        } else if let url {
+        if let url {
+            // The site's own mark, private session or not. Private browsing
+            // used to replace it with a tinted app logo, which meant the one
+            // cell that says what page you are on stopped saying it precisely
+            // when nothing else on screen was going to. The session is already
+            // announced twice over - the pill behind this is violet and the
+            // menu row says so - and neither of those is the page's identity.
             AsyncImage(url: url) { phase in
                 switch phase {
                 case .success(let image): image.resizable().scaledToFit()
@@ -60,6 +61,10 @@ struct SiteFavicon: View {
                 default: fallbackMark
                 }
             }
+        } else if let tint {
+            // No icon of its own: then the cell is free to carry the session
+            // instead, because it is not carrying anything else.
+            fallbackMark.foregroundStyle(tint)
         } else {
             fallbackMark
         }

@@ -69,7 +69,7 @@ struct ShellTabBar: View {
     ///
     /// Taken out of the seat width rather than added to the row, so the strip
     /// is the same width whichever tab is selected.
-    private let selectedBonus: CGFloat = 16
+    private let selectedBonus: CGFloat = 12
 
     /// How the row rearranges itself when the selection moves.
     ///
