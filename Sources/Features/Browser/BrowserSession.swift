@@ -79,14 +79,47 @@ final class BrowserSession: ObservableObject {
     /// Called from the web view's scroll: down hides the bar, up brings it back.
     /// The threshold matches Android's 8px — small enough to feel immediate,
     /// large enough that a settling page does not flap the bar.
+    /// How far the finger has gone in its current direction.
+    ///
+    /// The bar used to move the instant one scroll event reported more than
+    /// eight points, which is what a thumb-flicked page does on its very first
+    /// event and what a page dragged steadily never does. Accumulating until
+    /// the movement adds up, and starting again whenever the direction changes,
+    /// is a threshold on intent rather than on speed - the same reading
+    /// `ShellChrome` takes, and for the same reason.
+    private var travel: CGFloat = 0
+
+    /// Far enough to mean it, going away. Shorter coming back, because wanting
+    /// the address is something you want now, where wanting it gone is
+    /// something you want for a while.
+    private static let hideAfter: CGFloat = 40
+    private static let showAfter: CGFloat = 16
+
+    /// Unlike the shell above it, the bar returns on the way up rather than
+    /// waiting for the top of the page.
+    ///
+    /// They are not the same thing and should not behave the same. The header
+    /// and the tab strip are about the app, and a reader who has not finished
+    /// reading has no use for either - so those wait for the top, which is the
+    /// one unambiguous statement that reading is over. The address is about the
+    /// page being read: it says where you are, and it is the only way to go
+    /// anywhere else. Making somebody scroll to the top of a long article to
+    /// reach it is making them travel to leave.
     func scrolled(by delta: CGFloat) {
-        if delta > 8 {
+        if delta > 0 ? travel < 0 : travel > 0 { travel = 0 }
+        travel += delta
+        if travel >= Self.hideAfter {
+            travel = 0
             if barVisible { barVisible = false }
-        } else if delta < -8 {
+        } else if travel <= -Self.showAfter {
+            travel = 0
             if !barVisible { barVisible = true }
         }
     }
 
     /// Leaving the browser must not strand the bar off screen.
-    func showBar() { barVisible = true }
+    func showBar() {
+        travel = 0
+        barVisible = true
+    }
 }

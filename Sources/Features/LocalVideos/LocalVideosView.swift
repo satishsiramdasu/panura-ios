@@ -164,9 +164,10 @@ struct LocalVideosView: View {
     /// videos it otherwise is not - and this is the screen where that bites,
     /// because a web page at least keeps its own address bar within reach.
     ///
-    /// Shown only while the chrome is away, which is exactly when it is the
-    /// answer to something. A permanent button here would be one more thing
-    /// sitting over the thumbnails for the rest of the time.
+    /// Shown only once the library has been scrolled a couple of screens.
+    /// Earlier than that the top is a short swipe away and the button is the
+    /// more annoying of the two; a permanent one would be a thing sitting over
+    /// the thumbnails for the whole of every session.
     private func toTopButton(_ scroller: ScrollViewProxy) -> some View {
         Button {
             withAnimation(.easeOut(duration: 0.3)) {
@@ -236,7 +237,7 @@ struct LocalVideosView: View {
                         .scrollAwayChrome(.videos)
                     }
                     .overlay(alignment: .bottomTrailing) {
-                        if !shell.visible { toTopButton(scroller) }
+                        if shell.farFromTop { toTopButton(scroller) }
                     }
                 }
             }

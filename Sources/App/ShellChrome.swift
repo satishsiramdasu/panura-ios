@@ -42,6 +42,25 @@ final class ShellChrome: ObservableObject {
     /// The header and the strip, together.
     @Published private(set) var visible = true
 
+    /// Whether the screen on display has been scrolled a long way down.
+    ///
+    /// For the Back to top button, which has no business appearing after one
+    /// flick: at that distance the top is a short swipe away and a button over
+    /// the content is the more annoying of the two. It earns its place once
+    /// swiping back would be a chore.
+    @Published private(set) var farFromTop = false
+
+    /// Screens travelled, per destination.
+    ///
+    /// Per destination because they are all composed at once and keep their
+    /// scroll position across a switch: coming back to a library you had left
+    /// halfway down should find the button already there, and it would not be
+    /// if this were one number reset on every switch.
+    private var depth: [AppDestination: CGFloat] = [:]
+
+    /// Two screens. Far enough that nobody arrived by accident.
+    private static let farAfter: CGFloat = 2
+
     /// Which tab is on screen.
     ///
     /// Every destination in the shell stays composed — the browser keeps its
@@ -85,6 +104,7 @@ final class ShellChrome: ObservableObject {
         scrollAway = destination != .home
         travel = 0
         visible = true
+        updateFarFromTop()
     }
 
     /// - Parameters:
@@ -96,7 +116,18 @@ final class ShellChrome: ObservableObject {
     ///
     /// Measured in distance travelled rather than in how fast any one event
     /// was — see `travel`.
-    func scrolled(by delta: CGFloat, atTop: Bool, from destination: AppDestination) {
+    /// - Parameter screens: how far down the content is, in viewport heights.
+    func scrolled(
+        by delta: CGFloat,
+        atTop: Bool,
+        screens: CGFloat = 0,
+        from destination: AppDestination
+    ) {
+        // Recorded before the gate below, so a screen that is composed but not
+        // on display still keeps its place for when it is.
+        depth[destination] = atTop ? 0 : screens
+        if destination == current { updateFarFromTop() }
+
         guard destination == current, scrollAway else { return }
 
         if atTop {
@@ -118,6 +149,12 @@ final class ShellChrome: ObservableObject {
         travel = 0
         guard visible else { return }
         withAnimation(Self.motion) { visible = false }
+    }
+
+    private func updateFarFromTop() {
+        let far = (depth[current] ?? 0) >= Self.farAfter
+        guard far != farFromTop else { return }
+        withAnimation(Self.motion) { farFromTop = far }
     }
 }
 
@@ -249,6 +286,8 @@ private final class ScrollProbeView: UIView {
             return
         }
 
+        let screens = scroll.bounds.height > 0 ? y / scroll.bounds.height : 0
+
         // Only what the finger did. A frame or inset change moves the offset
         // too, and the chrome collapsing is itself a frame change — left
         // ungated, hiding the strip produced the offset change that brought it
@@ -263,7 +302,9 @@ private final class ScrollProbeView: UIView {
 
         let target = destination
         Task { @MainActor in
-            ShellChrome.shared.scrolled(by: delta, atTop: false, from: target)
+            ShellChrome.shared.scrolled(
+                by: delta, atTop: false, screens: screens, from: target
+            )
         }
     }
 }

@@ -367,8 +367,12 @@ struct WebViewContainer: UIViewRepresentable {
             }
             guard y < bottom else { return }
             let delta = y - lastScrollY
+            let screens = scrollView.bounds.height > 0
+                ? y / scrollView.bounds.height : 0
             BrowserSession.shared.scrolled(by: delta)
-            ShellChrome.shared.scrolled(by: delta, atTop: false, from: .web)
+            ShellChrome.shared.scrolled(
+                by: delta, atTop: false, screens: screens, from: .web
+            )
             lastScrollY = y
         }
 
