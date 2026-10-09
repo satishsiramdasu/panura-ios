@@ -40,14 +40,23 @@ struct ShellTabBar: View {
 
     /// How far the tab tops are rounded. Matched to nothing else on purpose —
     /// it is the one shape in the app that has to read as a physical tab.
-    private let corner: CGFloat = 14
+    ///
+    /// `.continuous` everywhere this is used, so the curve is the squircle iOS
+    /// draws its own icons with rather than a quarter circle stuck on a
+    /// rectangle. At 14 that distinction is invisible — a squircle only looks
+    /// like one when the curve has enough room to ease in, and under a third of
+    /// the height is not enough room. 20 of 54 is.
+    private let corner: CGFloat = 20
     private let gutter: CGFloat = 8
-    /// Negative: the tabs overlap. A gap between them makes four separate
-    /// buttons; tucking each one behind its neighbour makes a stack of pages,
-    /// which is the whole idea — the selected one is the page in front and the
-    /// rest are filed behind it. The overlap is small enough that no label
-    /// loses a letter at 375pt, where a seat is still about 90 points wide.
-    private let gap: CGFloat = -8
+
+    /// Total points the row spends tucking tabs behind each other, however
+    /// those points end up shared out.
+    ///
+    /// Fixed rather than per-join, so the row is the same width whichever tab
+    /// is selected. Sharing it out by distance (see `overlaps`) would otherwise
+    /// change the total every time the selection moved, and the right-hand edge
+    /// of the strip would shift under the user's thumb for no reason.
+    private let overlapBudget: CGFloat = 30
 
     private var showsMore: Bool { !more.isEmpty || !planned.isEmpty }
     private var moreActive: Bool {
@@ -56,14 +65,19 @@ struct ShellTabBar: View {
     var body: some View {
         GeometryReader { geo in
             let width = seatWidth(in: geo.size.width)
+            let laps = overlaps()
+            // Spacing 0: the overlaps are not uniform, so each seat pulls
+            // itself left by its own amount instead.
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .bottom, spacing: gap) {
+                HStack(alignment: .bottom, spacing: 0) {
                     ForEach(Array(tabs.enumerated()), id: \.element) { index, tab in
                         tabButton(tab, at: index, width: width)
+                            .padding(.leading, index == 0 ? 0 : -laps[index - 1])
                             .zIndex(stacking(at: index))
                     }
                     if showsMore {
                         moreButton(width: width)
+                            .padding(.leading, tabs.isEmpty ? 0 : -laps[tabs.count - 1])
                             .zIndex(stacking(at: tabs.count))
                     }
                 }
@@ -81,13 +95,35 @@ struct ShellTabBar: View {
     /// make "Browser" and "Home" different widths.
     static let height: CGFloat = 54
 
-    /// A quarter of what is left after the gutters and the gaps between four
-    /// seats — never a share of the actual count, which is what keeps a fifth
-    /// peeking instead of squeezing.
+    /// A quarter of what is left after the gutters, plus its share of what the
+    /// overlaps give back — never a share of the actual count, which is what
+    /// keeps a fifth peeking instead of squeezing.
     private func seatWidth(in total: CGFloat) -> CGFloat {
-        let perRow = AppChrome.tabsPerRow
-        let usable = total - gutter * 2 - gap * (perRow - 1)
-        return max(64, usable / perRow)
+        let usable = total - gutter * 2 + overlapBudget
+        return max(64, usable / AppChrome.tabsPerRow)
+    }
+
+    /// How far each tab is tucked under the one before it, join by join.
+    ///
+    /// Join `j` sits between seat `j-1` and seat `j`. The further a join is
+    /// from the selected tab, the deeper the tuck: the tabs either side of
+    /// where you are stand almost clear of it, and the ones at the far end are
+    /// filed away. That taper is what makes the selected tab look like the
+    /// front of the stack rather than merely the lit one — a run of identical
+    /// overlaps reads as a pattern, and a pattern has no focus.
+    ///
+    /// The shares always sum to `overlapBudget`, so the row's width does not
+    /// move when the selection does.
+    private func overlaps() -> [CGFloat] {
+        let seats = tabs.count + (showsMore ? 1 : 0)
+        guard seats > 1 else { return [] }
+        let selected = activeIndex ?? 0
+        let weights = (1..<seats).map { join -> CGFloat in
+            let distance = join <= selected ? selected - join : join - selected - 1
+            return CGFloat(distance) + 1
+        }
+        let total = weights.reduce(0, +)
+        return weights.map { overlapBudget * $0 / total }
     }
 
     private func tabButton(_ tab: AppDestination, at index: Int, width: CGFloat) -> some View {
