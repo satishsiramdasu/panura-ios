@@ -80,9 +80,12 @@ struct ShellTabBar: View {
 
     private var showsAdd: Bool { !addable.isEmpty }
 
+    /// Tabs plus the `+`, when there is one.
+    private var seatCount: Int { tabs.count + (showsAdd ? 1 : 0) }
+
     var body: some View {
         GeometryReader { geo in
-            let width = seatWidth(in: geo.size.width)
+            let width = seatWidth(in: geo.size.width, seats: seatCount)
             let laps = overlaps()
             // Spacing 0: the overlaps are not uniform, so each seat pulls
             // itself left by its own amount instead.
@@ -133,9 +136,15 @@ struct ShellTabBar: View {
     /// A quarter of what is left after the gutters, plus its share of what the
     /// overlaps give back — never a share of the actual count, which is what
     /// keeps a fifth peeking instead of squeezing.
-    private func seatWidth(in total: CGFloat) -> CGFloat {
+    private func seatWidth(in total: CGFloat, seats: Int) -> CGFloat {
+        let perRow = AppChrome.tabsPerRow
+        // Narrow the four only when there is a fifth to make room for.
+        // Otherwise the row would stop short of the right-hand edge for no
+        // reason anybody could see, which reads as a mistake rather than as an
+        // invitation.
+        let share = CGFloat(seats) > perRow ? perRow + AppChrome.tabPeek : perRow
         let usable = total - gutter * 2 + overlapBudget - selectedBonus
-        return max(64, usable / AppChrome.tabsPerRow)
+        return max(64, usable / share)
     }
 
     /// How far each tab is tucked under the one before it, join by join.
@@ -150,7 +159,7 @@ struct ShellTabBar: View {
     /// The shares always sum to `overlapBudget`, so the row's width does not
     /// move when the selection does.
     private func overlaps() -> [CGFloat] {
-        let seats = tabs.count + (showsAdd ? 1 : 0)
+        let seats = seatCount
         guard seats > 1 else { return [] }
         let selected = activeIndex ?? 0
         let weights = (1..<seats).map { join -> CGFloat in

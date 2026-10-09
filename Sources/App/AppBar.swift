@@ -194,6 +194,15 @@ enum AppChrome {
     /// it by showing the edge of the next one.
     static let tabsPerRow: CGFloat = 4
 
+    /// How much of a seat is left over for the next one to show through.
+    ///
+    /// Only applied when there is a fifth seat to show: with four it would be
+    /// a margin down the right-hand side and nothing else. What actually ends
+    /// up visible is rather more than a tenth, because the overlaps hand some
+    /// width back — which is the point. A sliver of a tab says there is more;
+    /// a hairline says the layout is off by a pixel.
+    static let tabPeek: CGFloat = 0.1
+
     /// A 375-point phone: iPhone SE 2 and 3, the 12 and 13 mini, and the 8.
     ///
     /// The floor, not a guess - the deployment target is 16.4 and the 320pt SE

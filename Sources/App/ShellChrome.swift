@@ -191,23 +191,58 @@ private final class ScrollProbeView: UIView {
         return nil
     }
 
+    /// How far the content has been scrolled from its very top.
+    ///
+    /// **Not `contentOffset.y`.** A scroll view with a top inset sits at
+    /// `-inset.top` when it is at the top, so a bare `contentOffset.y <= 0`
+    /// reads as "at the top" for the whole first `inset.top` points of
+    /// scrolling. Videos has such an inset — its own toolbar — so every
+    /// downward drag through the first fifty points also announced that it was
+    /// at the top, the chrome was told to come back, and the tab strip flapped
+    /// instead of going away. The browser never showed it because
+    /// `WebViewContainer` sets `contentInsetAdjustmentBehavior = .never`, which
+    /// leaves the inset at zero and makes the two readings identical. That is
+    /// the entire difference between the two screens.
+    private func distance(in scroll: UIScrollView) -> CGFloat {
+        scroll.contentOffset.y + scroll.adjustedContentInset.top
+    }
+
     /// The same reading the browser takes, for the same reasons — see
     /// `WebViewContainer.scrolled`.
     private func offsetChanged(_ scroll: UIScrollView) {
-        let y = scroll.contentOffset.y
+        let y = distance(in: scroll)
         let delta = y - last
+        // Kept current even when the event is not reported, so the next real
+        // drag is measured from where the content actually is.
         last = y
+
         // The top is a state rather than a direction, and it is what brings the
         // whole shell back, so it is reported even though arriving there is not
-        // a scroll upward.
-        let atTop = y <= 0
+        // a scroll upward — and reported whether or not a finger is down, since
+        // a deceleration that ends at the top is still arriving at the top.
+        if y <= 0 {
+            let target = destination
+            Task { @MainActor in
+                ShellChrome.shared.scrolled(by: 0, atTop: true, from: target)
+            }
+            return
+        }
+
+        // Only what the finger did. A frame or inset change moves the offset
+        // too, and the chrome collapsing is itself a frame change — left
+        // ungated, hiding the strip produced the offset change that brought it
+        // back, which produced the one that hid it again.
+        guard scroll.isTracking || scroll.isDragging || scroll.isDecelerating else { return }
+
         // Rubber-banding at the bottom is not a scroll downward; reading it as
         // one hides the chrome on a bounce.
-        guard atTop || y < scroll.contentSize.height - scroll.bounds.height else { return }
+        let travel = scroll.contentSize.height - scroll.bounds.height
+            + scroll.adjustedContentInset.top + scroll.adjustedContentInset.bottom
+        guard y < travel else { return }
+
         let target = destination
-        let reported: CGFloat = atTop ? 0 : delta
         Task { @MainActor in
-            ShellChrome.shared.scrolled(by: reported, atTop: atTop, from: target)
+            ShellChrome.shared.scrolled(by: delta, atTop: false, from: target)
         }
     }
 }
