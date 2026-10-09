@@ -16,6 +16,7 @@ struct IPTVView: View {
     @State private var query = ""
     @State private var group: String?
     @State private var editing: IPTVSource?
+    @State private var editingPassword = ""
 
     var body: some View {
         Group {
@@ -27,10 +28,13 @@ struct IPTVView: View {
         .sheet(item: $editing) { source in
             IPTVSourceForm(
                 source: source,
+                password: $editingPassword,
                 onSave: { edited in
-                    store.save(edited)
+                    store.save(edited, password: editingPassword)
                     editing = nil
-                    Task { await store.load(edited) }
+                    // Forced: the credentials just changed, so whatever is in
+                    // the cache was fetched with the old ones.
+                    Task { await store.load(edited, force: true) }
                 },
                 onCancel: { editing = nil }
             )
@@ -71,7 +75,7 @@ struct IPTVView: View {
                     }
                 }
             } else {
-                glyph("plus", label: "Add a playlist") { editing = IPTVSource() }
+                glyph("plus", label: "Add a playlist") { addPlaylist() }
             }
         }
         .padding(.horizontal, 12)
@@ -79,10 +83,14 @@ struct IPTVView: View {
         .background(chrome)
     }
 
-    /// How many channels, and how old they are. The age matters here in a way
-    /// it does not elsewhere: a playlist is somebody else's list and it changes
-    /// without warning, so "loaded an hour ago" is the answer to "why is that
-    /// channel missing".
+    /// How many channels, how old they are, and when the subscription runs
+    /// out.
+    ///
+    /// The age matters here in a way it does not elsewhere: a playlist is
+    /// somebody else's list and it changes without warning, so "loaded an hour
+    /// ago" is the answer to "why is that channel missing". And the expiry is
+    /// the question every one of these users eventually has, asked of an app
+    /// that has it to hand and has no reason to keep it.
     private var subtitle: String {
         var parts = ["\(store.channels.count) channels"]
         if let at = store.fetchedAt {
@@ -90,7 +98,15 @@ struct IPTVView: View {
             formatter.unitsStyle = .short
             parts.append(formatter.localizedString(for: at, relativeTo: Date()))
         }
+        if let expires = store.account?.expires {
+            parts.append("expires " + expires.formatted(date: .abbreviated, time: .omitted))
+        }
         return parts.joined(separator: " · ")
+    }
+
+    private func addPlaylist() {
+        editingPassword = ""
+        editing = IPTVSource()
     }
 
     private func glyph(_ name: String, label: String, action: @escaping () -> Void) -> some View {
@@ -116,11 +132,11 @@ struct IPTVView: View {
                     .foregroundStyle(PanuraTheme.accent)
                 Text("No playlist yet")
                     .font(.headline)
-                Text("Add the M3U address your provider gave you. Panura ships no channels of its own — it opens the playlist you enter, and nothing else.")
+                Text("Sign in to an Xtream or Dispatcharr server, or paste an M3U address. Panura ships no channels of its own — it opens the playlist you enter, and nothing else.")
                     .font(.footnote)
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
                     .multilineTextAlignment(.center)
-                Button { editing = IPTVSource() } label: {
+                Button { addPlaylist() } label: {
                     Text("Add a playlist")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(PanuraTheme.onAccent)
@@ -145,7 +161,10 @@ struct IPTVView: View {
                         Button(role: .destructive) { store.remove(source) } label: {
                             Label("Remove", systemImage: "trash")
                         }
-                        Button { editing = source } label: {
+                        Button {
+                            editingPassword = store.password(for: source)
+                            editing = source
+                        } label: {
                             Label("Edit", systemImage: "pencil")
                         }
                     }
@@ -167,7 +186,7 @@ struct IPTVView: View {
                 Text(source.displayName)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
-                Text(source.address)
+                Text(source.subtitle)
                     .font(.caption)
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
                     .lineLimit(1)
@@ -324,26 +343,73 @@ struct IPTVView: View {
     }
 }
 
-/// Name and address. Two fields, because a playlist is two facts.
+/// Pick how the provider hands out access, then fill in that.
+///
+/// Three choices, though only two code paths: Dispatcharr speaks the Xtream
+/// API, so it is the same client with a different host. It still gets its own
+/// button, because somebody running Dispatcharr is looking for the word
+/// "Dispatcharr" and should not have to know, or be told, that it is Xtream
+/// underneath. Naming it is what says they are in the right place.
 private struct IPTVSourceForm: View {
     @State var source: IPTVSource
+    @Binding var password: String
     var onSave: (IPTVSource) -> Void
     var onCancel: () -> Void
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("Kind", selection: $source.kind) {
+                        ForEach(IPTVSource.Kind.allCases) { kind in
+                            Text(kind.label).tag(kind)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                } footer: {
+                    Text(source.kind.detail)
+                }
+
                 Section("Playlist") {
                     TextField("Name (optional)", text: $source.name)
-                    TextField("M3U address", text: $source.address)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
                 }
+
+                switch source.kind {
+                case .xtream, .dispatcharr:
+                    Section {
+                        TextField("Server", text: $source.host)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                        TextField("Username", text: $source.username)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        SecureField("Password", text: $password)
+                    } header: {
+                        Text("Sign in")
+                    } footer: {
+                        Text(source.kind.help)
+                    }
+
+                case .m3u:
+                    Section {
+                        TextField("M3U address", text: $source.address)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+                    } header: {
+                        Text("Address")
+                    } footer: {
+                        Text("The whole address your provider sent, username and password included.")
+                    }
+                }
+
                 Section {
                     EmptyView()
                 } footer: {
-                    Text("Paste the address your provider gave you. Panura does not supply channels and cannot help with a subscription — the playlist and everything in it belongs to whoever you got it from.")
+                    // The line that matters if anybody official ever reads this
+                    // screen, and it happens to be true.
+                    Text("Panura supplies no channels and cannot help with a subscription. The playlist and everything in it belongs to whoever you got it from.")
                 }
             }
             .navigationTitle("Playlist")
@@ -354,7 +420,7 @@ private struct IPTVSourceForm: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { onSave(source) }
-                        .disabled(source.url == nil || source.address.isEmpty)
+                        .disabled(!source.isComplete)
                 }
             }
         }

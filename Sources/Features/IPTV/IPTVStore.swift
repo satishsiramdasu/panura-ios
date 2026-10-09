@@ -2,22 +2,125 @@ import Foundation
 
 /// A playlist somebody pays for, as they entered it.
 ///
-/// One URL. Providers hand out a single address with the credentials already in
-/// its query, so a separate username and password would be two fields nobody
-/// has anything to put in. A provider that genuinely wants HTTP basic auth can
-/// have it the same way — `https://user:pass@host/get.php?…` is a valid URL.
+/// Three ways in, two code paths.
+///
+/// - **M3U** — one long URL with the credentials already in its query. Older
+///   providers, and anything somebody assembled themselves.
+/// - **Xtream** — server, username, password. The API nearly every panel
+///   speaks.
+/// - **Dispatcharr** — the same API. Dispatcharr's output modes are M3U,
+///   XMLTV, Xtream Codes and HDHomeRun, so a Dispatcharr box *is* an Xtream
+///   server here.
+///
+/// Dispatcharr is a separate choice anyway, and that is a deliberate piece of
+/// duplication. Somebody running one is looking for the word "Dispatcharr";
+/// making them work out that it is Xtream underneath is making them do our
+/// filing. The code behind the two is one client — see `usesXtream`.
+///
+/// Signing in beats an M3U wherever it is offered: the panel hands over
+/// categories as names rather than numbers, says when the subscription
+/// expires, and costs two small JSON calls instead of a multi-megabyte
+/// download.
 struct IPTVSource: Codable, Identifiable, Hashable {
+    enum Kind: String, Codable, CaseIterable, Identifiable {
+        case m3u, xtream, dispatcharr
+        var id: String { rawValue }
+
+        /// Both of these talk to the same client.
+        var usesXtream: Bool { self != .m3u }
+
+        var label: String {
+            switch self {
+            case .m3u: return "M3U"
+            case .xtream: return "Xtream"
+            case .dispatcharr: return "Dispatcharr"
+            }
+        }
+
+        var detail: String {
+            switch self {
+            case .m3u:
+                return "The single playlist address your provider sent you"
+            case .xtream:
+                return "Xtream Codes panel — server, username and password"
+            case .dispatcharr:
+                return "Your own Dispatcharr server and its sign-in"
+            }
+        }
+
+        /// Under the fields, where the wording has to differ even though the
+        /// request does not.
+        var help: String {
+            switch self {
+            case .m3u:
+                return ""
+            case .xtream:
+                return "The server is the part before the username, like http://example.com:8080. The password is kept in the iOS keychain on this device."
+            case .dispatcharr:
+                return "The address of your Dispatcharr server, like http://192.168.1.10:9191, and the username and password of a Dispatcharr user. Panura uses its Xtream Codes output. The password is kept in the iOS keychain on this device."
+            }
+        }
+    }
+
     var id: UUID = UUID()
     var name: String = ""
+    var kind: Kind = .xtream
+    /// The M3U address, for `.m3u`.
     var address: String = ""
+    /// The panel, for `.xtream`. Scheme and port optional — see
+    /// `XtreamClient.normalised`.
+    var host: String = ""
+    var username: String = ""
+
+    /// Where the password is kept. The record never holds one.
+    var credentialKey: String { "iptv." + id.uuidString }
 
     var displayName: String {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if !trimmed.isEmpty { return trimmed }
-        return URL(string: address)?.host ?? "Playlist"
+        let source = kind.usesXtream ? (XtreamClient.normalised(host) ?? "") : address
+        return URL(string: source)?.host ?? "Playlist"
+    }
+
+    /// What the row under the name shows. Never the password, and for an M3U
+    /// never the query either — that *is* the credentials.
+    var subtitle: String {
+        guard kind.usesXtream else {
+            guard let url = URL(string: address), let host = url.host else { return address }
+            return host + url.path
+        }
+        let server = XtreamClient.normalised(host) ?? host
+        return username.isEmpty ? server : "\(username) · \(server)"
+    }
+
+    var isComplete: Bool {
+        guard kind.usesXtream else {
+            return url != nil && !address.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        return XtreamClient.normalised(host) != nil && !username.isEmpty
     }
 
     var url: URL? { URL(string: address.trimmingCharacters(in: .whitespaces)) }
+
+    init() {}
+
+    /// Every field optional on the way in.
+    ///
+    /// The synthesised decoder requires a key for every non-optional property
+    /// whatever default it was given, so adding one field to this struct throws
+    /// on every record written before it existed — and because these are
+    /// decoded as an array, one bad record loses the lot. Somebody who added a
+    /// playlist yesterday would have opened the app today to find it gone.
+    /// Written out once here, and the next field added costs nothing.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try values.decodeIfPresent(String.self, forKey: .name) ?? ""
+        kind = try values.decodeIfPresent(Kind.self, forKey: .kind) ?? .m3u
+        address = try values.decodeIfPresent(String.self, forKey: .address) ?? ""
+        host = try values.decodeIfPresent(String.self, forKey: .host) ?? ""
+        username = try values.decodeIfPresent(String.self, forKey: .username) ?? ""
+    }
 }
 
 /// The playlists, their channels, and how old the channels are.
@@ -43,6 +146,8 @@ final class IPTVStore: ObservableObject {
     @Published private(set) var failure: String?
     /// When the open playlist's channels were downloaded.
     @Published private(set) var fetchedAt: Date?
+    /// What the panel said about the subscription, when it was asked.
+    @Published private(set) var account: XtreamClient.Account?
 
     /// Three hours. Long enough that a normal evening never refetches, short
     /// enough that a provider's overnight changes are picked up next day.
@@ -84,9 +189,19 @@ final class IPTVStore: ObservableObject {
         persist()
     }
 
+    func password(for source: IPTVSource) -> String {
+        Keychain.get(source.credentialKey)
+    }
+
+    func save(_ source: IPTVSource, password: String) {
+        Keychain.set(password, for: source.credentialKey)
+        save(source)
+    }
+
     func remove(_ source: IPTVSource) {
         sources.removeAll { $0.id == source.id }
         try? FileManager.default.removeItem(at: Self.cacheURL(source))
+        Keychain.remove(source.credentialKey)
         if open?.id == source.id { close() }
         persist()
     }
@@ -103,6 +218,7 @@ final class IPTVStore: ObservableObject {
         channels = []
         failure = nil
         fetchedAt = nil
+        account = nil
     }
 
     /// Opens a playlist from cache when the cache is young enough, and from the
@@ -120,13 +236,18 @@ final class IPTVStore: ObservableObject {
             // and staring at a spinner is worse than watching last night's.
         }
 
+        isLoading = true
+        defer { isLoading = false }
+
+        if source.kind.usesXtream {
+            await signIn(source)
+            return
+        }
+
         guard let url = source.url else {
             failure = "That address is not valid."
             return
         }
-
-        isLoading = true
-        defer { isLoading = false }
 
         var request = URLRequest(url: url)
         // Generous: these files are large and the servers behind them are not
@@ -163,6 +284,32 @@ final class IPTVStore: ObservableObject {
         Self.writeCache(source, text: text)
     }
 
+    /// The Xtream path: two JSON calls instead of a download.
+    ///
+    /// The result is cached as an M3U so both kinds of account share one cache
+    /// format and one way back out of it — and so the cache is a file somebody
+    /// can open and read if a channel ever goes missing.
+    private func signIn(_ source: IPTVSource) async {
+        do {
+            let result = try await XtreamClient.load(
+                host: source.host,
+                username: source.username,
+                password: password(for: source)
+            )
+            channels = result.channels
+            account = result.account
+            fetchedAt = Date()
+            Self.writeCache(source, text: XtreamClient.m3u(result.channels))
+        } catch {
+            // Only when there is nothing on screen. A refresh that fails over a
+            // list already showing should leave the list alone.
+            if channels.isEmpty {
+                failure = (error as? LocalizedError)?.errorDescription
+                    ?? "Could not sign in to that server."
+            }
+        }
+    }
+
     // MARK: cache
 
     private struct Cached {
@@ -178,8 +325,13 @@ final class IPTVStore: ObservableObject {
 
     private static func readCache(_ source: IPTVSource) -> Cached? {
         let file = cacheURL(source)
+        // An Xtream cache holds absolute URLs, so the base is only ever used by
+        // the M3U kind — where a relative entry is still legal.
+        let base = source.kind.usesXtream
+            ? URL(string: XtreamClient.normalised(source.host) ?? "")
+            : source.url
         guard let text = try? String(contentsOf: file, encoding: .utf8),
-              let base = source.url
+              let base
         else { return nil }
         // The file's own modification date is the timestamp — no second record
         // to write, and none to fall out of step with the file it describes.
