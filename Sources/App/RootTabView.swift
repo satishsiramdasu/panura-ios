@@ -54,7 +54,9 @@ struct RootTabView: View {
     /// you go from wherever you are and come straight back out of. As a
     /// destination it would be a place with no tab, and nothing in the strip
     /// would look selected while you were in it.
-    @State private var showWatchLater = false
+    @State private var showLibrary = false
+    /// Which of the Library's three tabs the next opening lands on.
+    @State private var libraryTab: LibrarySheet.Tab = .watching
     /// Address typed on Home, waiting for the Browser to pick it up. The browser
     /// owns its WebView across switches, so the hand-off has to be state here
     /// rather than a fresh `BrowserView(url:)`.
@@ -117,9 +119,9 @@ struct RootTabView: View {
         }
         .sheet(isPresented: $showFAQ) { FAQView() }
         .sheet(isPresented: $showStream) { StreamView() }
-        .sheet(isPresented: $showWatchLater) {
-            LibrarySheet(tab: .later) { address in
-                showWatchLater = false
+        .sheet(isPresented: $showLibrary) {
+            LibrarySheet(tab: libraryTab) { address in
+                showLibrary = false
                 openInBrowser(address)
             }
         }
@@ -233,16 +235,24 @@ struct RootTabView: View {
     /// away, and a menu that repeats what the bar already offers teaches people
     /// the bar is not to be trusted.
     ///
-    /// No Watch Later either, for the same reason one step removed: it is a
-    /// tab of the Library sheet now, which Home opens from the card and from
-    /// Continue Watching's header. Three doors to one room, one of them hidden
-    /// in a menu, is two doors too many.
+    /// Library is here rather than on Home, and it is the one door that is
+    /// always open. Home's shortcut sits in Continue Watching's header, which
+    /// is not drawn when there is nothing to continue — precisely the state in
+    /// which somebody goes looking for the thing they saved for later. A menu
+    /// row costs no space on any screen and works from every tab.
     @ViewBuilder
     private var menuRows: some View {
         Button {
             settingsDeepLink = nil
             showSettings = true
         } label: { Label("Settings", systemImage: "gearshape") }
+
+        Button {
+            libraryTab = .watching
+            showLibrary = true
+        } label: {
+            Label("Library", systemImage: "bookmark")
+        }
 
         Button { showFAQ = true } label: {
             Label("Help", systemImage: "questionmark.circle")
@@ -469,7 +479,8 @@ struct RootTabView: View {
             showSettings = true
             return
         case .watchLater:
-            showWatchLater = true
+            libraryTab = .later
+            showLibrary = true
             return
         case .stream:
             showStream = true

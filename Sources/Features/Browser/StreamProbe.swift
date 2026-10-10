@@ -113,6 +113,41 @@ enum StreamProbe {
         return !goneStatuses.contains(http.statusCode)
     }
 
+    /// Strict version of `isAlive`, for an address somebody has just typed.
+    ///
+    /// The difference is what an unanswered request means. `isAlive` reads it
+    /// as "alive" on purpose: it sweeps resume cards, and a flaky minute of
+    /// signal must not throw away somebody's place in a film. Here the
+    /// opposite is true — nothing has been opened yet, and a player that
+    /// appears and immediately dies says less than a line of text under the
+    /// field. So an address that cannot be reached, or that answers with an
+    /// error, fails the check.
+    ///
+    /// A redirect to a login page still passes. Only the server can say
+    /// whether the bytes are there, and plenty of CDNs answer a probe
+    /// differently from a player.
+    static func reachable(url: URL, headers: [String: String]) async -> Bool {
+        // Nothing to probe: libVLC speaks these and URLSession does not.
+        guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+            return true
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        request.setValue("bytes=0-2047", forHTTPHeaderField: "Range")
+        for (name, value) in headers where !value.isEmpty {
+            let key = name.lowercased()
+            guard key != "host", key != "content-length", key != "range" else { continue }
+            request.setValue(value, forHTTPHeaderField: name)
+        }
+        if headers.keys.first(where: { $0.lowercased() == "user-agent" }) == nil {
+            request.setValue("VLC/3.0.20 LibVLC/3.0.20", forHTTPHeaderField: "User-Agent")
+        }
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse
+        else { return false }
+        return http.statusCode < 400
+    }
+
     /// Probes `url`, replaying the headers the browser captured for it.
     ///
     /// `ruleMatched` streams are NOT read: a single-use-token host spends its

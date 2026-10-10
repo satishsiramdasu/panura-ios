@@ -50,7 +50,7 @@ struct StreamView: View {
                     HStack(spacing: 8) {
                         if model.isLoading {
                             ProgressView().controlSize(.small).tint(PanuraTheme.onAccent)
-                            Text("Checking stream…")
+                            Text("Checking the link…")
                         } else {
                             Image(systemName: "play.fill")
                             Text("Play")
@@ -348,9 +348,47 @@ struct StreamView: View {
         return headers
     }
 
+    /// What the field will accept, and what it makes of it.
+    ///
+    /// `URL(string:)` says yes to almost anything — "hello" parses, with no
+    /// scheme and no host — which is how a typed word reached the player,
+    /// failed, closed itself and left a card on Home promising to resume it.
+    /// An address needs a scheme this app can fetch and something to fetch it
+    /// from; a bare `example.com/x.m3u8` is the one shorthand worth accepting,
+    /// because it is what a paste out of a chat window looks like.
+    private static let playableSchemes: Set<String> = [
+        "http", "https", "rtsp", "rtmp", "rtmps", "mms", "udp", "rtp",
+        "smb", "ftp", "ftps", "sftp", "nfs", "file"
+    ]
+
+    private static func address(from text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !trimmed.contains(" ") else { return nil }
+
+        let candidate: String
+        if trimmed.contains("://") {
+            candidate = trimmed
+        } else if trimmed.contains("."), !trimmed.hasPrefix(".") {
+            candidate = "https://" + trimmed
+        } else {
+            return nil
+        }
+
+        guard let url = URL(string: candidate),
+              let scheme = url.scheme?.lowercased(),
+              playableSchemes.contains(scheme),
+              let host = url.host, !host.isEmpty
+        else { return nil }
+        return url
+    }
+
     private func play() {
         let trimmed = urlText.trimmingCharacters(in: .whitespaces)
-        guard let raw = URL(string: trimmed), !model.isLoading else { return }
+        guard !model.isLoading else { return }
+        guard let raw = Self.address(from: trimmed) else {
+            model.error = "That is not an address. Paste the link to the stream — it usually starts with http:// and ends in .m3u8, .mp4 or .m3u."
+            return
+        }
         // Pasted links and .m3u entries commonly carry the gate as
         // `…/master.m3u8#referer=https%3A%2F%2Fsite.com`.
         let (url, fragmentReferer) = RefererFragment.split(raw)
@@ -359,6 +397,18 @@ struct StreamView: View {
 
         model.error = nil
         Task {
+            model.isLoading = true
+            // Asked before the player is opened rather than after it has
+            // failed. A player that appears and dies says less than a line of
+            // text under the field, and it is the thing that was leaving a
+            // resume card behind.
+            let reachable = await StreamProbe.reachable(url: url, headers: headers)
+            guard reachable else {
+                model.isLoading = false
+                model.error = "Could not open that link. Check the address, or add the page it came from under Advanced options."
+                return
+            }
+
             // A .m3u is usually a channel list, and playing it as one stream
             // hands the user whichever channel happens to be first. Only the
             // body can tell a list from a stream, so it is read before playing.
@@ -366,9 +416,11 @@ struct StreamView: View {
                 || url.absoluteString.lowercased().contains(".m3u?")
                 || url.pathExtension.lowercased() == "m3u8"
             if isPlaylistCandidate, await model.loadPlaylistIfAny(url, headers: headers) {
+                model.isLoading = false
                 model.remember(trimmed)
                 return
             }
+            model.isLoading = false
             model.remember(trimmed)
             PlaybackSession.shared.play(
                 MediaItem(title: url.lastPathComponent, url: url, headers: headers),

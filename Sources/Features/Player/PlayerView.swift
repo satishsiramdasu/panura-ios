@@ -269,6 +269,10 @@ struct PlayerView<Model: PlayerEngine>: View {
             } else {
                 PlayerAnalytics.failed(engine: engineName, item: item)
                 reportFallbackOutcome(played: false)
+                // Nothing played, so there is nothing to continue. Only in
+                // this branch: the other one is handing the item to the second
+                // engine, which may well play it.
+                BrowsingStore.shared.discardUnplayed(url: item.url)
             }
         }
         .onChange(of: model.isPlaying) { playing in

@@ -921,6 +921,24 @@ final class BrowsingStore: ObservableObject {
 
     private func persistWatched() { Self.save(watchedLog, watchedKey) }
 
+    /// Drops an entry that never got anywhere.
+    ///
+    /// `beginWatching` records the moment a player opens, so that leaving
+    /// after thirty seconds still leaves a card on Home. The cost is that a
+    /// link which fails on contact leaves one too — a card promising to resume
+    /// something that has never played a frame. This removes exactly those:
+    /// no position, which means no playback ever reported one.
+    func discardUnplayed(url: URL) {
+        let key = url.absoluteString
+        guard let index = resumes.firstIndex(where: { $0.url == key }),
+              resumes[index].position <= 0
+        else { return }
+        ResumeThumbnails.remove(resumes[index].thumbnailPath)
+        resumes.remove(at: index)
+        ResumePosition.forget(key)
+        persistResumes()
+    }
+
     func removeWatching(url: String) {
         for entry in resumes where entry.url == url {
             ResumeThumbnails.remove(entry.thumbnailPath)
