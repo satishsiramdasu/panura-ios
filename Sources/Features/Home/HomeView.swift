@@ -11,7 +11,7 @@ struct HomeView: View {
 
     @ObservedObject private var store = BrowsingStore.shared
     @ObservedObject private var session = BrowserSession.shared
-    /// Only to know whether the IPTV card still has a job — see Explore.
+    /// Only to know whether the Servers card still has a job.
     @ObservedObject private var tabSet = TabSet.shared
 
     @State private var showAddress = false
@@ -41,14 +41,26 @@ struct HomeView: View {
                     // last card on a screen people open in order to start
                     // watching. Picking a video *is* starting, so it goes with
                     // Bookmarks and Continue Watching - the three ways to be
-                    // playing something within one tap - and Explore stays
-                    // below as the list of places to go instead.
+                    // playing something within one tap.
                     // Above Pick a video, because it is the more specific
                     // offer: one named page somebody was actually reading
                     // beats a picker over the whole library.
                     if let last = store.lastVisited { continueBrowsingCard(last) }
-                    PickVideoCard().padding(.horizontal, 16)
-                    quickAccessSection
+                    // The ways to start something this minute, in one shape,
+                    // one under the other. They used to be a card and a grid
+                    // of tiles headed "Explore", which put the same kind of
+                    // act into two different kinds of furniture — and the
+                    // heading promised places to go while holding two
+                    // leftovers.
+                    VStack(spacing: 10) {
+                        PickVideoCard()
+                        networkStreamCard
+                        // Only while Servers is still behind the strip's `+`.
+                        // Once the tab is there this is a second door to a
+                        // room that already has one open.
+                        if !tabSet.tabs.contains(.ftp) { serversCard }
+                    }
+                    .padding(.horizontal, 16)
                     housekeepingRow
                     // Last, under the cards. They were beside the name at the
                     // very top, which gave the two least-pressed controls on
@@ -117,110 +129,72 @@ struct HomeView: View {
         }
     }
 
-    // MARK: quick access
+    // MARK: starting something
 
-    /// The four places worth going, as cards.
-    ///
-    /// Home is now where the destinations are reached from as well as the
-    /// drawer - the bottom bar that used to carry Browser and Videos is gone -
-    /// so these four are the whole of the app's navigation on this screen and
-    /// have to be found at a glance rather than read.
-    ///
-    /// Headed "Explore", not "Quick access". Quick access is what the Bookmarks
-    /// row directly above it is: sites the user put there to reach in one tap.
-    /// These are the app's own places, and every one of them is where you go
-    /// when a bookmark was not what you wanted.
-    ///
-    /// Which is why Settings is no longer among them. It is not a place you go
-    /// to watch something; it is something you adjust, and it sits with the
-    /// other two of those at the bottom of the screen.
-    ///
-    /// Watch Later has the fourth seat. Bookmarks is the site you return to and
-    /// Continue Watching is the thing you are part-way through; neither answers
-    /// "the one I found yesterday and meant to get to", which is the commonest
-    /// thing to lose in a browser.
-    private var quickAccessSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Explore")
-            LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
-                spacing: 10
-            ) {
-                // Browser and Videos are tabs, one row above this and always
-                // on screen. A card that goes where the tab goes is a second
-                // door to the same room, and the two of them were taking half
-                // of Explore to repeat what the tab strip already says.
-                // Servers is opt-in and lives behind the strip's `+`, which is
-                // the right default for the many people with no NAS and no
-                // subscription, and a poor hiding place for the ones who have
-                // either. The card is the second door: it adds the tab and
-                // opens it, and goes away once the tab is there.
-                if !tabSet.tabs.contains(.ftp) {
-                    sectionCard(.ftp, title: "Servers")
-                }
-                sectionCard(.stream, title: "Network\nStream")
-                sectionCard(.watchLater, title: "Watch\nLater")
-            }
-            .padding(.horizontal, 16)
-        }
+    /// Paste an address and play it. Same shape as Pick a video, because it
+    /// is the same kind of thing: not a place, an act.
+    private var networkStreamCard: some View {
+        actionCard(
+            icon: "dot.radiowaves.left.and.right",
+            title: "Network Stream",
+            detail: "Play a link you already have",
+            action: "Open"
+        ) { onOpenSection(.stream) }
     }
 
-    private func sectionCard(
-        _ destination: AppDestination,
-        title: String
-    ) -> some View {
-        card(
-            title: title,
-            icon: destination.icon(selected: true),
-            tint: destination.tint
-        ) { onOpenSection(destination) }
+    /// A NAS, a playlist, an IPTV account. The one card here that leads
+    /// somewhere rather than doing something, and it is here because the tab
+    /// it leads to is opt-in and nothing else on this screen mentions it.
+    private var serversCard: some View {
+        actionCard(
+            icon: "externaldrive.connected.to.line.below",
+            title: "Servers",
+            detail: "A NAS, a playlist, an IPTV account",
+            action: "Add"
+        ) { onOpenSection(.ftp) }
     }
 
-    /// Name at the top left, mark at the bottom right, and wider than it is
-    /// tall.
-    ///
-    /// The caption is gone with the height. Stacked - glyph, gap, name, sentence
-    /// - the card had to be 148 tall, and four of those filled a screen on their
-    /// own and pushed everything Home is actually for below the fold. Set the
-    /// two diagonally instead and the same card is 92: the name reads first at
-    /// the corner the eye starts from, and the mark fills the space left over
-    /// rather than costing a row of its own.
-    private func card(
-        title: String,
+    /// `PickVideoCard`'s shape, for the cards that sit with it. Kept in step
+    /// with it by hand rather than shared: that one carries a picker, a
+    /// loading state and a Photos round trip, and pulling a common card out of
+    /// it would be a worse abstraction than two views that look alike.
+    private func actionCard(
         icon: String,
-        tint: Color,
-        action: @escaping () -> Void
+        title: String,
+        detail: String,
+        action: String,
+        onTap: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Spacer(minLength: 0)
-
-                // Large, and pushed into the corner far enough to be cropped by
-                // it. A mark sized to sit politely inside the box reads as an
-                // icon labelling the card; one that runs off the edge reads as
-                // artwork the card is made of, which is what gives these their
-                // weight at this size.
+        Button(action: onTap) {
+            HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 44, weight: .regular))
-                    .foregroundStyle(tint)
-                    .offset(x: 10, y: 6)
+                    .font(.system(size: 20))
+                    .foregroundStyle(PanuraTheme.accent)
+                    .frame(width: 42, height: 42)
+                    .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(action)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(PanuraTheme.onAccent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(PanuraTheme.accent, in: Capsule())
             }
-            .padding(.leading, 14)
-            .padding(.vertical, 12)
-            .frame(height: 84)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            // Each card in its own colour, faintly. Four grey boxes had to be
-            // read one at a time; four colours are told apart before they are
-            // read, which is the whole job of a grid you use every day.
-            .background(tint.opacity(0.14))
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(12)
+            .background(PanuraTheme.surfaceContainer, in: RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
