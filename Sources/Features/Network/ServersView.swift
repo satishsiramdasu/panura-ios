@@ -93,7 +93,7 @@ struct ServersView: View {
     private var addMenu: some View {
         Menu {
             Section("Playlist") {
-                Button("Playlist address (M3U)") { addSource(.m3u) }
+                Button("M3U") { addSource(.m3u) }
                 Button("Xtream") { addSource(.xtream) }
                 Button("Dispatcharr") { addSource(.dispatcharr) }
             }
