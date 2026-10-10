@@ -400,7 +400,6 @@ struct RootTabView: View {
                 )
             }
             layer(.videos) { LocalVideosView() }
-            layer(.iptv) { IPTVView() }
             // Only the ones that are actually in the strip. A destination
             // nobody has added is not composed at all, which is the difference
             // between an opt-in tab and a hidden one.
@@ -416,7 +415,7 @@ struct RootTabView: View {
     @ViewBuilder
     private func added(_ destination: AppDestination) -> some View {
         switch destination {
-        case .ftp: NetworkServerView()
+        case .ftp: ServersView()
         default: EmptyView()
         }
     }

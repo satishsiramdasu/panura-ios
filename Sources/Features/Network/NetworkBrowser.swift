@@ -36,6 +36,11 @@ import VLCKit
 ///    renamed out from under us.
 @MainActor
 final class NetworkBrowser: NSObject, ObservableObject {
+    /// Shared, because two screens need the same answer to "is a folder
+    /// open?" — the listing itself, and `ServersView` above it, which shows
+    /// the list of sources whenever nothing is.
+    static let shared = NetworkBrowser()
+
     struct Entry: Identifiable, Hashable {
         var id: String { url.absoluteString }
         let name: String

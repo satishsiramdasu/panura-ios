@@ -60,6 +60,18 @@ struct NetworkServer: Codable, Identifiable, Hashable {
         return trimmed.isEmpty ? host : trimmed
     }
 
+    /// What the row under the name shows: who it signs in as, and where.
+    /// Never the password. Mirrors `IPTVSource.subtitle`, because the two sit
+    /// in the same list and a row that explains itself differently from the
+    /// one above it reads as a different kind of thing.
+    var subtitle: String {
+        var place = host
+        if let port, port != scheme.defaultPort { place += ":\(port)" }
+        place += path.hasPrefix("/") ? path : "/" + path
+        let who = user.trimmingCharacters(in: .whitespaces)
+        return who.isEmpty ? place : "\(who) · \(place)"
+    }
+
     /// Where the password is kept. The record itself never holds one.
     var credentialKey: String { id.uuidString }
 

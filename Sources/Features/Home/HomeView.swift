@@ -150,13 +150,13 @@ struct HomeView: View {
                 // on screen. A card that goes where the tab goes is a second
                 // door to the same room, and the two of them were taking half
                 // of Explore to repeat what the tab strip already says.
-                // IPTV is opt-in and lives behind the strip's `+`, which is
-                // the right default for the many people with no subscription
-                // and a poor hiding place for the ones who have one. The card
-                // is the second door: it adds the tab and opens it, and goes
-                // away once the tab is there.
-                if !tabSet.tabs.contains(.iptv) {
-                    sectionCard(.iptv, title: "IPTV")
+                // Servers is opt-in and lives behind the strip's `+`, which is
+                // the right default for the many people with no NAS and no
+                // subscription, and a poor hiding place for the ones who have
+                // either. The card is the second door: it adds the tab and
+                // opens it, and goes away once the tab is there.
+                if !tabSet.tabs.contains(.ftp) {
+                    sectionCard(.ftp, title: "Servers")
                 }
                 sectionCard(.stream, title: "Network\nStream")
                 sectionCard(.watchLater, title: "Watch\nLater")

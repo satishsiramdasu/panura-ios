@@ -32,10 +32,17 @@ enum AppDestination: Hashable, CaseIterable {
         // casting controls already mean in this app. It is affordable here
         // because the tab is opt-in — see `TabSet.addable`.
         case .iptv: return "IPTV"
-        // Not "FTP". The screen browses SMB, SFTP and FTP through one form, and
-        // SMB is what a home NAS actually speaks - naming the tab after the
-        // oldest of the three would send people past the one they want.
-        case .ftp: return "Server"
+        // Not "FTP", and not "IPTV" either. One tab for everything you sign
+        // into with an address and a password: a NAS over SMB or SFTP, a
+        // playlist address, an Xtream or Dispatcharr account, and whatever
+        // comes next. They are the same transaction — somewhere to connect,
+        // and a list that comes back — and asking which of two tabs a thing
+        // belonged to was a question only the app's own history could answer.
+        //
+        // "Servers" rather than any of the specific words. It is accurate for
+        // all but the plain playlist address, which is an address rather than
+        // a server and is labelled as one inside the form.
+        case .ftp: return "Servers"
         }
     }
 
@@ -51,7 +58,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .watchLater: return "Pages and videos you set aside"
         case .settings: return "Playback, browser, subtitles, gestures"
         case .iptv: return "Live channels, films and series from your own provider"
-        case .ftp: return "Play from a NAS or server on your network"
+        case .ftp: return "A NAS, a playlist, an IPTV account — anything you sign into"
         }
     }
 

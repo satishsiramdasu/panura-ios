@@ -33,14 +33,16 @@ final class TabSet: ObservableObject {
 
     /// The pool the `+` offers from.
     ///
-    /// Server is opt-in. Somebody with a NAS wants it permanently; somebody
-    /// without one should never have to look at it.
+    /// One entry, because Servers is now one tab for everything with an
+    /// address and a password behind it — a NAS, a playlist, an IPTV account.
+    /// It is opt-in: somebody with any of those wants it permanently, and
+    /// somebody with none should never have to look at it.
     ///
     /// Network Stream is deliberately not here either. It is a URL field and a
     /// Play button, used once and left; it has a card on Home and opens as a
     /// sheet from there, which is the right shape for somewhere you go and come
     /// straight back out of.
-    nonisolated static var addable: [AppDestination] { [.iptv, .ftp] }
+    nonisolated static var addable: [AppDestination] { [.ftp] }
 
     nonisolated static let storageKey = "shell.added_tabs"
     nonisolated static let lastTabKey = "shell.last_tab"
@@ -60,13 +62,14 @@ final class TabSet: ObservableObject {
         Self.addable.filter { !added.contains($0) }
     }
 
-    /// One-time, for installs from before IPTV moved behind the `+`.
+    /// One-time, for installs from before Servers swallowed the IPTV tab.
     ///
-    /// Everybody had it in the strip then, so taking it away in an update
-    /// would look like the feature had been removed. A fresh install — which
-    /// is what App Review always gets — never runs this and starts with the
-    /// three.
-    nonisolated static let migratedKey = "shell.iptv_opt_in_migrated"
+    /// Everybody had IPTV in the strip, and the playlists they added are still
+    /// there — they are inside Servers now. Without this the tab would simply
+    /// vanish in an update and take a working subscription with it, as far as
+    /// anybody could tell. A fresh install — which is what App Review always
+    /// gets — never runs this and starts with the three.
+    nonisolated static let migratedKey = "shell.servers_merge_migrated"
 
     private init() {
         added = Self.storedTabs()
@@ -88,10 +91,19 @@ final class TabSet: ObservableObject {
             || defaults.string(forKey: lastTabKey) != nil
         guard returning else { return }
 
+        // Everybody returning gets Servers: either they had IPTV, which lives
+        // in there now, or they had the Server tab, which is the same tab
+        // under a wider name.
         var keys = defaults.stringArray(forKey: storageKey) ?? []
-        guard !keys.contains(AppDestination.iptv.key) else { return }
-        keys.insert(AppDestination.iptv.key, at: 0)
+        keys.removeAll { $0 == AppDestination.iptv.key }
+        if !keys.contains(AppDestination.ftp.key) { keys.append(AppDestination.ftp.key) }
         defaults.set(keys, forKey: storageKey)
+
+        // And somebody who was last on the IPTV tab is sent to the tab that
+        // now holds it, rather than to Home because the stored one is gone.
+        if defaults.string(forKey: lastTabKey) == AppDestination.iptv.key {
+            defaults.set(AppDestination.ftp.key, forKey: lastTabKey)
+        }
     }
 
     /// The tabs that were added, as storage has them.

@@ -1,14 +1,16 @@
 import SwiftUI
 
-/// Live channels from a playlist somebody subscribes to.
+/// What is inside one playlist: live channels, films and series.
 ///
 /// Panura ships no playlists and no channels. It opens the address its owner
 /// enters, exactly as the browser opens the address its owner types — which is
 /// both the honest design and the one that does not put this app in the
 /// business of distributing someone else's broadcast.
 ///
-/// Two states on one screen, like the Server tab: the playlists that have been
-/// added, or the channels inside one.
+/// The list of playlists is not here. It is in `ServersView`, alongside the
+/// NAS entries, because adding one is the same act either way — an address, a
+/// sign-in, and a list that comes back. This screen is only ever shown for a
+/// playlist that is already open.
 struct IPTVView: View {
     @ObservedObject private var store = IPTVStore.shared
     @Environment(\.screenChrome) private var chrome
@@ -27,8 +29,6 @@ struct IPTVView: View {
 
     @State private var query = ""
     @State private var group: String?
-    @State private var editing: IPTVSource?
-    @State private var editingPassword = ""
     @State private var openSeries: XtreamSeries?
     /// Whether the search field has the whole row to itself.
     @State private var searching = false
@@ -44,48 +44,31 @@ struct IPTVView: View {
     private static let menuLimit = 20
 
     var body: some View {
-        Group {
-            if store.open == nil { sourceList } else { channelList }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(PanuraTheme.background)
-        .safeAreaInset(edge: .top, spacing: 0) { bar }
-        .sheet(item: $openSeries) { show in
-            IPTVSeriesSheet(show: show)
-        }
-        .sheet(item: $editing) { source in
-            IPTVSourceForm(
-                source: source,
-                password: $editingPassword,
-                onSave: { edited in
-                    store.save(edited, password: editingPassword)
-                    editing = nil
-                    // Forced: the credentials just changed, so whatever is in
-                    // the cache was fetched with the old ones.
-                    Task { await store.load(edited, force: true) }
-                },
-                onCancel: { editing = nil }
-            )
-        }
+        channelList
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(PanuraTheme.background)
+            .safeAreaInset(edge: .top, spacing: 0) { bar }
+            .sheet(item: $openSeries) { show in
+                IPTVSeriesSheet(show: show)
+            }
     }
 
     // MARK: bar
 
     private var bar: some View {
         HStack(spacing: 10) {
-            if store.open != nil {
-                glyph("chevron.left", label: "All playlists") {
-                    store.close()
-                    query = ""
-                    group = nil
-                }
+            glyph("chevron.left", label: "All servers") {
+                store.close()
+                query = ""
+                group = nil
+                searching = false
             }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(store.open?.displayName ?? "Playlists")
+                Text(store.open?.displayName ?? "Playlist")
                     .font(.headline)
                     .lineLimit(1)
-                if store.open != nil, !store.channels.isEmpty {
+                if !store.channels.isEmpty {
                     Text(subtitle)
                         .font(.caption2)
                         .foregroundStyle(PanuraTheme.onSurfaceVariant)
@@ -94,25 +77,21 @@ struct IPTVView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            if let open = store.open {
-                // Outside the loading branch: the layout is a preference about
-                // what is already on screen, and taking it away while a refetch
-                // runs would be taking away the one control that still works.
-                glyph(
-                    layout.next.icon,
-                    label: layout == .grid ? "Show a list" : "Show a grid"
-                ) {
-                    layout = layout.next
+            // Outside the loading branch: the layout is a preference about
+            // what is already on screen, and taking it away while a refetch
+            // runs would be taking away the one control that still works.
+            glyph(
+                layout.next.icon,
+                label: layout == .grid ? "Show a list" : "Show a grid"
+            ) {
+                layout = layout.next
+            }
+            if store.isLoading {
+                ProgressView().controlSize(.small).frame(width: 34, height: 34)
+            } else if let open = store.open {
+                glyph("arrow.clockwise", label: "Reload channels") {
+                    Task { await store.load(open, force: true) }
                 }
-                if store.isLoading {
-                    ProgressView().controlSize(.small).frame(width: 34, height: 34)
-                } else {
-                    glyph("arrow.clockwise", label: "Reload channels") {
-                        Task { await store.load(open, force: true) }
-                    }
-                }
-            } else {
-                glyph("plus", label: "Add a playlist") { addPlaylist() }
             }
         }
         .padding(.horizontal, 12)
@@ -141,11 +120,6 @@ struct IPTVView: View {
         return parts.joined(separator: " · ")
     }
 
-    private func addPlaylist() {
-        editingPassword = ""
-        editing = IPTVSource()
-    }
-
     private func glyph(_ name: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: name)
@@ -156,85 +130,6 @@ struct IPTVView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-    }
-
-    // MARK: playlists
-
-    @ViewBuilder
-    private var sourceList: some View {
-        if store.sources.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "tv.badge.wifi")
-                    .font(.system(size: 40))
-                    .foregroundStyle(PanuraTheme.accent)
-                Text("No playlist yet")
-                    .font(.headline)
-                Text("Sign in to an Xtream or Dispatcharr server, or paste an M3U address — any IPTV subscription you already pay for. Panura ships no channels of its own: it opens the playlist you enter, and nothing else.")
-                    .font(.footnote)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .multilineTextAlignment(.center)
-                Button { addPlaylist() } label: {
-                    Text("Add a playlist")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(PanuraTheme.onAccent)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 10)
-                        .background(PanuraTheme.accent, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 32)
-        } else {
-            List {
-                ForEach(store.sources) { source in
-                    Button { Task { await store.load(source) } } label: {
-                        sourceRow(source)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(PanuraTheme.background)
-                    .swipeActions {
-                        Button(role: .destructive) { store.remove(source) } label: {
-                            Label("Remove", systemImage: "trash")
-                        }
-                        Button {
-                            editingPassword = store.password(for: source)
-                            editing = source
-                        } label: {
-                            Label("Edit", systemImage: "pencil")
-                        }
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-        }
-    }
-
-    private func sourceRow(_ source: IPTVSource) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "list.and.film")
-                .font(.system(size: 17))
-                .foregroundStyle(PanuraTheme.accent)
-                .frame(width: 38, height: 38)
-                .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(source.displayName)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text(source.subtitle)
-                    .font(.caption)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-        }
-        .padding(.vertical, 4)
     }
 
     // MARK: channels
@@ -290,7 +185,7 @@ struct IPTVView: View {
                         // is why this is a `ScrollView` and a grid of one
                         // column rather than a `List`: the probe has to find a
                         // scroll view by walking up from inside the content.
-                        .scrollAwayChrome(.iptv)
+                        .scrollAwayChrome(.ftp)
                     }
                     .overlay(alignment: .bottomTrailing) {
                         if shell.farFromTop { toTopButton(scroller) }
@@ -497,7 +392,7 @@ struct IPTVView: View {
                     }
                     .padding(.horizontal, layout == .grid ? 12 : 16)
                     .padding(.vertical, layout == .grid ? 12 : 0)
-                    .scrollAwayChrome(.iptv)
+                    .scrollAwayChrome(.ftp)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if shell.farFromTop { toTopButton(scroller) }
@@ -851,7 +746,7 @@ private enum IPTVLayout: String {
 /// button, because somebody running Dispatcharr is looking for the word
 /// "Dispatcharr" and should not have to know, or be told, that it is Xtream
 /// underneath. Naming it is what says they are in the right place.
-private struct IPTVSourceForm: View {
+struct IPTVSourceForm: View {
     @State var source: IPTVSource
     @Binding var password: String
     var onSave: (IPTVSource) -> Void

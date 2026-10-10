@@ -1,39 +1,23 @@
 import SwiftUI
 
-/// Files on a server somebody owns: SMB, SFTP or FTP.
+/// What is inside one server: a directory listing with a breadcrumb.
 ///
-/// Two states, one screen. With nothing open it is the list of servers that
-/// have been set up, plus a way to add one. With something open it is a
-/// directory listing with a breadcrumb. There is no separate "connect" step
-/// because there is nothing to confirm — opening a server *is* listing it, and
-/// a connect screen that succeeds and then shows you another screen is a step
-/// that exists only to be got past.
+/// There is no "connect" step because there is nothing to confirm — opening a
+/// server *is* listing it, and a connect screen that succeeds and then shows
+/// you another screen is a step that exists only to be got past.
+///
+/// It no longer carries the list of servers, or the way to add one. Both live
+/// in `ServersView`, which shows this only once something is open and takes
+/// over again the moment it closes.
 struct NetworkServerView: View {
-    @StateObject private var browser = NetworkBrowser()
-    @ObservedObject private var store = NetworkServerStore.shared
+    @ObservedObject private var browser = NetworkBrowser.shared
     @Environment(\.screenChrome) private var chrome
 
-    @State private var editing: NetworkServer?
-    @State private var editingPassword = ""
-
     var body: some View {
-        Group {
-            if browser.levels.isEmpty { serverList } else { listing }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(PanuraTheme.background)
-        .safeAreaInset(edge: .top, spacing: 0) { bar }
-        .sheet(item: $editing) { server in
-            NetworkServerForm(
-                server: server,
-                password: $editingPassword,
-                onSave: { edited in
-                    store.save(edited, password: editingPassword)
-                    editing = nil
-                },
-                onCancel: { editing = nil }
-            )
-        }
+        listing
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .background(PanuraTheme.background)
+            .safeAreaInset(edge: .top, spacing: 0) { bar }
     }
 
     // MARK: bar
@@ -42,21 +26,14 @@ struct NetworkServerView: View {
         HStack(spacing: 10) {
             if browser.levels.count > 1 {
                 button("chevron.left", label: "Up a folder") { browser.up() }
-            } else if !browser.levels.isEmpty {
-                button("xmark", label: "Close server") { browser.close() }
+            } else {
+                button("chevron.left", label: "All servers") { browser.close() }
             }
 
             Text(browser.levels.last?.name ?? "Servers")
                 .font(.headline)
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-            if browser.levels.isEmpty {
-                button("plus", label: "Add a server") {
-                    editingPassword = ""
-                    editing = NetworkServer()
-                }
-            }
         }
         .padding(.horizontal, 12)
         .frame(height: 52)
@@ -73,74 +50,6 @@ struct NetworkServerView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
-    }
-
-    // MARK: servers
-
-    @ViewBuilder
-    private var serverList: some View {
-        if store.servers.isEmpty {
-            VStack(spacing: 10) {
-                Image(systemName: "externaldrive.connected.to.line.below")
-                    .font(.system(size: 40))
-                    .foregroundStyle(PanuraTheme.accent)
-                Text("No servers yet")
-                    .font(.headline)
-                Text("Add a NAS, a router or anything on your network that shares files over SMB, SFTP or FTP. Nothing is uploaded and nothing leaves your network.")
-                    .font(.footnote)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .multilineTextAlignment(.center)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.horizontal, 32)
-        } else {
-            List {
-                ForEach(store.servers) { server in
-                    Button {
-                        browser.open(server, password: store.password(for: server))
-                    } label: {
-                        row(server)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(PanuraTheme.background)
-                    .swipeActions {
-                        Button(role: .destructive) { store.remove(server) } label: {
-                            Label("Remove", systemImage: "trash")
-                        }
-                        Button {
-                            editingPassword = store.password(for: server)
-                            editing = server
-                        } label: { Label("Edit", systemImage: "pencil") }
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-        }
-    }
-
-    private func row(_ server: NetworkServer) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "externaldrive.fill")
-                .font(.system(size: 17))
-                .foregroundStyle(PanuraTheme.accent)
-                .frame(width: 38, height: 38)
-                .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(server.displayName)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-                Text("\(server.scheme.label) · \(server.host)\(server.path)")
-                    .font(.caption)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-        }
-        .padding(.vertical, 4)
     }
 
     // MARK: listing
@@ -244,7 +153,7 @@ struct NetworkServerView: View {
 }
 
 /// Host, credentials, and where to start.
-private struct NetworkServerForm: View {
+struct NetworkServerForm: View {
     @State var server: NetworkServer
     @Binding var password: String
     var onSave: (NetworkServer) -> Void
