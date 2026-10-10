@@ -357,7 +357,7 @@ final class IPTVStore: ObservableObject {
             // the subscription, not the address.
             if channels.isEmpty {
                 failure = http.statusCode == 401 || http.statusCode == 403
-                    ? "The provider refused that playlist. The subscription may have expired."
+                    ? "The provider refused that playlist. The account may have expired."
                     : "The provider answered with an error (\(http.statusCode))."
             }
             return

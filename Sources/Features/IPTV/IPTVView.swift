@@ -377,7 +377,7 @@ struct IPTVView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                Text(store.failure ?? "No series in this subscription.")
+                Text(store.failure ?? "No series in this playlist.")
                     .font(.footnote)
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
                     .multilineTextAlignment(.center)

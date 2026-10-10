@@ -89,15 +89,15 @@ struct ServersView: View {
     }
 
     /// One menu for every kind, grouped by what somebody is holding: an
-    /// address and a sign-in from a provider, or a machine on their network.
+    /// address a list comes back from, or a machine with files on it.
     private var addMenu: some View {
         Menu {
-            Section("Playlist or subscription") {
+            Section("Playlist") {
                 Button("Playlist address (M3U)") { addSource(.m3u) }
                 Button("Xtream") { addSource(.xtream) }
                 Button("Dispatcharr") { addSource(.dispatcharr) }
             }
-            Section("On your network") {
+            Section("File server") {
                 Button("SMB share") { addServer(.smb) }
                 Button("SFTP") { addServer(.sftp) }
                 Button("FTP") { addServer(.ftp) }
@@ -115,7 +115,7 @@ struct ServersView: View {
     private var list: some View {
         List {
             if !iptv.sources.isEmpty {
-                Section("Playlists and subscriptions") {
+                Section("Playlists") {
                     ForEach(iptv.sources) { source in
                         Button { Task { await iptv.load(source) } } label: {
                             row(
@@ -141,7 +141,7 @@ struct ServersView: View {
             }
 
             if !servers.servers.isEmpty {
-                Section("On your network") {
+                Section("File servers") {
                     ForEach(servers.servers) { server in
                         Button {
                             browser.open(server, password: servers.password(for: server))
@@ -222,7 +222,7 @@ struct ServersView: View {
                 .foregroundStyle(PanuraTheme.accent)
             Text("Nothing added yet")
                 .font(.headline)
-            Text("Add a NAS or anything on your network that shares files over SMB, SFTP or FTP — or a playlist address, or the sign-in for an IPTV subscription you already pay for. Panura supplies none of it: it opens what you enter, and nothing else.")
+            Text("Add a file server that speaks SMB, SFTP or FTP — a NAS in the house, or a machine anywhere else — or a playlist address, or the sign-in for an IPTV account you already have. Panura supplies none of it: it opens what you enter, and nothing else.")
                 .font(.footnote)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 .multilineTextAlignment(.center)
