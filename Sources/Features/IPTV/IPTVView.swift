@@ -28,6 +28,12 @@ struct IPTVView: View {
     @State private var editing: IPTVSource?
     @State private var editingPassword = ""
     @State private var openSeries: XtreamSeries?
+    /// Whether the search field has the row. False almost always — see
+    /// `filterRow`.
+    @State private var searching = false
+    @FocusState private var searchFocused: Bool
+
+    private static let reveal = Animation.easeInOut(duration: 0.2)
 
     var body: some View {
         Group {
@@ -238,8 +244,7 @@ struct IPTVView: View {
     private var channelList: some View {
         VStack(spacing: 0) {
             if store.hasCatalogue { sectionStrip }
-            search
-            if !store.groups.isEmpty { groupStrip }
+            filterRow
 
             if store.section == .series {
                 seriesList
@@ -412,6 +417,8 @@ struct IPTVView: View {
             set: { wanted in
                 group = nil
                 query = ""
+                searching = false
+                searchFocused = false
                 Task { await store.loadSection(wanted) }
             }
         )) {
@@ -532,7 +539,40 @@ struct IPTVView: View {
         .padding(.vertical, 4)
     }
 
-    private var search: some View {
+    /// One row: the search, then the group pills.
+    ///
+    /// The field used to own a full row of its own above the pills — two rows
+    /// of furniture over a list whose entire job is to show as many channels as
+    /// the screen will hold. A search field spends almost all of its life
+    /// empty, so it spends almost all of its life as a glyph, and takes the row
+    /// only while somebody is using it.
+    private var filterRow: some View {
+        HStack(spacing: 8) {
+            if searching {
+                searchField
+            } else {
+                Button {
+                    withAnimation(Self.reveal) { searching = true }
+                    searchFocused = true
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .frame(width: 34, height: 30)
+                        .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Search")
+
+                if store.groups.isEmpty { Spacer() } else { groupStrip }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(chrome)
+    }
+
+    private var searchField: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 14))
@@ -540,20 +580,25 @@ struct IPTVView: View {
             TextField(searchPrompt, text: $query)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            if !query.isEmpty {
-                Button { query = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                }
-                .buttonStyle(.plain)
+                .submitLabel(.search)
+                .focused($searchFocused)
+            // Clears and closes in one press. Closing without clearing would
+            // leave a filtered list with nothing on screen saying why.
+            Button {
+                query = ""
+                searchFocused = false
+                withAnimation(Self.reveal) { searching = false }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close search")
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .padding(.vertical, 6)
         .background(PanuraTheme.surfaceVariant, in: Capsule())
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(chrome)
+        .transition(.opacity)
     }
 
     private var searchPrompt: String {
@@ -572,10 +617,7 @@ struct IPTVView: View {
                     chip(name, active: group == name) { group = name }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
         }
-        .background(chrome)
     }
 
     private func chip(_ title: String, active: Bool, action: @escaping () -> Void) -> some View {
