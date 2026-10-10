@@ -12,6 +12,7 @@ import SwiftUI
 /// that in a 3pt bar and a 10pt chip; here both get read properly.
 struct ContinueWatchingList: View {
     var onOpenBrowser: (String) -> Void
+    var onPlay: (MediaItem, PlayerPlaylist?) -> Void
 
     @ObservedObject private var store = BrowsingStore.shared
 
@@ -121,16 +122,16 @@ struct ContinueWatchingList: View {
     }
 
     /// Play it, or — for a link that has died — go back to where it came
-    /// from. `LibrarySheet` closes itself around either, because the player
-    /// arrives as a full-screen cover and one presentation on top of another
-    /// is how a video ends up playing behind a sheet nobody can see past.
+    /// from. Either way the sheet closes around it: the player arrives as a
+    /// full-screen cover from the root view, and a sheet presented by that
+    /// same view is in its way. `LibrarySheet.play` does the closing.
     private func open(_ entry: ResumeEntry) {
         if entry.isExpired {
             guard let page = entry.sourcePage else { return }
             onOpenBrowser(page.absoluteString)
             return
         }
-        PlaybackSession.shared.play(entry.mediaItem)
+        onPlay(entry.mediaItem, nil)
     }
 
     /// "Opened 2 hours ago", for an entry with no duration to report.
@@ -177,7 +178,7 @@ private struct ResumeThumb: View {
             RoundedRectangle(cornerRadius: 8).fill(PanuraTheme.surfaceVariant)
 
             if let url = entry.poster.flatMap(URL.init(string:)) {
-                AsyncImage(url: url) { phase in
+                RemoteImage(url: url) { phase in
                     switch phase {
                     case .success(let image): image.resizable().scaledToFill()
                     case .failure: fallback

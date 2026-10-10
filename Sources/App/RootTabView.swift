@@ -118,8 +118,14 @@ struct RootTabView: View {
             ReportIssueSheet(pageURL: nil, source: "menu")
         }
         .sheet(isPresented: $showFAQ) { FAQView() }
-        .sheet(isPresented: $showStream) { StreamView() }
-        .sheet(isPresented: $showLibrary) {
+        // `onDismiss` on both: a sheet cannot present the player over
+        // itself, so it hands the item to the session and closes, and this is
+        // where the video actually starts. See
+        // `PlaybackSession.playWhenDismissed`.
+        .sheet(isPresented: $showStream, onDismiss: { playback.flushPending() }) {
+            StreamView()
+        }
+        .sheet(isPresented: $showLibrary, onDismiss: { playback.flushPending() }) {
             LibrarySheet(tab: libraryTab) { address in
                 showLibrary = false
                 openInBrowser(address)

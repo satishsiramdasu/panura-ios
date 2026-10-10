@@ -46,11 +46,11 @@ struct LibrarySheet: View {
 
                 switch tab {
                 case .watching:
-                    ContinueWatchingList(onOpenBrowser: openBrowser)
+                    ContinueWatchingList(onOpenBrowser: openBrowser, onPlay: play)
                 case .history:
-                    WatchHistoryList(onOpenBrowser: openBrowser)
+                    WatchHistoryList(onOpenBrowser: openBrowser, onPlay: play)
                 case .later:
-                    WatchLaterList(onOpenBrowser: openBrowser)
+                    WatchLaterList(onOpenBrowser: openBrowser, onPlay: play)
                 }
             }
             .background(PanuraTheme.background)
@@ -70,6 +70,18 @@ struct LibrarySheet: View {
         dismiss()
         onOpenBrowser(address)
     }
+
+    /// And every list plays the same way: hand the item to the session, close,
+    /// and let the host start it once this sheet has gone. See
+    /// `PlaybackSession.playWhenDismissed` for why a sheet cannot simply play.
+    ///
+    /// Central here rather than repeated in the three lists because all three
+    /// are only ever shown inside this sheet, and the rule belongs to the
+    /// sheet rather than to any of them.
+    private func play(_ item: MediaItem, _ playlist: PlayerPlaylist?) {
+        PlaybackSession.shared.playWhenDismissed(item, playlist: playlist)
+        dismiss()
+    }
 }
 
 /// What has been watched to the end.
@@ -81,6 +93,7 @@ struct LibrarySheet: View {
 /// then says so from that moment on.
 struct WatchHistoryList: View {
     var onOpenBrowser: (String) -> Void
+    var onPlay: (MediaItem, PlayerPlaylist?) -> Void
 
     @ObservedObject private var store = BrowsingStore.shared
     @State private var checking: String?
@@ -181,7 +194,7 @@ struct WatchHistoryList: View {
             let alive = await BrowsingStore.isAlive(entry)
             checking = nil
             if alive {
-                PlaybackSession.shared.play(entry.mediaItem)
+                onPlay(entry.mediaItem, nil)
             } else {
                 store.markWatchedExpired(url: entry.url)
             }

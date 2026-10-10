@@ -5,7 +5,7 @@ import WebKit
 ///
 /// A checklist rather than one destructive button, because the things it can
 /// remove are not equally regrettable. History, the visit tally, resume points
-/// and the cache are traces; Bookmarks and Watch Later are lists someone built
+/// and the caches are traces; Bookmarks and Watch Later are lists someone built
 /// on purpose, and cookies are every login they have. The first four default
 /// on, the last three have to be asked for.
 ///
@@ -73,7 +73,7 @@ struct ClearDataDialog: View {
                     row("Browsing history", isOn: $browsingHistory)
                     row("Watch history", isOn: $watchHistory)
                     row("Most visited", isOn: $mostVisited)
-                    row("Browser cache", isOn: $cache)
+                    row("Cached pages and images", isOn: $cache)
                     row("Watch Later", isOn: $watchLater)
                     row("Bookmarks", isOn: $bookmarks)
                     row("Browser cookies", isOn: $cookies)
@@ -170,6 +170,11 @@ struct ClearDataDialog: View {
                 ])
             }
             if !types.isEmpty { await Self.removeWebsiteData(types) }
+            // Posters, channel logos and favicons. They are a cache in the
+            // same sense the web one is - re-fetchable, and the largest thing
+            // on disk after it - so they go with the same toggle rather than
+            // asking a second question nobody would answer differently.
+            if cache { ImageStore.shared.clear() }
 
             if browsingHistory { store.clearBrowsingHistory() }
             if mostVisited { store.clearMostVisited() }

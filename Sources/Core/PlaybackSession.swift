@@ -86,6 +86,46 @@ final class PlaybackSession: ObservableObject {
         presented = Playing(item: item, playlist: playlist)
     }
 
+    /// What a sheet asked for, waiting for that sheet to get out of the way.
+    private var pending: Playing?
+
+    /// Play this, but not yet — the caller is inside a sheet.
+    ///
+    /// The player is one `fullScreenCover`, on the root view. A sheet is
+    /// presented *by* that same view, and UIKit will not present a second
+    /// modal from a controller that is already presenting one: setting
+    /// `presented` from inside a sheet either does nothing or lands whenever
+    /// SwiftUI next feels like retrying, which is what made rows in the
+    /// Library open a player only after the sheet was closed by hand, and then
+    /// close again on their own.
+    ///
+    /// So the sheet does not present anything. It records what it wants, calls
+    /// its own `dismiss()`, and the screen hosting it calls `flushPending()`
+    /// from the sheet's `onDismiss` — which SwiftUI runs after the dismissal
+    /// has actually finished. One presentation at a time, no guessing at an
+    /// animation length, and the row feels like the row on Home.
+    func playWhenDismissed(_ item: MediaItem, playlist: PlayerPlaylist? = nil) {
+        pending = Playing(item: item, playlist: playlist)
+    }
+
+    /// Starts whatever `playWhenDismissed` was promised. Call from the
+    /// `onDismiss` of any sheet that can play something.
+    ///
+    /// Harmless when nothing is waiting, which is every ordinary dismissal —
+    /// so hosts can attach it without asking why the sheet closed.
+    func flushPending() {
+        guard let next = pending else { return }
+        pending = nil
+        if minimized != nil { stop() }
+        presented = next
+    }
+
+    /// Forgets a queued item. For a sheet that decided against playing after
+    /// it had already asked — nothing should start behind its back.
+    func cancelPending() {
+        pending = nil
+    }
+
     /// The player screen is going away and the video is going with it.
     func stop() {
         apple?.stop()

@@ -48,7 +48,12 @@ struct IPTVView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(PanuraTheme.background)
             .safeAreaInset(edge: .top, spacing: 0) { bar }
-            .sheet(item: $openSeries) { show in
+            // Picking an episode closes this and plays on the way out —
+            // see `PlaybackSession.playWhenDismissed`.
+            .sheet(
+                item: $openSeries,
+                onDismiss: { PlaybackSession.shared.flushPending() }
+            ) { show in
                 IPTVSeriesSheet(show: show)
             }
     }
@@ -305,7 +310,7 @@ struct IPTVView: View {
             .fill(PanuraTheme.surfaceContainerHigh)
             .aspectRatio(poster ? 2.0 / 3.0 : 1, contentMode: .fit)
             .overlay {
-                AsyncImage(url: url) { phase in
+                RemoteImage(url: url) { phase in
                     if case .success(let image) = phase {
                         if poster {
                             image.resizable().scaledToFill()
@@ -437,7 +442,7 @@ struct IPTVView: View {
                 .fill(PanuraTheme.surfaceContainerHigh)
                 .frame(width: 46, height: 69)
                 .overlay {
-                    AsyncImage(url: show.cover) { phase in
+                    RemoteImage(url: show.cover) { phase in
                         if case .success(let image) = phase {
                             image.resizable().scaledToFill()
                         } else {
@@ -640,7 +645,7 @@ struct IPTVView: View {
                 .fill(PanuraTheme.surfaceContainerHigh)
                 .frame(width: poster ? 46 : 64, height: poster ? 69 : 48)
                 .overlay {
-                    AsyncImage(url: channel.logo) { phase in
+                    RemoteImage(url: channel.logo) { phase in
                         if case .success(let image) = phase {
                             if poster {
                                 image.resizable().scaledToFill()
@@ -1093,7 +1098,7 @@ private struct IPTVSeriesSheet: View {
             .fill(PanuraTheme.surfaceContainerHigh)
             .frame(width: 112, height: 63)
             .overlay {
-                AsyncImage(url: row.episode.still) { phase in
+                RemoteImage(url: row.episode.still) { phase in
                     if case .success(let image) = phase {
                         image.resizable().scaledToFill()
                     } else {
@@ -1126,7 +1131,7 @@ private struct IPTVSeriesSheet: View {
     }
 
     private func play(_ row: Row) {
+        PlaybackSession.shared.playWhenDismissed(item(row))
         dismiss()
-        PlaybackSession.shared.play(item(row))
     }
 }

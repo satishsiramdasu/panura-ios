@@ -39,7 +39,7 @@ struct PosterThumb: View {
             if let image {
                 fitted(Image(uiImage: image))
             } else if let shown = fellBack ? alternate : url {
-                AsyncImage(url: shown) { phase in
+                RemoteImage(url: shown) { phase in
                     switch phase {
                     case let .success(image):
                         fitted(image)

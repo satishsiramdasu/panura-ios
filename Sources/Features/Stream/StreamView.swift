@@ -291,7 +291,7 @@ struct StreamView: View {
                         Button { playChannel(channel, at: index) } label: {
                             HStack(spacing: 12) {
                                 if let logo = channel.logo {
-                                    AsyncImage(url: logo) { image in
+                                    RemoteImage(url: logo) { image in
                                         image.resizable().scaledToFit()
                                     } placeholder: {
                                         Image(systemName: "tv").foregroundStyle(PanuraTheme.onSurfaceVariant)
@@ -422,19 +422,30 @@ struct StreamView: View {
             }
             model.isLoading = false
             model.remember(trimmed)
-            PlaybackSession.shared.play(
+            // Hand over and close. This screen is a sheet, and the player is a
+            // cover on the root view that cannot appear while a sheet from the
+            // same view is up — see `PlaybackSession.playWhenDismissed`.
+            PlaybackSession.shared.playWhenDismissed(
                 MediaItem(title: url.lastPathComponent, url: url, headers: headers),
                 playlist: channelPlaylist()
             )
+            dismiss()
         }
     }
 
+    /// A channel out of a loaded list.
+    ///
+    /// Closes this screen like a single address does. The list is not lost
+    /// with it — `channelPlaylist()` goes to the player, so next and previous
+    /// still walk the channels in the order they were being read — and the
+    /// address is in the recents, so the list is one tap from coming back.
     private func playChannel(_ channel: M3UChannel, at index: Int) {
         playIndex = index
-        PlaybackSession.shared.play(
+        PlaybackSession.shared.playWhenDismissed(
             MediaItem(title: channel.name, url: channel.url, headers: headers),
             playlist: channelPlaylist()
         )
+        dismiss()
     }
 
     /// Next/previous walks the channel list as filtered on screen, so the order

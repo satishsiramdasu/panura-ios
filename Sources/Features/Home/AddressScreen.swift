@@ -564,7 +564,7 @@ struct Favicon: View {
     var size: CGFloat = 32
 
     var body: some View {
-        AsyncImage(url: entry.faviconURL) { image in
+        RemoteImage(url: entry.faviconURL) { image in
             image.resizable().scaledToFit()
         } placeholder: {
             Image(systemName: "globe")

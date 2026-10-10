@@ -52,7 +52,7 @@ struct SiteFavicon: View {
             // when nothing else on screen was going to. The session is already
             // announced twice over - the pill behind this is violet and the
             // menu row says so - and neither of those is the page's identity.
-            AsyncImage(url: url) { phase in
+            RemoteImage(url: url) { phase in
                 switch phase {
                 case .success(let image): image.resizable().scaledToFit()
                 case .failure: fallbackMark

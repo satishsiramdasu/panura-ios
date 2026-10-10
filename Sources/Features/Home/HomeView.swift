@@ -94,7 +94,13 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
-        .sheet(isPresented: $showLibrary) {
+        // A row in there hands its video to the session and closes rather
+        // than presenting a player underneath this sheet; this is where it
+        // starts. See `PlaybackSession.playWhenDismissed`.
+        .sheet(
+            isPresented: $showLibrary,
+            onDismiss: { PlaybackSession.shared.flushPending() }
+        ) {
             LibrarySheet(tab: libraryTab, onOpenBrowser: onOpenBrowser)
         }
         // An overlay, not a sheet: it has to arrive centred, where the eye
@@ -421,7 +427,7 @@ struct HomeView: View {
                     .fill(PanuraTheme.accentSoft)
                     .frame(width: 42, height: 42)
                     .overlay {
-                        AsyncImage(url: entry.faviconURL) { phase in
+                        RemoteImage(url: entry.faviconURL) { phase in
                             if case .success(let image) = phase {
                                 image.resizable().scaledToFit()
                                     .frame(width: 22, height: 22)
@@ -474,15 +480,17 @@ struct HomeView: View {
 
     private var continueWatchingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // "Manage", not "Clear all". One destructive button was the only
-            // thing this row offered, so tidying a single dead link meant
-            // throwing away every resume point. The sheet can do both, and can
-            // show what it is about to remove.
-            sectionHeader(
-                "Continue Watching",
-                actionLabel: "Manage",
-                actionIcon: "slider.horizontal.3"
-            ) {
+            // "Show all", the same affordance Bookmarks uses, because it is
+            // the same act: this row is the first few of a list, and that is
+            // the rest of it. It said "Manage" with a slider glyph while the
+            // sheet it opened was a resume manager and nothing else — the
+            // sheet is the Library now, and two words for one gesture on one
+            // screen is how a person learns that two things are different
+            // when they are not.
+            //
+            // Removing still lives in there, which is what "Manage" was for.
+            // It was never the reason anybody pressed it.
+            sectionHeader("Continue Watching", showAll: true) {
                 openLibrary(.watching)
             }
             ScrollView(.horizontal, showsIndicators: false) {
@@ -693,7 +701,7 @@ private struct ContinueWatchingCard: View {
                 .fill(PanuraTheme.surfaceVariant)
 
             if let posterURL {
-                AsyncImage(url: posterURL) { phase in
+                RemoteImage(url: posterURL) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()
