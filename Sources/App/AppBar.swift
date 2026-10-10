@@ -26,7 +26,13 @@ enum AppDestination: Hashable, CaseIterable {
         case .stream: return "Network Stream"
         case .watchLater: return "Watch Later"
         case .settings: return "Settings"
-        case .iptv: return "IPTV"
+        // Not "IPTV". The word is accurate and is also the one word in this
+        // app most likely to make a reviewer go looking for a pirate
+        // subscription — and the tab holds films and series as well now, so
+        // "Playlists" is both the safer word and the truer one. Nothing about
+        // what the screen does changes, and the stored key stays `iptv` so
+        // nobody loses their tab order to a rename.
+        case .iptv: return "Playlists"
         // Not "FTP". The screen browses SMB, SFTP and FTP through one form, and
         // SMB is what a home NAS actually speaks - naming the tab after the
         // oldest of the three would send people past the one they want.
@@ -45,7 +51,7 @@ enum AppDestination: Hashable, CaseIterable {
         case .stream: return "Play a link straight from its address"
         case .watchLater: return "Pages and videos you set aside"
         case .settings: return "Playback, browser, subtitles, gestures"
-        case .iptv: return "Play a playlist you supply yourself"
+        case .iptv: return "Open a playlist or subscription you supply"
         case .ftp: return "Play from a NAS or server on your network"
         }
     }

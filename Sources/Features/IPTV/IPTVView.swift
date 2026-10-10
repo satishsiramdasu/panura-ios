@@ -82,7 +82,7 @@ struct IPTVView: View {
             }
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(store.open?.displayName ?? "IPTV")
+                Text(store.open?.displayName ?? "Playlists")
                     .font(.headline)
                     .lineLimit(1)
                 if store.open != nil, !store.channels.isEmpty {
@@ -534,19 +534,21 @@ struct IPTVView: View {
 
     private func seriesRow(_ show: XtreamSeries) -> some View {
         HStack(spacing: 12) {
-            AsyncImage(url: show.cover) { phase in
-                if case .success(let image) = phase {
-                    image.resizable().scaledToFill()
-                } else {
-                    Image(systemName: "rectangle.stack")
-                        .font(.system(size: 14))
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            Rectangle()
+                .fill(PanuraTheme.surfaceContainerHigh)
+                .frame(width: 46, height: 69)
+                .overlay {
+                    AsyncImage(url: show.cover) { phase in
+                        if case .success(let image) = phase {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "rectangle.stack")
+                                .font(.system(size: 16))
+                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        }
+                    }
                 }
-            }
-            .frame(width: 38, height: 54)
-            .clipped()
-            .background(PanuraTheme.surfaceContainerHigh, in: RoundedRectangle(cornerRadius: 6))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(show.name)
@@ -699,27 +701,47 @@ struct IPTVView: View {
         }
     }
 
+    /// A row in list mode.
+    ///
+    /// The picture was 42 by 32 — small enough that a channel logo was a
+    /// smudge and a film poster was unreadable, which is most of why the grid
+    /// looked like the only real option. A row is sixty points tall whatever
+    /// is in it, so a picture that uses the height costs nothing.
     private func channelRow(_ channel: M3UChannel) -> some View {
-        HStack(spacing: 12) {
+        let poster = store.section == .movies
+        let state = poster ? watching.watchState(channel.url.absoluteString) : WatchState.unseen
+        return HStack(spacing: 12) {
             // The provider's own logo, and nothing drawn in its place while it
             // loads: a channel list is hundreds of rows and a spinner in each
             // one is a screen that looks broken.
-            AsyncImage(url: channel.logo) { phase in
-                if case .success(let image) = phase {
-                    image.resizable().scaledToFit()
-                } else {
-                    Image(systemName: "tv")
-                        .font(.system(size: 14))
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            Rectangle()
+                .fill(PanuraTheme.surfaceContainerHigh)
+                .frame(width: poster ? 46 : 64, height: poster ? 69 : 48)
+                .overlay {
+                    AsyncImage(url: channel.logo) { phase in
+                        if case .success(let image) = phase {
+                            if poster {
+                                image.resizable().scaledToFill()
+                            } else {
+                                image.resizable().scaledToFit().padding(5)
+                            }
+                        } else {
+                            Image(systemName: poster ? "film" : "tv")
+                                .font(.system(size: 16))
+                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        }
+                    }
                 }
-            }
-            .frame(width: 42, height: 32)
-            .background(PanuraTheme.surfaceContainerHigh, in: RoundedRectangle(cornerRadius: 6))
+                .overlay(alignment: .bottom) { WatchStrip(state: state) }
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(channel.name)
                     .font(.subheadline)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .foregroundStyle(
+                        state == .finished ? PanuraTheme.onSurfaceVariant : PanuraTheme.onSurface
+                    )
                 if let group = channel.group, !group.isEmpty, self.group == nil {
                     Text(group)
                         .font(.caption2)
@@ -728,11 +750,13 @@ struct IPTVView: View {
                 }
             }
             Spacer(minLength: 8)
-            Image(systemName: "play.circle")
+            Image(systemName: state == .finished ? "checkmark.circle.fill" : "play.circle")
                 .font(.system(size: 18))
-                .foregroundStyle(PanuraTheme.accent)
+                .foregroundStyle(
+                    state == .finished ? PanuraTheme.onSurfaceVariant : PanuraTheme.accent
+                )
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
     }
 
     private func play(_ channel: M3UChannel) {
