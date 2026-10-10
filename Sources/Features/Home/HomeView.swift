@@ -144,8 +144,10 @@ struct HomeView: View {
                 columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
                 spacing: 10
             ) {
-                sectionCard(.web, title: "Web\nBrowser")
-                sectionCard(.videos, title: "Phone\nVideos")
+                // Browser and Videos are tabs, one row above this and always
+                // on screen. A card that goes where the tab goes is a second
+                // door to the same room, and the two of them were taking half
+                // of Explore to repeat what the tab strip already says.
                 sectionCard(.stream, title: "Network\nStream")
                 sectionCard(.watchLater, title: "Watch\nLater")
             }
