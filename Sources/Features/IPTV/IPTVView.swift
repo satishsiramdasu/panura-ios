@@ -12,6 +12,16 @@ import SwiftUI
 struct IPTVView: View {
     @ObservedObject private var store = IPTVStore.shared
     @Environment(\.screenChrome) private var chrome
+    @Environment(\.horizontalSizeClass) private var width
+
+    /// Grid or rows, remembered. Grid by default: a channel list is a wall of
+    /// names and a wall of logos is the one a person reads faster — the logo is
+    /// what a provider actually puts work into, and it is how most people know
+    /// the channel. The switch is there because a thousand-channel package is
+    /// quicker to scan as text, and that is a real preference rather than a
+    /// wrong one.
+    @AppStorage("iptv_layout") private var layout: IPTVLayout = .grid
+    @ObservedObject private var shell = ShellChrome.shared
 
     @State private var query = ""
     @State private var group: String?
@@ -71,6 +81,15 @@ struct IPTVView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             if let open = store.open {
+                // Outside the loading branch: the layout is a preference about
+                // what is already on screen, and taking it away while a refetch
+                // runs would be taking away the one control that still works.
+                glyph(
+                    layout.next.icon,
+                    label: layout == .grid ? "Show a list" : "Show a grid"
+                ) {
+                    layout = layout.next
+                }
                 if store.isLoading {
                     ProgressView().controlSize(.small).frame(width: 34, height: 34)
                 } else {
@@ -242,15 +261,146 @@ struct IPTVView: View {
                         .padding(.horizontal, 32)
                 }
             } else {
-                List(visible) { channel in
-                    Button { play(channel) } label: { channelRow(channel) }
-                        .buttonStyle(.plain)
-                        .listRowBackground(PanuraTheme.background)
+                ScrollViewReader { scroller in
+                    ScrollView {
+                        Color.clear.frame(height: 0).id(Self.topAnchor)
+                        LazyVGrid(columns: columns, spacing: layout == .grid ? 14 : 0) {
+                            ForEach(visible) { channel in
+                                channelCell(channel)
+                            }
+                        }
+                        .padding(.horizontal, layout == .grid ? 12 : 16)
+                        .padding(.vertical, layout == .grid ? 12 : 0)
+                        // Scrolling a channel list down takes the header and
+                        // the tab strip with it, and the top brings them back —
+                        // the same deal as the browser and the library, which
+                        // is why this is a `ScrollView` and a grid of one
+                        // column rather than a `List`: the probe has to find a
+                        // scroll view by walking up from inside the content.
+                        .scrollAwayChrome(.iptv)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        if shell.farFromTop { toTopButton(scroller) }
+                    }
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             }
         }
+    }
+
+    /// Three across on a phone, six on an iPad; one in a list.
+    ///
+    /// Fixed counts rather than `.adaptive`, which fits whatever it can and so
+    /// puts five tiles on a Pro Max and three on a mini — a grid that changes
+    /// shape with the handset is a grid nobody can learn.
+    private var perRow: Int { width == .regular ? 6 : 3 }
+
+    private var columns: [GridItem] {
+        layout == .list
+            ? [GridItem(.flexible(), spacing: 0)]
+            : Array(repeating: GridItem(.flexible(), spacing: 10), count: perRow)
+    }
+
+    /// Where the top is, for `toTopButton`. Not the first tile — the grid
+    /// starts below its own padding, so aiming at a tile stops short of the
+    /// actual top and the chrome never hears that it has arrived.
+    private static let topAnchor = "iptv.top"
+
+    /// Back to the top, and with it the header and the tabs.
+    ///
+    /// The chrome returns at the top and nowhere else, which is only fair if
+    /// the top is somewhere you can get to. A subscription runs to hundreds of
+    /// channels and a film catalogue to thousands, so this screen needs it more
+    /// than the library did. Shown only two screens down — nearer than that the
+    /// top is one swipe away and the button is the more annoying of the two.
+    private func toTopButton(_ scroller: ScrollViewProxy) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.3)) {
+                scroller.scrollTo(Self.topAnchor, anchor: .top)
+            }
+        } label: {
+            Image(systemName: "chevron.up")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(PanuraTheme.onSurface)
+                .frame(width: 42, height: 42)
+                .background(Circle().fill(PanuraTheme.surfaceContainerHighest))
+                .overlay(Circle().strokeBorder(PanuraTheme.outlineVariant, lineWidth: 1))
+                .shadow(color: .black.opacity(0.35), radius: 6, y: 2)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 16)
+        .padding(.bottom, 16)
+        .transition(.scale(scale: 0.8).combined(with: .opacity))
+        .accessibilityLabel("Back to top")
+    }
+
+    /// One cell of whichever layout is on.
+    ///
+    /// The cell owns its button rather than being wrapped in one, so that in
+    /// list form the separator can sit *outside* it: a hairline between two
+    /// rows belongs to neither, and inside the button it would light up as
+    /// part of whichever row was pressed.
+    @ViewBuilder
+    private func channelCell(_ channel: M3UChannel) -> some View {
+        if layout == .grid {
+            Button { play(channel) } label: { channelTile(channel) }
+                .buttonStyle(.plain)
+        } else {
+            VStack(spacing: 0) {
+                Button { play(channel) } label: { channelRow(channel) }
+                    .buttonStyle(.plain)
+                Divider().overlay(PanuraTheme.outlineVariant)
+            }
+        }
+    }
+
+    /// A tile: the picture, and the name under it.
+    ///
+    /// **Two shapes, because there are two kinds of picture.** A channel logo
+    /// is square-ish, drawn on transparency, and the same in every provider's
+    /// list — cropped to a 16:9 thumbnail it loses its top and bottom, so it
+    /// gets a square and is fitted inside it rather than filling it. A film is
+    /// a poster: 2:3, filled and cropped, because a poster shown at any other
+    /// ratio reads as a mistake.
+    private func channelTile(_ channel: M3UChannel) -> some View {
+        let poster = store.section == .movies
+        return VStack(alignment: .leading, spacing: 6) {
+            artwork(channel.logo, poster: poster, fallback: poster ? "film" : "tv")
+            Text(channel.name)
+                .font(.caption)
+                // Reserved rather than merely limited: without it a one-line
+                // name and a two-line name make two different row heights, and
+                // the grid develops a ragged baseline down the screen.
+                .lineLimit(2, reservesSpace: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The picture part of a tile, at whichever of the two shapes.
+    ///
+    /// An `overlay` on the fill, never a `ZStack` sibling: `scaledToFill`
+    /// reports a layout size larger than its box in one axis, so as a sibling
+    /// it grows the stack and the tile stops being the shape it was told to be.
+    /// Learned here once already — see `Thumbnail` in the Videos tab.
+    private func artwork(_ url: URL?, poster: Bool, fallback: String) -> some View {
+        Rectangle()
+            .fill(PanuraTheme.surfaceContainerHigh)
+            .aspectRatio(poster ? 2.0 / 3.0 : 1, contentMode: .fit)
+            .overlay {
+                AsyncImage(url: url) { phase in
+                    if case .success(let image) = phase {
+                        if poster {
+                            image.resizable().scaledToFill()
+                        } else {
+                            image.resizable().scaledToFit().padding(10)
+                        }
+                    } else {
+                        Image(systemName: fallback)
+                            .font(.system(size: 20))
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     /// Live, Movies, Series. Only for an account that has the last two — an
@@ -304,13 +454,46 @@ struct IPTVView: View {
                     .padding(.horizontal, 32)
             }
         } else {
-            List(visibleSeries) { show in
+            ScrollViewReader { scroller in
+                ScrollView {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
+                    LazyVGrid(columns: columns, spacing: layout == .grid ? 14 : 0) {
+                        ForEach(visibleSeries) { show in
+                            seriesCell(show)
+                        }
+                    }
+                    .padding(.horizontal, layout == .grid ? 12 : 16)
+                    .padding(.vertical, layout == .grid ? 12 : 0)
+                    .scrollAwayChrome(.iptv)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if shell.farFromTop { toTopButton(scroller) }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func seriesCell(_ show: XtreamSeries) -> some View {
+        if layout == .grid {
+            Button { openSeries = show } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    // Always a poster, in both sections that have one: a series
+                    // is sold by its cover exactly as a film is.
+                    artwork(show.cover, poster: true, fallback: "rectangle.stack")
+                    Text(show.name)
+                        .font(.caption)
+                        .lineLimit(2, reservesSpace: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .buttonStyle(.plain)
+        } else {
+            VStack(spacing: 0) {
                 Button { openSeries = show } label: { seriesRow(show) }
                     .buttonStyle(.plain)
-                    .listRowBackground(PanuraTheme.background)
+                Divider().overlay(PanuraTheme.outlineVariant)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
         }
     }
 
@@ -452,6 +635,19 @@ struct IPTVView: View {
             MediaItem(title: channel.name, url: channel.url, thumbnailURL: channel.logo)
         )
     }
+}
+
+/// Grid or rows.
+///
+/// Its own type rather than the Videos tab's `Layout`: the same idea about two
+/// different screens, and reaching across a feature boundary for an enum of two
+/// cases buys a shared name and a dependency nobody wanted.
+private enum IPTVLayout: String {
+    case grid, list
+
+    /// The glyph for the *other* one — a switch shows where it takes you.
+    var icon: String { self == .grid ? "square.grid.2x2" : "list.bullet" }
+    var next: IPTVLayout { self == .grid ? .list : .grid }
 }
 
 /// Pick how the provider hands out access, then fill in that.

@@ -165,13 +165,26 @@ struct NetworkServerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.horizontal, 32)
             } else {
-                List(browser.entries) { entry in
-                    Button { open(entry) } label: { entryRow(entry) }
-                        .buttonStyle(.plain)
-                        .listRowBackground(PanuraTheme.background)
+                // A `ScrollView` and a `LazyVStack` rather than a `List`, for
+                // one reason: the header and the tab strip slide away as this
+                // is scrolled, and the probe that measures it has to find a
+                // `UIScrollView` by walking up from inside the content. A
+                // `List` recycles its rows, so a probe in one of them attaches
+                // and detaches as you scroll. Nothing else is lost — this
+                // listing has no swipe actions, unlike the server list above.
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(browser.entries) { entry in
+                            VStack(spacing: 0) {
+                                Button { open(entry) } label: { entryRow(entry) }
+                                    .buttonStyle(.plain)
+                                Divider().overlay(PanuraTheme.outlineVariant)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .scrollAwayChrome(.ftp)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
             }
         }
     }
