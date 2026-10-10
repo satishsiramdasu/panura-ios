@@ -6,6 +6,7 @@ import SwiftUI
 /// URL turns out to be an M3U playlist rather than one stream.
 struct StreamView: View {
     @StateObject private var model = StreamModel()
+    @Environment(\.dismiss) private var dismiss
     @State private var urlText = ""
     @State private var referer = ""
     @State private var userAgent = ""
@@ -22,8 +23,18 @@ struct StreamView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(PanuraTheme.background)
-            .safeAreaInset(edge: .top, spacing: 0) { PanuraHeader("Network Stream") }
-            .navigationBarHidden(true)
+            // A sheet's own header rather than the app's. `PanuraHeader` puts
+            // the Panura mark at the top left, which is the right thing on a
+            // tab — it says which app you are in — and the wrong thing on a
+            // sheet, where the app is already on screen behind it and the one
+            // control that was missing is the way out.
+            .navigationTitle(model.playlist == nil ? "Network Stream" : "Playlist")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
     }
 
@@ -32,6 +43,7 @@ struct StreamView: View {
     private var entryView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
+                intro
                 urlField
 
                 Button { play() } label: {
@@ -58,6 +70,25 @@ struct StreamView: View {
                 if !model.history.isEmpty { historySection }
             }
             .padding(16)
+        }
+    }
+
+    /// What this screen is for, said once.
+    ///
+    /// The icon is the aerial rather than the app's mark: a sheet needs to say
+    /// what *it* is, and every other way into playback — the browser, the
+    /// library, a server — has a picture of its own.
+    private var intro: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(PanuraTheme.accent)
+                .frame(width: 44, height: 44)
+                .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+            Text("Play an address you already have — a stream, a video file, or a playlist. Nothing here is saved except the recent list below.")
+                .font(.caption)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -210,19 +241,22 @@ struct StreamView: View {
                         model.clearPlaylist()
                         query = ""
                         group = nil
-                    } label: { Image(systemName: "arrow.left") }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(PanuraTheme.accent)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Playlist").font(.subheadline.weight(.bold))
-                        Text(
-                            "\(playlist.channels.count) channels"
-                                + (filteredChannels.count != playlist.channels.count
-                                   ? " · \(filteredChannels.count) shown" : "")
-                        )
-                        .font(.caption2)
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    } label: {
+                        Label("Back", systemImage: "chevron.left")
+                            .labelStyle(.iconOnly)
+                            .font(.system(size: 15, weight: .semibold))
                     }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(PanuraTheme.accent)
+                    // The title is in the bar above; this says how much of it
+                    // you are looking at, which the bar cannot.
+                    Text(
+                        "\(playlist.channels.count) channels"
+                            + (filteredChannels.count != playlist.channels.count
+                               ? " · \(filteredChannels.count) shown" : "")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
                     Spacer()
                 }
                 .padding(.horizontal, 16)

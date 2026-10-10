@@ -232,16 +232,17 @@ struct RootTabView: View {
     /// No Cast row: the control for it is in the same header, four centimetres
     /// away, and a menu that repeats what the bar already offers teaches people
     /// the bar is not to be trusted.
+    ///
+    /// No Watch Later either, for the same reason one step removed: it is a
+    /// tab of the Library sheet now, which Home opens from the card and from
+    /// Continue Watching's header. Three doors to one room, one of them hidden
+    /// in a menu, is two doors too many.
     @ViewBuilder
     private var menuRows: some View {
         Button {
             settingsDeepLink = nil
             showSettings = true
         } label: { Label("Settings", systemImage: "gearshape") }
-
-        Button { showWatchLater = true } label: {
-            Label("Watch Later", systemImage: "clock")
-        }
 
         Button { showFAQ = true } label: {
             Label("Help", systemImage: "questionmark.circle")
