@@ -22,6 +22,8 @@ struct IPTVView: View {
     /// wrong one.
     @AppStorage("iptv_layout") private var layout: IPTVLayout = .grid
     @ObservedObject private var shell = ShellChrome.shared
+    /// Watched marks and resume points, for the strip under a film's poster.
+    @ObservedObject private var watching = BrowsingStore.shared
 
     @State private var query = ""
     @State private var group: String?
@@ -374,8 +376,14 @@ struct IPTVView: View {
     /// ratio reads as a mistake.
     private func channelTile(_ channel: M3UChannel) -> some View {
         let poster = store.section == .movies
+        // Films only. A live channel is not something you are part-way
+        // through, and a strip under one would be measuring a thing that has
+        // no end.
+        let state = poster ? watching.watchState(channel.url.absoluteString) : WatchState.unseen
         return VStack(alignment: .leading, spacing: 6) {
-            artwork(channel.logo, poster: poster, fallback: poster ? "film" : "tv")
+            artwork(
+                channel.logo, poster: poster, fallback: poster ? "film" : "tv", state: state
+            )
             Text(channel.name)
                 .font(.caption)
                 // Reserved rather than merely limited: without it a one-line
@@ -392,7 +400,9 @@ struct IPTVView: View {
     /// reports a layout size larger than its box in one axis, so as a sibling
     /// it grows the stack and the tile stops being the shape it was told to be.
     /// Learned here once already — see `Thumbnail` in the Videos tab.
-    private func artwork(_ url: URL?, poster: Bool, fallback: String) -> some View {
+    private func artwork(
+        _ url: URL?, poster: Bool, fallback: String, state: WatchState = .unseen
+    ) -> some View {
         Rectangle()
             .fill(PanuraTheme.surfaceContainerHigh)
             .aspectRatio(poster ? 2.0 / 3.0 : 1, contentMode: .fit)
@@ -409,6 +419,16 @@ struct IPTVView: View {
                             .font(.system(size: 20))
                             .foregroundStyle(PanuraTheme.onSurfaceVariant)
                     }
+                }
+            }
+            // Inside the clip, so the strip follows the corner it sits in.
+            .overlay(alignment: .bottom) { WatchStrip(state: state) }
+            .overlay(alignment: .topTrailing) {
+                if state == .finished {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.white, PanuraTheme.accent)
+                        .padding(5)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -491,8 +511,10 @@ struct IPTVView: View {
         if layout == .grid {
             Button { openSeries = show } label: {
                 VStack(alignment: .leading, spacing: 6) {
-                    // Always a poster, in both sections that have one: a series
-                    // is sold by its cover exactly as a film is.
+                    // Always a poster, in both sections that have one: a
+                    // series is sold by its cover exactly as a film is. No
+                    // strip on it, though — "40% of a series" is not a thing
+                    // anybody means, and the episode list says it properly.
                     artwork(show.cover, poster: true, fallback: "rectangle.stack")
                     Text(show.name)
                         .font(.caption)
@@ -887,16 +909,36 @@ private struct IPTVSourceForm: View {
 /// A sheet rather than a pushed screen because the list underneath it is where
 /// you came from and where you are going back to — and because the IPTV tab
 /// draws its own bar, so a navigation stack here would be a second one.
+///
+/// **It opens where you stopped.** Somebody five episodes into a season does
+/// not want to arrive at episode one and scroll; the list lands on the one they
+/// were watching, or on the one after the last they finished. That is the whole
+/// reason the watched marks exist.
 private struct IPTVSeriesSheet: View {
     let show: XtreamSeries
 
     @ObservedObject private var store = IPTVStore.shared
+    @ObservedObject private var watching = BrowsingStore.shared
     @Environment(\.dismiss) private var dismiss
+
     @State private var seasons: [XtreamSeason] = []
     @State private var loading = true
-    /// Which season is open. The first by default — a series with one season
-    /// should not need a tap to show it.
+    /// Which season is showing, or nil for all of them — which is the default,
+    /// because a list that opens already filtered hides most of what it is for.
     @State private var season: Int?
+    /// Remembered across series: somebody who wants the newest episode first
+    /// wants it for every series, not for one.
+    @AppStorage("iptv_episodes_newest") private var newestFirst = false
+    /// The row to open on, worked out once the episodes land.
+    @State private var landing: String?
+
+    /// An episode and the season it came from, so a list of all of them can
+    /// still say which is which.
+    private struct Row: Identifiable {
+        let id: String
+        let season: Int
+        let episode: XtreamEpisode
+    }
 
     var body: some View {
         NavigationStack {
@@ -925,103 +967,219 @@ private struct IPTVSeriesSheet: View {
         }
         .task {
             seasons = await store.episodes(of: show)
-            season = seasons.first?.number
             loading = false
+            landing = resumePoint()
+        }
+    }
+
+    // MARK: the list
+
+    private var rows: [Row] {
+        let picked = season.map { number in seasons.filter { $0.number == number } } ?? seasons
+        let ascending = flatten(picked)
+        return newestFirst ? ascending.reversed() : ascending
+    }
+
+    private func flatten(_ list: [XtreamSeason]) -> [Row] {
+        list.flatMap { entry in
+            entry.episodes.map {
+                Row(id: "\(entry.number)x\($0.id)", season: entry.number, episode: $0)
+            }
         }
     }
 
     private var list: some View {
         VStack(spacing: 0) {
-            if seasons.count > 1 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(seasons) { entry in
-                            Button { season = entry.number } label: {
-                                Text("Season \(entry.number)")
-                                    .font(.caption.weight(season == entry.number ? .semibold : .regular))
-                                    .foregroundStyle(
-                                        season == entry.number
-                                            ? PanuraTheme.onAccentSoft : PanuraTheme.onSurfaceVariant
-                                    )
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 6)
-                                    .background(
-                                        season == entry.number
-                                            ? PanuraTheme.accentSoft : PanuraTheme.surfaceContainerHigh,
-                                        in: Capsule()
-                                    )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+            filterBar
+            ScrollViewReader { scroller in
+                List(rows) { row in
+                    Button { play(row) } label: { episodeRow(row) }
+                        .buttonStyle(.plain)
+                        .listRowBackground(PanuraTheme.background)
+                        .id(row.id)
                 }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .onChange(of: landing) { _ in jump(scroller) }
+                .onAppear { jump(scroller) }
             }
-
-            List(episodes) { episode in
-                Button { play(episode) } label: { row(episode) }
-                    .buttonStyle(.plain)
-                    .listRowBackground(PanuraTheme.background)
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
         }
     }
 
-    private var episodes: [XtreamEpisode] {
-        seasons.first { $0.number == season }?.episodes ?? seasons.first?.episodes ?? []
+    /// Scrolls to the landing row, a beat after the list exists.
+    ///
+    /// Not immediately: on the pass that creates the list there is nothing to
+    /// scroll yet and the proxy quietly does nothing.
+    private func jump(_ scroller: ScrollViewProxy) {
+        guard let target = landing else { return }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            withAnimation(.easeOut(duration: 0.25)) {
+                scroller.scrollTo(target, anchor: .center)
+            }
+        }
     }
 
-    private func row(_ episode: XtreamEpisode) -> some View {
-        HStack(spacing: 12) {
-            // Big enough to be a picture rather than a bullet point. A still is
-            // the only thing that distinguishes one episode from the next when
-            // the panel leaves the titles empty, which it routinely does, and
-            // at thumbnail size it was doing that job for nobody.
-            Rectangle()
-                .fill(PanuraTheme.surfaceContainerHigh)
-                .frame(width: 112, height: 63)
-                .overlay {
-                    AsyncImage(url: episode.still) { phase in
-                        if case .success(let image) = phase {
-                            image.resizable().scaledToFill()
-                        } else {
-                            Image(systemName: "play.rectangle")
-                                .font(.system(size: 18))
-                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+    /// The episode to open on: the one part-way through, else the one after
+    /// the last one finished. Nil for a series nobody has started, which opens
+    /// at the top like anything else.
+    private func resumePoint() -> String? {
+        let ascending = flatten(seasons)
+        if let partial = ascending.last(where: {
+            if case .partial = state(of: $0) { return true }
+            return false
+        }) {
+            return partial.id
+        }
+        guard let finished = ascending.lastIndex(where: { state(of: $0) == .finished }) else {
+            return nil
+        }
+        let next = finished + 1
+        return next < ascending.count ? ascending[next].id : ascending[finished].id
+    }
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(episode.number). \(episode.title)")
+    private func state(of row: Row) -> WatchState {
+        watching.watchState(row.episode.url.absoluteString)
+    }
+
+    // MARK: the controls
+
+    private var filterBar: some View {
+        HStack(spacing: 8) {
+            if seasons.count > 1 {
+                Menu {
+                    Picker("Season", selection: Binding(
+                        get: { season ?? -1 },
+                        set: { season = $0 < 0 ? nil : $0 }
+                    )) {
+                        Text("All seasons").tag(-1)
+                        ForEach(seasons) { Text("Season \($0.number)").tag($0.number) }
+                    }
+                } label: {
+                    pill(season.map { "Season \($0)" } ?? "All seasons", glyph: "chevron.down")
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Menu {
+                Picker("Order", selection: $newestFirst) {
+                    Text("Oldest first").tag(false)
+                    Text("Newest first").tag(true)
+                }
+            } label: {
+                pill(newestFirst ? "Newest first" : "Oldest first", glyph: "arrow.up.arrow.down")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private func pill(_ title: String, glyph: String) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .lineLimit(1)
+            Image(systemName: glyph)
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
+    }
+
+    // MARK: a row
+
+    private func episodeRow(_ row: Row) -> some View {
+        let state = state(of: row)
+        let done = state == .finished
+        return HStack(spacing: 12) {
+            still(row, state: state)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title(row))
                     .font(.subheadline)
-                    .lineLimit(1)
-                if let plot = episode.plot, !plot.isEmpty {
+                    .lineLimit(2)
+                    .foregroundStyle(done ? PanuraTheme.onSurfaceVariant : PanuraTheme.onSurface)
+                // The bar replaces the synopsis rather than joining it: where
+                // you stopped is the more useful of the two, and both makes a
+                // row tall enough to show three episodes a screen.
+                if case .partial(let fraction) = state {
+                    ProgressView(value: fraction)
+                        .tint(PanuraTheme.accent)
+                } else if let plot = row.episode.plot, !plot.isEmpty {
                     Text(plot)
                         .font(.caption2)
                         .foregroundStyle(PanuraTheme.onSurfaceVariant)
                         .lineLimit(2)
                 }
             }
+
             Spacer(minLength: 8)
-            Image(systemName: "play.circle")
+            Image(systemName: done ? "checkmark.circle.fill" : "play.circle")
                 .font(.system(size: 18))
-                .foregroundStyle(PanuraTheme.accent)
+                .foregroundStyle(done ? PanuraTheme.onSurfaceVariant : PanuraTheme.accent)
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        // The way out of a mark the player got wrong — a stream that reports a
+        // nonsense duration can finish itself seconds in — and the way to mark
+        // an episode watched elsewhere.
+        .contextMenu {
+            Button {
+                if done {
+                    watching.unmarkWatched(row.episode.url.absoluteString)
+                } else {
+                    watching.markWatched(item(row))
+                }
+            } label: {
+                done
+                    ? Label("Mark as unwatched", systemImage: "arrow.uturn.backward")
+                    : Label("Mark as watched", systemImage: "checkmark.circle")
+            }
+        }
     }
 
-    private func play(_ episode: XtreamEpisode) {
-        dismiss()
-        PlaybackSession.shared.play(
-            MediaItem(
-                title: "\(show.name) — \(episode.title)",
-                url: episode.url,
-                thumbnailURL: episode.still
-            )
+    private func still(_ row: Row, state: WatchState) -> some View {
+        Rectangle()
+            .fill(PanuraTheme.surfaceContainerHigh)
+            .frame(width: 112, height: 63)
+            .overlay {
+                AsyncImage(url: row.episode.still) { phase in
+                    if case .success(let image) = phase {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "play.rectangle")
+                            .font(.system(size: 18))
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    }
+                }
+            }
+            .overlay(alignment: .bottom) { WatchStrip(state: state) }
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .opacity(state == .finished ? 0.55 : 1)
+    }
+
+    /// `S2 E5 · Title` while every season is showing, `5. Title` inside one.
+    private func title(_ row: Row) -> String {
+        season == nil && seasons.count > 1
+            ? "S\(row.season) E\(row.episode.number) · \(row.episode.title)"
+            : "\(row.episode.number). \(row.episode.title)"
+    }
+
+    /// What gets played, and what a hand-made watched mark records — the same
+    /// thing either way, so history and the player agree on the title.
+    private func item(_ row: Row) -> MediaItem {
+        MediaItem(
+            title: "\(show.name) — \(row.episode.title)",
+            url: row.episode.url,
+            thumbnailURL: row.episode.still
         )
+    }
+
+    private func play(_ row: Row) {
+        dismiss()
+        PlaybackSession.shared.play(item(row))
     }
 }

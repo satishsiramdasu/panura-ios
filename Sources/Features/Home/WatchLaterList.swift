@@ -1,17 +1,13 @@
 import SwiftUI
 
-/// The pages and videos set aside for later.
-///
-/// A screen rather than a sheet, because it holds two kinds of thing and both
-/// of them lead somewhere: a web page opens in the browser, a library video
-/// plays. A sheet that dismisses itself to hand you to another screen is a
-/// detour with a step in it.
+/// The pages and videos set aside for later — the third tab of
+/// `LibrarySheet`.
 ///
 /// What it stores is deliberately thin. A web entry keeps the PAGE address,
 /// never the stream found on it: detected stream URLs are signed and die within
 /// hours, so opening one tomorrow means detecting it again. A library entry
 /// keeps the asset's identifier, which outlives any file path Photos hands out.
-struct WatchLaterView: View {
+struct WatchLaterList: View {
     /// Opens a saved page in the browser.
     var onOpenBrowser: (String) -> Void
 
@@ -22,60 +18,40 @@ struct WatchLaterView: View {
         Group {
             if store.watchLater.isEmpty { empty } else { list }
         }
-        .background(PanuraTheme.background)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            PanuraHeader {
-                HStack(spacing: 0) {
-                    Text("Watch Later")
-                        .font(.title3.weight(.bold))
-                        .lineLimit(1)
-                        .padding(.leading, 4)
-                    Spacer(minLength: 8)
-                    if !store.watchLater.isEmpty {
-                        // A bin, not three dots. Three dots promise a menu of
-                        // things to choose between, and there is only ever one
-                        // thing here — a button that says what it does is not
-                        // improved by hiding it behind a glyph that does not.
-                        //
-                        // Still a menu underneath, so the one thing is asked
-                        // before it is done, and asked next to the button
-                        // rather than in the middle of the screen.
-                        Menu {
-                            Section("Everything here is removed. Nothing is deleted from the phone.") {
-                                Button(role: .destructive) {
-                                    store.clearWatchLater()
-                                } label: { Label("Clear Watch Later", systemImage: "trash") }
-                            }
-                        } label: {
-                            Image(systemName: "trash")
-                                .font(.system(size: 16))
-                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                                .frame(width: 38, height: 38)
-                                .contentShape(Rectangle())
-                        }
-                        .accessibilityLabel("Clear Watch Later")
-                    }
-                }
-            }
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var list: some View {
         List {
-            ForEach(store.watchLater) { entry in
-                Button { open(entry) } label: { row(entry) }
-                    .buttonStyle(.plain)
-                    .listRowBackground(PanuraTheme.background)
-            }
-            .onDelete { offsets in
-                // By URL, not by index: the store filters on it, and removing
-                // one row shifts every index after it.
-                for url in offsets.map({ store.watchLater[$0].url }) {
-                    store.removeWatchLater(url: url)
+            Section {
+                ForEach(store.watchLater) { entry in
+                    Button { open(entry) } label: { row(entry) }
+                        .buttonStyle(.plain)
+                        .listRowBackground(PanuraTheme.background)
                 }
+                .onDelete { offsets in
+                    // By URL, not by index: the store filters on it, and
+                    // removing one row shifts every index after it.
+                    for url in offsets.map({ store.watchLater[$0].url }) {
+                        store.removeWatchLater(url: url)
+                    }
+                }
+            } footer: {
+                Text("Swipe a row to remove just that one.")
+            }
+
+            Section {
+                Button(role: .destructive) {
+                    store.clearWatchLater()
+                } label: {
+                    Label("Clear Watch Later", systemImage: "trash")
+                }
+            } footer: {
+                Text("Everything here is removed. Nothing is deleted from the phone.")
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     private func row(_ entry: SiteEntry) -> some View {

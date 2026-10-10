@@ -200,6 +200,91 @@ struct ResumeEntry: Codable, Identifiable, Hashable {
     }
 }
 
+/// Something watched to the end.
+///
+/// Enough to draw a row and play it again, which is why it is a record rather
+/// than the date it used to be: a mark cannot be listed, and a list of marks is
+/// what Watch History is.
+///
+/// Decoded by hand, for the reason written on `IPTVSource`: the synthesised
+/// decoder demands a key for every non-optional property, default or no
+/// default, so the first field added after this ships would throw on every
+/// record already written — and since these decode as an array, one bad record
+/// loses the lot.
+struct WatchedEntry: Codable, Identifiable, Hashable {
+    var url: String
+    var title: String
+    var finished: Date = .init()
+    var poster: String?
+    var isLocal: Bool = false
+    var headers: [String: String] = [:]
+    var contentType: String?
+    /// Set when an attempt to play it found the link dead. Not swept for in
+    /// the background: this list is long and mostly old, and checking all of
+    /// it on every appearance would be hundreds of requests to say something
+    /// nobody asked.
+    var expired: Bool?
+
+    var id: String { url }
+    var isExpired: Bool { expired == true }
+
+    var host: String {
+        guard let host = URL(string: url)?.host else { return "" }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    var mediaItem: MediaItem {
+        MediaItem(
+            title: title,
+            url: URL(string: url) ?? URL(string: "about:blank")!,
+            isLocal: isLocal,
+            headers: headers,
+            contentType: contentType
+        )
+    }
+
+    init(
+        url: String, title: String, finished: Date = .init(), poster: String? = nil,
+        isLocal: Bool = false, headers: [String: String] = [:], contentType: String? = nil
+    ) {
+        self.url = url
+        self.title = title
+        self.finished = finished
+        self.poster = poster
+        self.isLocal = isLocal
+        self.headers = headers
+        self.contentType = contentType
+    }
+
+    init(from decoder: Decoder) throws {
+        let box = try decoder.container(keyedBy: CodingKeys.self)
+        url = try box.decode(String.self, forKey: .url)
+        title = (try? box.decode(String.self, forKey: .title)) ?? ""
+        finished = (try? box.decode(Date.self, forKey: .finished)) ?? Date()
+        poster = try? box.decodeIfPresent(String.self, forKey: .poster)
+        isLocal = (try? box.decode(Bool.self, forKey: .isLocal)) ?? false
+        headers = (try? box.decode([String: String].self, forKey: .headers)) ?? [:]
+        contentType = try? box.decodeIfPresent(String.self, forKey: .contentType)
+        expired = try? box.decodeIfPresent(Bool.self, forKey: .expired)
+    }
+}
+
+/// How far through something somebody is.
+enum WatchState: Equatable {
+    case unseen
+    /// 0...1. Only ever set from a real resume point, so it is never zero.
+    case partial(Double)
+    case finished
+
+    var fraction: Double {
+        switch self {
+        case .unseen: return 0
+        case .partial(let value): return value
+        case .finished: return 1
+        }
+    }
+}
+
 /// Home-screen state that outlives a launch: bookmarks, visit history (which
 /// feeds Most Visited) and continue-watching. Mirrors what Android keeps in Room
 /// — small enough here that UserDefaults JSON is the whole storage layer.
@@ -222,6 +307,24 @@ final class BrowsingStore: ObservableObject {
     /// window, so a site you use constantly survives a burst of other browsing.
     @Published private(set) var hostVisits: [HostVisit] = []
     @Published private(set) var resumes: [ResumeEntry] = []
+    /// What has been watched to the end, and when.
+    ///
+    /// Finishing something *deletes* its resume entry — which is right, a
+    /// finished video has nothing to resume — and so, until this existed, the
+    /// app could not tell a film watched last night from one never opened.
+    /// Both were simply absent. An episode list cannot be marked up from an
+    /// absence, so the fact is now recorded on the way past.
+    ///
+    /// Keyed by URL, like everything else here. For a panel's series that is
+    /// stable: the episode id is in the path, and the credentials in it do not
+    /// change between sessions.
+    ///
+    /// Newest first, which is the order it is read in.
+    @Published private(set) var watchedLog: [WatchedEntry] = []
+    /// The same URLs as a set, because `watchState` is asked once per tile in
+    /// a grid that can hold a thousand of them and a linear scan of fifteen
+    /// hundred records per tile is a scroll that stutters.
+    private var watchedIndex: Set<String> = []
 
     /// Off (incognito, or the user cleared it) suppresses history writes only —
     /// bookmarks and resume points are explicit user actions and still persist.
@@ -237,10 +340,15 @@ final class BrowsingStore: ObservableObject {
     private let historyKey = "home_history"
     private let hostVisitsKey = "home_host_visits"
     private let resumeKey = "home_resume"
+    private let watchedKey = "home_watched"
 
     private let historyLimit = 300
     private let hostVisitLimit = 60
     private let resumeLimit = 30
+    /// Far more than the thirty resume points, because a mark costs a URL and
+    /// a date and a season of television is forty of them. Old ones fall off
+    /// the end by date.
+    private let watchedLimit = 1500
 
     /// Last URL passed to `recordVisit`, so the browser's two calls per page
     /// (URL first, title once it lands) count as a single visit.
@@ -269,6 +377,8 @@ final class BrowsingStore: ObservableObject {
         history = Self.load(historyKey) ?? []
         watchLater = Self.load(watchLaterKey) ?? []
         resumes = Self.load(resumeKey) ?? []
+        watchedLog = Self.load(watchedKey) ?? []
+        watchedIndex = Set(watchedLog.map(\.url))
         hostVisits = Self.load(hostVisitsKey) ?? Self.seedHostVisits(from: history)
 
         // One-time: clear out what the start page banked before it stopped
@@ -616,11 +726,13 @@ final class BrowsingStore: ObservableObject {
         // absence of a duration as "finished".
         guard duration > 0 else { return }
 
-        // Watched to the end — drop it.
+        // Watched to the end — drop it, and remember that it got there.
         if position >= duration - 15 {
-            ResumeThumbnails.remove(resumes[i].thumbnailPath)
+            let completed = resumes[i]
+            ResumeThumbnails.remove(completed.thumbnailPath)
             resumes.remove(at: i)
             ResumePosition.forget(key)
+            markWatched(completed)
             persistResumes()
             return
         }
@@ -707,11 +819,21 @@ final class BrowsingStore: ObservableObject {
     /// One entry's liveness — the pre-flight check a tap makes, so a dead card
     /// says so instead of opening a player that fails.
     nonisolated static func isAlive(_ entry: ResumeEntry) async -> Bool {
-        guard let url = URL(string: entry.url) else { return false }
-        if entry.isLocal || url.isFileURL {
+        await isAlive(address: entry.url, isLocal: entry.isLocal, headers: entry.headers)
+    }
+
+    nonisolated static func isAlive(_ entry: WatchedEntry) async -> Bool {
+        await isAlive(address: entry.url, isLocal: entry.isLocal, headers: entry.headers)
+    }
+
+    nonisolated static func isAlive(
+        address: String, isLocal: Bool, headers: [String: String]
+    ) async -> Bool {
+        guard let url = URL(string: address) else { return false }
+        if isLocal || url.isFileURL {
             return FileManager.default.fileExists(atPath: url.path)
         }
-        return await StreamProbe.isAlive(url: url, headers: entry.headers)
+        return await StreamProbe.isAlive(url: url, headers: headers)
     }
 
     /// Empties Continue Watching. The videos and their files are untouched —
@@ -724,6 +846,80 @@ final class BrowsingStore: ObservableObject {
         resumes.removeAll()
         persistResumes()
     }
+
+    /// How far through something is, for a list that wants to say so.
+    ///
+    /// Three states rather than a number, because they are three different
+    /// things to draw and a bare `0.0` cannot tell "not started" from
+    /// "finished".
+    func watchState(_ url: String) -> WatchState {
+        if watchedIndex.contains(url) { return .finished }
+        guard let entry = resumes.first(where: { $0.url == url }),
+              entry.progress > 0.01
+        else { return .unseen }
+        return .partial(entry.progress)
+    }
+
+    /// Recorded from the resume entry being deleted, which already holds
+    /// everything a row needs.
+    func markWatched(_ entry: ResumeEntry) {
+        record(
+            WatchedEntry(
+                url: entry.url, title: entry.title, poster: entry.poster,
+                isLocal: entry.isLocal, headers: entry.headers,
+                contentType: entry.contentType
+            )
+        )
+    }
+
+    /// Marked by hand — the episode list's context menu, for something watched
+    /// somewhere else.
+    func markWatched(_ item: MediaItem) {
+        record(
+            WatchedEntry(
+                url: item.url.absoluteString, title: item.title,
+                poster: item.thumbnailURL?.absoluteString, isLocal: item.isLocal,
+                headers: item.headers, contentType: item.contentType
+            )
+        )
+    }
+
+    private func record(_ entry: WatchedEntry) {
+        // Moved to the top rather than duplicated: watching something twice is
+        // one thing in history, most recently at the second time.
+        watchedLog.removeAll { $0.url == entry.url }
+        watchedLog.insert(entry, at: 0)
+        if watchedLog.count > watchedLimit { watchedLog.removeLast(watchedLog.count - watchedLimit) }
+        watchedIndex = Set(watchedLog.map(\.url))
+        persistWatched()
+    }
+
+    /// Lets somebody undo a mark the player got wrong — a stream whose
+    /// duration was nonsense, say, which can finish itself a second in.
+    func unmarkWatched(_ url: String) {
+        guard watchedIndex.contains(url) else { return }
+        watchedLog.removeAll { $0.url == url }
+        watchedIndex.remove(url)
+        persistWatched()
+    }
+
+    /// The link was dead when somebody tried to play it again. Kept, like a
+    /// dead resume card is kept: the page it came from usually still works,
+    /// and a row vanishing under a finger is indistinguishable from a bug.
+    func markWatchedExpired(url: String) {
+        guard let index = watchedLog.firstIndex(where: { $0.url == url }) else { return }
+        watchedLog[index].expired = true
+        persistWatched()
+    }
+
+    func clearWatchedMarks() {
+        guard !watchedLog.isEmpty else { return }
+        watchedLog.removeAll()
+        watchedIndex.removeAll()
+        persistWatched()
+    }
+
+    private func persistWatched() { Self.save(watchedLog, watchedKey) }
 
     func removeWatching(url: String) {
         for entry in resumes where entry.url == url {

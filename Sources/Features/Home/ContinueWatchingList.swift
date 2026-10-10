@@ -1,36 +1,28 @@
 import SwiftUI
 
-/// The Manage sheet behind Continue Watching's header.
+/// What is part-way through — the first tab of `LibrarySheet`.
 ///
-/// The header used to carry one destructive button, so tidying away a single
-/// dead link meant throwing out every resume point in the app. A list can do
-/// both, and — unlike a menu — it can show what it is about to remove.
+/// It used to be a sheet of its own, opened from Continue Watching's header,
+/// and the header before that carried one destructive button, so tidying away
+/// a single dead link meant throwing out every resume point in the app. A list
+/// can do both, and — unlike a menu — it can show what it is about to remove.
 ///
 /// The row is built around the two things the card has no room for: how far
 /// through it you are, and how long is left. The horizontal card has to say
 /// that in a 3pt bar and a 10pt chip; here both get read properly.
-struct ContinueWatchingManager: View {
+struct ContinueWatchingList: View {
     var onOpenBrowser: (String) -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var store = BrowsingStore.shared
 
     private var entries: [ResumeEntry] { store.continueWatching }
     private var expired: [ResumeEntry] { store.expiredWatching }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if entries.isEmpty { empty } else { list }
-            }
-            .navigationTitle("Continue Watching")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
-            }
+        Group {
+            if entries.isEmpty { empty } else { list }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var list: some View {
@@ -61,7 +53,6 @@ struct ContinueWatchingManager: View {
                 }
                 Button(role: .destructive) {
                     store.clearWatching()
-                    dismiss()
                 } label: {
                     Label("Remove all \(entries.count)", systemImage: "trash")
                 }
@@ -69,6 +60,8 @@ struct ContinueWatchingManager: View {
                 Text("The videos stay where they are. Only the resume points go.")
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 
     /// A row opens what it shows: the video if the link is good, the page it
@@ -127,19 +120,16 @@ struct ContinueWatchingManager: View {
         .buttonStyle(.plain)
     }
 
-    /// Play it, or — for a link that has died — go back to where it came from.
-    ///
-    /// The sheet closes first. The player arrives as a full-screen cover, and
-    /// one presentation on top of another is how a video ends up playing behind
-    /// a sheet nobody can see past.
+    /// Play it, or — for a link that has died — go back to where it came
+    /// from. `LibrarySheet` closes itself around either, because the player
+    /// arrives as a full-screen cover and one presentation on top of another
+    /// is how a video ends up playing behind a sheet nobody can see past.
     private func open(_ entry: ResumeEntry) {
         if entry.isExpired {
             guard let page = entry.sourcePage else { return }
-            dismiss()
             onOpenBrowser(page.absoluteString)
             return
         }
-        dismiss()
         PlaybackSession.shared.play(entry.mediaItem)
     }
 

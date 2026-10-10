@@ -86,7 +86,7 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
         .sheet(isPresented: $showResumeManager) {
-            ContinueWatchingManager(onOpenBrowser: onOpenBrowser)
+            LibrarySheet(tab: .watching, onOpenBrowser: onOpenBrowser)
         }
         // An overlay, not a sheet: it has to arrive centred, where the eye
         // already is, rather than sliding up from the far end of the screen.

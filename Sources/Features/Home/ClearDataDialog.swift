@@ -173,7 +173,13 @@ struct ClearDataDialog: View {
 
             if browsingHistory { store.clearBrowsingHistory() }
             if mostVisited { store.clearMostVisited() }
-            if watchHistory { store.clearWatching() }
+            // Both halves of the same idea: the resume points, and the marks
+            // left by everything finished. The toggle says "watch history" and
+            // a tick left behind on a film is exactly that.
+            if watchHistory {
+                store.clearWatching()
+                store.clearWatchedMarks()
+            }
             if watchLater { store.clearWatchLater() }
             if bookmarks { store.clearBookmarks() }
 

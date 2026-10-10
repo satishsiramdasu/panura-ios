@@ -118,10 +118,10 @@ struct RootTabView: View {
         .sheet(isPresented: $showFAQ) { FAQView() }
         .sheet(isPresented: $showStream) { StreamView() }
         .sheet(isPresented: $showWatchLater) {
-            WatchLaterView(onOpenBrowser: { address in
+            LibrarySheet(tab: .later) { address in
                 showWatchLater = false
                 openInBrowser(address)
-            })
+            }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(deepLink: $settingsDeepLink)
