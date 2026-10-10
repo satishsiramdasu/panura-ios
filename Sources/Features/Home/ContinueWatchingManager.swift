@@ -71,53 +71,83 @@ struct ContinueWatchingManager: View {
         }
     }
 
+    /// A row opens what it shows: the video if the link is good, the page it
+    /// came from if it is not.
+    ///
+    /// It used to open nothing at all. A list of things you are part-way
+    /// through, every row of which is inert, is a list that answers a question
+    /// nobody was asking — the reason to look at it is to carry on with one of
+    /// them.
     private func row(_ entry: ResumeEntry) -> some View {
-        HStack(spacing: 12) {
-            ResumeThumb(entry: entry)
+        Button { open(entry) } label: {
+            HStack(spacing: 12) {
+                ResumeThumb(entry: entry)
 
-            VStack(alignment: .leading, spacing: 5) {
-                Text(entry.title)
-                    .font(.subheadline)
-                    .lineLimit(2)
-                    .foregroundStyle(entry.isExpired ? PanuraTheme.onSurfaceVariant : .primary)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(entry.title)
+                        .font(.subheadline)
+                        .lineLimit(2)
+                        .foregroundStyle(entry.isExpired ? PanuraTheme.onSurfaceVariant : .primary)
 
-                if entry.isExpired {
-                    Label("Link expired", systemImage: "exclamationmark.triangle.fill")
+                    if entry.isExpired {
+                        Label("Link expired", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                    } else if let left = entry.timeLeftLabel {
+                        // A bar and the two numbers either side of it, which is
+                        // the whole question: how far in, and how much is left.
+                        ProgressView(value: entry.progress)
+                            .tint(PanuraTheme.accent)
+                        HStack {
+                            Text(Self.clock(entry.position))
+                            Spacer(minLength: 8)
+                            Text(left)
+                        }
                         .font(.caption2)
-                        .foregroundStyle(.orange)
-                } else {
-                    // A bar and the two numbers either side of it, which is the
-                    // whole question: how far in, and how much is left.
-                    ProgressView(value: entry.progress)
-                        .tint(PanuraTheme.accent)
-                    HStack {
-                        Text(Self.clock(entry.position))
-                        Spacer(minLength: 8)
-                        Text(entry.timeLeftLabel)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    } else {
+                        // No duration: a live channel, or something closed
+                        // before the engine had parsed one. A progress bar
+                        // here would be a bar that is always empty, under two
+                        // numbers that are always zero.
+                        Text(Self.opened(entry.updated))
+                            .font(.caption2)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
                     }
-                    .font(.caption2)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 }
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-            if entry.isExpired, let page = entry.sourcePage {
-                Button {
-                    dismiss()
-                    onOpenBrowser(page.absoluteString)
-                } label: {
-                    Label("Visit", systemImage: "safari")
-                        .labelStyle(.iconOnly)
-                        .font(.system(size: 17))
-                        .foregroundStyle(PanuraTheme.accent)
-                        .frame(width: 38, height: 38)
-                        .contentShape(Rectangle())
-                }
-                // A plain style, or the row's own tap would fire this too -
-                // every button in a List row does, unless it opts out.
-                .buttonStyle(.plain)
+                Image(systemName: entry.isExpired ? "safari" : "play.circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(PanuraTheme.accent)
             }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
-        .padding(.vertical, 4)
+        .buttonStyle(.plain)
+    }
+
+    /// Play it, or — for a link that has died — go back to where it came from.
+    ///
+    /// The sheet closes first. The player arrives as a full-screen cover, and
+    /// one presentation on top of another is how a video ends up playing behind
+    /// a sheet nobody can see past.
+    private func open(_ entry: ResumeEntry) {
+        if entry.isExpired {
+            guard let page = entry.sourcePage else { return }
+            dismiss()
+            onOpenBrowser(page.absoluteString)
+            return
+        }
+        dismiss()
+        PlaybackSession.shared.play(entry.mediaItem)
+    }
+
+    /// "Opened 2 hours ago", for an entry with no duration to report.
+    private static func opened(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Opened " + formatter.localizedString(for: date, relativeTo: Date())
     }
 
     private var empty: some View {

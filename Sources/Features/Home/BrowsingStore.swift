@@ -173,7 +173,15 @@ struct ResumeEntry: Codable, Identifiable, Hashable {
     var remainingSeconds: Double { max(duration - position, 0) }
 
     /// "45s left" · "12m left" · "1h 5m left" — matches Android's chip.
-    var timeLeftLabel: String {
+    ///
+    /// **Nil when the duration is unknown**, which is not the same as nothing
+    /// being left. An entry is created the moment something starts playing, so
+    /// until the engine has parsed a duration this is zero — and the one-second
+    /// floor below, which is there so a nearly-finished video does not claim
+    /// "0s left", turned every one of those into "1s left". A live channel
+    /// never gets a duration at all, so it said it forever.
+    var timeLeftLabel: String? {
+        guard duration > 0, remainingSeconds > 0 else { return nil }
         let total = Int(remainingSeconds)
         let minutes = total / 60
         if minutes < 1 { return "\(max(total, 1))s left" }

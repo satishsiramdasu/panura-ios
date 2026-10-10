@@ -464,11 +464,28 @@ struct HomeView: View {
     private func continueBrowsingCard(_ entry: SiteEntry) -> some View {
         Button { onOpenBrowser(entry.url) } label: {
             HStack(spacing: 12) {
-                Image(systemName: "arrow.uturn.left.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(PanuraTheme.accent)
+                // The site's own mark, which is how people recognise a site
+                // — the card says a name and a host, and neither is read as
+                // fast as the icon. The back-arrow glyph stays as the fallback
+                // for a site with no icon, or no network to fetch one.
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(PanuraTheme.accentSoft)
                     .frame(width: 42, height: 42)
-                    .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        AsyncImage(url: entry.faviconURL) { phase in
+                            if case .success(let image) = phase {
+                                image.resizable().scaledToFit()
+                                    .frame(width: 22, height: 22)
+                                    .clipShape(
+                                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                    )
+                            } else {
+                                Image(systemName: "arrow.uturn.left.circle.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundStyle(PanuraTheme.accent)
+                            }
+                        }
+                    }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Continue where you left off")
@@ -751,8 +768,8 @@ private struct ContinueWatchingCard: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            if entry.remainingSeconds > 0 {
-                Text(entry.timeLeftLabel)
+            if let left = entry.timeLeftLabel {
+                Text(left)
                     .font(.system(size: 10))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 5).padding(.vertical, 2)
