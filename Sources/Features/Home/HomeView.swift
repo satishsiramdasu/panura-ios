@@ -11,8 +11,6 @@ struct HomeView: View {
 
     @ObservedObject private var store = BrowsingStore.shared
     @ObservedObject private var session = BrowserSession.shared
-    /// Only to know whether the Servers card still has a job.
-    @ObservedObject private var tabSet = TabSet.shared
 
     @State private var showAddress = false
     @State private var showBookmarksSheet = false
@@ -55,10 +53,6 @@ struct HomeView: View {
                     VStack(spacing: 10) {
                         PickVideoCard()
                         networkStreamCard
-                        // Only while Servers is still behind the strip's `+`.
-                        // Once the tab is there this is a second door to a
-                        // room that already has one open.
-                        if !tabSet.tabs.contains(.ftp) { serversCard }
                     }
                     .padding(.horizontal, 16)
                     housekeepingRow
@@ -140,18 +134,6 @@ struct HomeView: View {
             detail: "Play a link you already have",
             action: "Open"
         ) { onOpenSection(.stream) }
-    }
-
-    /// A NAS, a playlist, an IPTV account. The one card here that leads
-    /// somewhere rather than doing something, and it is here because the tab
-    /// it leads to is opt-in and nothing else on this screen mentions it.
-    private var serversCard: some View {
-        actionCard(
-            icon: "externaldrive.connected.to.line.below",
-            title: "Servers",
-            detail: "A NAS, a playlist, an IPTV account",
-            action: "Add"
-        ) { onOpenSection(.ftp) }
     }
 
     /// `PickVideoCard`'s shape, for the cards that sit with it. Kept in step

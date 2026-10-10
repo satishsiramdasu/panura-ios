@@ -21,28 +21,33 @@ final class TabSet: ObservableObject {
 
     /// Always present, always in this order, never removable.
     ///
-    /// IPTV used to be here and is not any more. Two reasons, and the product
-    /// one came first: most people who open this app have no subscription to
-    /// put in it, and a quarter of the row spent on a tab they will never
-    /// press is worse than one tap for the people who will. The second is that
-    /// the word is the one most likely to make an App Store reviewer go
-    /// looking for a pirate service, and behind the `+` it is read in context
-    /// — a thing somebody deliberately added, next to the line saying Panura
-    /// supplies no channels — rather than being the first thing on screen.
-    nonisolated static let fixed: [AppDestination] = [.home, .web, .videos]
+    /// Four, and the fourth is Servers. It was briefly opt-in, which was the
+    /// right answer while it meant IPTV and nothing else — a quarter of the
+    /// row spent on a subscription most people do not have. Now that one tab
+    /// holds every kind of place you sign into, it is general enough to earn
+    /// a seat: a NAS, a playlist, an account, and whatever is added next all
+    /// arrive inside it rather than as another tab.
+    ///
+    /// It also takes the IPTV naming problem off the strip for good. The word
+    /// is inside, on the screen that explains Panura supplies no channels,
+    /// which is the only place it was ever doing useful work.
+    nonisolated static let fixed: [AppDestination] = [.home, .web, .videos, .ftp]
 
-    /// The pool the `+` offers from.
+    /// The pool the `+` offers from. Empty, so there is no `+`.
     ///
-    /// One entry, because Servers is now one tab for everything with an
-    /// address and a password behind it — a NAS, a playlist, an IPTV account.
-    /// It is opt-in: somebody with any of those wants it permanently, and
-    /// somebody with none should never have to look at it.
+    /// Four tabs is the whole app: Home, the browser, this phone's videos, and
+    /// everything you sign into. Nothing is left over to offer, and a button
+    /// that opens a menu of nothing is worse than no button — which is why the
+    /// strip drops it on its own when this is empty.
     ///
-    /// Network Stream is deliberately not here either. It is a URL field and a
-    /// Play button, used once and left; it has a card on Home and opens as a
-    /// sheet from there, which is the right shape for somewhere you go and come
+    /// The machinery stays. It costs a filter and an array, and the next thing
+    /// that deserves a seat but not everybody's seat goes in here.
+    ///
+    /// Network Stream will not be that thing. It is a URL field and a Play
+    /// button, used once and left; it has a card on Home and opens as a sheet
+    /// from there, which is the right shape for somewhere you go and come
     /// straight back out of.
-    nonisolated static var addable: [AppDestination] { [.ftp] }
+    nonisolated static var addable: [AppDestination] { [] }
 
     nonisolated static let storageKey = "shell.added_tabs"
     nonisolated static let lastTabKey = "shell.last_tab"
@@ -64,11 +69,9 @@ final class TabSet: ObservableObject {
 
     /// One-time, for installs from before Servers swallowed the IPTV tab.
     ///
-    /// Everybody had IPTV in the strip, and the playlists they added are still
-    /// there — they are inside Servers now. Without this the tab would simply
-    /// vanish in an update and take a working subscription with it, as far as
-    /// anybody could tell. A fresh install — which is what App Review always
-    /// gets — never runs this and starts with the three.
+    /// The playlists somebody added are still there — they are inside Servers
+    /// now — but the tab they were reached through is gone, and the app would
+    /// otherwise open on Home with no explanation.
     nonisolated static let migratedKey = "shell.servers_merge_migrated"
 
     private init() {
@@ -84,25 +87,19 @@ final class TabSet: ObservableObject {
         guard !defaults.bool(forKey: migratedKey) else { return }
         defaults.set(true, forKey: migratedKey)
 
-        // Only for somebody who has used the app before. A first launch has
-        // no stored tab of any kind, and seeding one there would be the
-        // opposite of opt-in.
-        let returning = defaults.object(forKey: storageKey) != nil
-            || defaults.string(forKey: lastTabKey) != nil
-        guard returning else { return }
-
-        // Everybody returning gets Servers: either they had IPTV, which lives
-        // in there now, or they had the Server tab, which is the same tab
-        // under a wider name.
-        var keys = defaults.stringArray(forKey: storageKey) ?? []
-        keys.removeAll { $0 == AppDestination.iptv.key }
-        if !keys.contains(AppDestination.ftp.key) { keys.append(AppDestination.ftp.key) }
-        defaults.set(keys, forKey: storageKey)
-
-        // And somebody who was last on the IPTV tab is sent to the tab that
-        // now holds it, rather than to Home because the stored one is gone.
+        // Nothing to add to the strip any more — Servers is one of the
+        // four. The one thing still worth carrying across is where somebody
+        // was: last on the IPTV tab means last in what is now Servers, and
+        // without this they would be sent to Home because the tab they
+        // remember no longer exists.
         if defaults.string(forKey: lastTabKey) == AppDestination.iptv.key {
             defaults.set(AppDestination.ftp.key, forKey: lastTabKey)
+        }
+        // And the stored strip loses a tab that is now fixed, so it cannot
+        // come back out of storage and sit in the row twice.
+        if var keys = defaults.stringArray(forKey: storageKey) {
+            keys.removeAll { $0 == AppDestination.iptv.key || $0 == AppDestination.ftp.key }
+            defaults.set(keys, forKey: storageKey)
         }
     }
 

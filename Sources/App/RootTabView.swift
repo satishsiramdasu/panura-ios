@@ -401,6 +401,7 @@ struct RootTabView: View {
                 )
             }
             layer(.videos) { LocalVideosView() }
+            layer(.ftp) { ServersView() }
             // Only the ones that are actually in the strip. A destination
             // nobody has added is not composed at all, which is the difference
             // between an opt-in tab and a hidden one.
@@ -410,15 +411,16 @@ struct RootTabView: View {
         }
     }
 
-    /// A tab somebody added from the `+`. Only Server is offered — see
-    /// `TabSet.addable` — and `TabSet.storedTabs` filters anything else out
-    /// before it reaches here.
+    /// A tab somebody added from the `+`.
+    ///
+    /// Nothing is offered today — `TabSet.addable` is empty and the strip
+    /// drops the `+` accordingly — so this never runs. It stays because the
+    /// next thing that deserves a seat but not everybody's seat goes through
+    /// here, and because `TabSet` still filters stored tabs against the pool,
+    /// which is what stops an old one reappearing.
     @ViewBuilder
     private func added(_ destination: AppDestination) -> some View {
-        switch destination {
-        case .ftp: ServersView()
-        default: EmptyView()
-        }
+        EmptyView()
     }
 
     @ViewBuilder
