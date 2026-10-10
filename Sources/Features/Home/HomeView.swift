@@ -292,71 +292,15 @@ struct HomeView: View {
         .accessibilityLabel("Search or enter website")
     }
 
-    /// The private switch, as a control that shows its own state.
-    ///
-    /// It used to be a pair of spectacles inside the search field, which asked
-    /// people to know that a glyph changing colour meant a mode changing — and
-    /// put a second target inside the one thing on the screen you are meant to
-    /// press. A labelled switch beside the field says what it is and what it
-    /// is set to without being read.
     private var privateTile: some View {
-        Group {
-            // A menu, not a confirmation dialog, and only when there is a page
-            // to lose. A dialog appears where the system decides — a sheet
-            // from the bottom of the phone, or on an iPad a popover aimed at
-            // the root of Home, hanging mid-screen pointing at nothing. A menu
-            // opens on its own label, beside the control that raised it. With
-            // nothing open the switch has no consequence worth a question, and
-            // a menu that always opened would put a step in front of a toggle.
-            if session.hasPage {
-                Menu {
-                    Section(PrivateSwitch.message(turningOn: !session.privateMode)) {
-                        Button {
-                            session.setPrivateMode(!session.privateMode, keepingPage: true)
-                        } label: {
-                            Label("Keep this page", systemImage: "doc")
-                        }
-                        Button(role: .destructive) {
-                            session.setPrivateMode(!session.privateMode, keepingPage: false)
-                        } label: {
-                            Label("Close it", systemImage: "xmark")
-                        }
-                    }
-                } label: {
-                    privateTileLabel
-                }
-                .menuOrder(.fixed)
-            } else {
-                Button {
-                    session.setPrivateMode(!session.privateMode)
-                } label: {
-                    privateTileLabel
-                }
-                .buttonStyle(.plain)
-            }
+        PrivateSwitchTile(
+            on: session.privateMode,
+            hasPage: session.hasPage,
+            fill: barFill,
+            height: Self.barHeight
+        ) { keepPage in
+            session.setPrivateMode(!session.privateMode, keepingPage: keepPage)
         }
-        .accessibilityLabel(
-            session.privateMode ? "Turn off private browsing" : "Private browsing"
-        )
-    }
-
-    private var privateTileLabel: some View {
-        VStack(spacing: 4) {
-            Text("PRIVATE")
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(0.4)
-                .foregroundStyle(
-                    session.privateMode ? PanuraTheme.incognito : PanuraTheme.onSurfaceVariant
-                )
-            MiniSwitch(on: session.privateMode, tint: PanuraTheme.incognito)
-        }
-        .padding(.horizontal, 10)
-        .frame(height: Self.barHeight)
-        .background(
-            barFill,
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     /// Both halves of the bar are this tall and this colour, which is what

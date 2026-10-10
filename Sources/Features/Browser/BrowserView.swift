@@ -203,6 +203,14 @@ struct BrowserView: View {
     /// is allowed to do has no other way in.
     private var header: some View {
         PanuraHeader(showsGlyph: false) {
+            HStack(spacing: 8) {
+                addressPill
+                privateTile
+            }
+        }
+    }
+
+    private var addressPill: some View {
             AddressPill(
                 title: model.pageTitle,
                 url: model.currentURL?.absoluteString ?? "",
@@ -252,6 +260,24 @@ struct BrowserView: View {
                     }
                 }
             )
+    }
+
+    /// The same tile Home has, in the same place, doing the same thing.
+    ///
+    /// This is the other screen where a session is started, and the one where
+    /// it matters most that the state is readable — the switch used to be
+    /// reachable only from inside the site panel, two taps in, with nothing on
+    /// the bar announcing which mode you were in but a faint tint.
+    private var privateTile: some View {
+        PrivateSwitchTile(
+            on: session.privateMode,
+            hasPage: model.currentURL != nil,
+            fill: session.privateMode
+                ? PanuraTheme.incognito.opacity(0.22)
+                : PanuraTheme.surfaceVariant,
+            height: 44
+        ) { keepPage in
+            switchPrivate(keepPage: keepPage)
         }
     }
 
