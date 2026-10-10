@@ -81,7 +81,7 @@ struct ServersView: View {
             Text("Servers")
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            addMenu
+            addMenu("Add")
         }
         .padding(.horizontal, 12)
         .frame(height: 52)
@@ -90,7 +90,7 @@ struct ServersView: View {
 
     /// One menu for every kind, grouped by what somebody is holding: an
     /// address a list comes back from, or a machine with files on it.
-    private var addMenu: some View {
+    private func addMenu(_ title: String, filled: Bool = false) -> some View {
         Menu {
             Section("Playlist") {
                 Button("M3U") { addSource(.m3u) }
@@ -103,13 +103,23 @@ struct ServersView: View {
                 Button("FTP") { addServer(.ftp) }
             }
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(PanuraTheme.accent)
-                .frame(width: 34, height: 34)
-                .contentShape(Rectangle())
+            // A word, not a `+`. The plus is the right glyph where what gets
+            // added is obvious from the screen — one more of the thing you are
+            // already looking at. Here it opens a menu of six kinds across two
+            // groups, and on an empty screen there is nothing to be one more
+            // of, so the button has to say what it does.
+            HStack(spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+            }
+            .foregroundStyle(filled ? PanuraTheme.onAccent : PanuraTheme.accent)
+            .padding(.horizontal, filled ? 18 : 10)
+            .padding(.vertical, filled ? 10 : 6)
+            .background(filled ? PanuraTheme.accent : .clear, in: Capsule())
+            .contentShape(Capsule())
         }
-        .accessibilityLabel("Add a server")
     }
 
     private var list: some View {
@@ -235,7 +245,7 @@ struct ServersView: View {
                 .font(.footnote)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 .multilineTextAlignment(.center)
-            addMenu
+            addMenu("Add a server", filled: true)
                 .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
