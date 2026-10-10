@@ -287,6 +287,9 @@ struct IPTVView: View {
                 .lineLimit(2, reservesSpace: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // The reserved second line is empty space for most tiles, and empty
+        // space in a label is not a target unless it is told to be.
+        .contentShape(Rectangle())
     }
 
     /// The picture part of a tile, at whichever of the two shapes.
@@ -416,6 +419,7 @@ struct IPTVView: View {
                         .lineLimit(2, reservesSpace: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         } else {
@@ -462,6 +466,7 @@ struct IPTVView: View {
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     /// One row: the search, and the group it is filtered to.
@@ -674,6 +679,7 @@ struct IPTVView: View {
                 )
         }
         .padding(.vertical, 5)
+        .contentShape(Rectangle())
     }
 
     private func play(_ channel: M3UChannel) {

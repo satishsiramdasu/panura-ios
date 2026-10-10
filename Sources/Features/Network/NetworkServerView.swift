@@ -141,6 +141,7 @@ struct NetworkServerView: View {
             }
         }
         .padding(.vertical, 6)
+        .contentShape(Rectangle())
     }
 
     private func open(_ entry: NetworkBrowser.Entry) {

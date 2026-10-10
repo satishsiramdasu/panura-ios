@@ -209,6 +209,10 @@ struct ServersView: View {
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
         }
         .padding(.vertical, 4)
+        // A `Spacer` draws nothing and so is nothing to hit: without a shape
+        // of its own the row answered on the title and the chevron and was
+        // dead in between, which is most of its width.
+        .contentShape(Rectangle())
     }
 
     private var empty: some View {
