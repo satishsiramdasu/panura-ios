@@ -1,36 +1,48 @@
 import SwiftUI
 
+/// Where a `RemoteImage` has got to.
+///
+/// **Top-level, not nested in `RemoteImage`.** As `RemoteImage<Content>.Phase`
+/// the content closure's type reads `(RemoteImage<Content>.Phase) -> Content`,
+/// so inferring `Content` requires knowing `Content`: every call site failed
+/// with "generic parameter 'Content' could not be inferred". This is why
+/// `AsyncImagePhase` is a top-level type too, which was worth noticing before
+/// copying the shape and not after.
+///
+/// `empty` and `failure` are distinct even though most call sites draw the
+/// same placeholder for both, because the few that do not — a poster with a
+/// second URL to try — need to know which happened.
+enum RemoteImagePhase {
+    case empty
+    case success(Image)
+    case failure
+}
+
 /// `AsyncImage`, with the cache it does not have.
 ///
 /// Deliberately the same shape as the thing it replaces — both initialisers,
-/// and a phase enum with the same case names — so a call site changes by one
-/// word and the `switch` inside it is untouched. The point is that every
-/// remote picture in the app goes through `ImageStore`; making each one think
-/// about caching would guarantee that some of them did not.
+/// and phase cases with the same names — so a call site changes by one word
+/// and the `switch` inside it is untouched. The point is that every remote
+/// picture in the app goes through `ImageStore`; making each one think about
+/// caching would guarantee that some of them did not.
 ///
 /// What it does differently, beyond the cache:
 ///
 /// - **Draws a cached picture on the first frame.** `AsyncImage` always starts
 ///   at `.empty` and arrives at the image a frame or two later, so scrolling
 ///   back over a grid you have already seen flashes placeholders at pictures
-///   that are sitting in memory. A synchronous cache read in `init` means a
-///   hit is simply already there.
+///   sitting in memory. A synchronous cache read in `init` means a hit is
+///   simply already there.
 /// - **Keeps nothing of its own.** The image lives in the store, so a tile
 ///   torn down by a `LazyVGrid` costs nothing to rebuild.
 struct RemoteImage<Content: View>: View {
-    enum Phase {
-        case empty
-        case success(Image)
-        case failure
-    }
-
     private let url: URL?
-    private let content: (Phase) -> Content
+    private let content: (RemoteImagePhase) -> Content
 
     @State private var loaded: UIImage?
     @State private var failed = false
 
-    init(url: URL?, @ViewBuilder content: @escaping (Phase) -> Content) {
+    init(url: URL?, @ViewBuilder content: @escaping (RemoteImagePhase) -> Content) {
         self.url = url
         self.content = content
         // A hit is drawn on frame one rather than after a state change.
@@ -44,7 +56,7 @@ struct RemoteImage<Content: View>: View {
             .task(id: url) { await load() }
     }
 
-    private var phase: Phase {
+    private var phase: RemoteImagePhase {
         if let loaded { return .success(Image(uiImage: loaded)) }
         return failed ? .failure : .empty
     }

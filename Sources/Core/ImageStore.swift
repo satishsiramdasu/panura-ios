@@ -90,12 +90,26 @@ final class ImageStore {
     /// The picture, from wherever it is cheapest.
     func image(for url: URL) async -> UIImage? {
         if let hit = cached(url) { return hit }
+        let (task, isOurs) = fetch(url)
+        let image = await task.value
+        // Only the caller that started the fetch tidies up after it. The
+        // others are passengers on the same task and must not clear an entry
+        // a *later* fetch of the same URL may already have put there.
+        if isOurs { finish(url, image) }
+        return image
+    }
 
+    /// The task fetching `url`, started if nobody else has, and whether this
+    /// caller is the one that started it.
+    ///
+    /// Synchronous on purpose: `NSLock.lock()` is unavailable from an async
+    /// context — the compiler cannot see that nothing is awaited between the
+    /// two calls, and in Swift 6 it is an error rather than a warning. Doing
+    /// the locking in a plain function makes that true by construction.
+    private func fetch(_ url: URL) -> (Task<UIImage?, Never>, Bool) {
         lock.lock()
-        if let running = inFlight[url] {
-            lock.unlock()
-            return await running.value
-        }
+        defer { lock.unlock() }
+        if let running = inFlight[url] { return (running, false) }
         let session = self.session
         let task = Task<UIImage?, Never> {
             guard let (data, response) = try? await session.data(from: url) else { return nil }
@@ -110,18 +124,16 @@ final class ImageStore {
             return raw.preparingForDisplay() ?? raw
         }
         inFlight[url] = task
-        lock.unlock()
+        return (task, true)
+    }
 
-        let image = await task.value
-
+    /// Drops the finished task and keeps what it produced.
+    private func finish(_ url: URL, _ image: UIImage?) {
         lock.lock()
         inFlight[url] = nil
         lock.unlock()
-
-        if let image {
-            memory.setObject(image, forKey: url as NSURL, cost: image.bitmapBytes)
-        }
-        return image
+        guard let image else { return }
+        memory.setObject(image, forKey: url as NSURL, cost: image.bitmapBytes)
     }
 
     /// Everything, on the way out of Clear Data. The disk cache goes with it —

@@ -8,9 +8,11 @@ import SwiftUI
 /// hours, so opening one tomorrow means detecting it again. A library entry
 /// keeps the asset's identifier, which outlives any file path Photos hands out.
 struct WatchLaterList: View {
-    var onPlay: (MediaItem, PlayerPlaylist?) -> Void
     /// Opens a saved page in the browser.
     var onOpenBrowser: (String) -> Void
+    /// Hands a library video to `LibrarySheet`, which closes before the player
+    /// is presented — see `PlaybackSession.playWhenDismissed`.
+    var onPlay: (MediaItem, PlayerPlaylist?) -> Void
 
     @ObservedObject private var store = BrowsingStore.shared
     @State private var opening: String?
