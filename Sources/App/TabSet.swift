@@ -2,19 +2,19 @@ import Foundation
 
 /// Which tabs this person has in their strip, and which one the app opens on.
 ///
-/// Three are always there — Home, Browser, Videos — because they are what the
-/// app is for everybody. Everything else is opt-in: the `+` at the end of the
-/// row offers what is left, and choosing one puts it in the strip for good and
-/// takes you straight to it. When there is nothing left to offer, the `+` goes
-/// away rather than opening an empty menu.
+/// Four, all fixed: Home, Browser, Videos, Servers. That is the whole app, so
+/// `addable` is empty and the `+` the strip used to end with is gone — see
+/// `fixed` and `addable` for why each of those is the case.
 ///
-/// This is why the strip is a list and not a constant. A tab somebody added is
-/// a tab they asked for, which is a much better reason for it to be taking up a
-/// quarter of the row than our guess about who wants IPTV.
+/// It stays a list rather than a constant because the opt-in machinery is
+/// still here and costs a filter and an array. The `+` reappears on its own
+/// the moment `addable` has anything in it, and a tab somebody added is a much
+/// better reason for it to take a fifth of the row than our guess about who
+/// wants it.
 ///
 /// The ceiling is arithmetic, not a rule: `fixed + addable` is every tab there
-/// can ever be, so the row cannot grow past five. Four and a half fit the
-/// width — see `AppChrome.tabsPerRow` and `AppChrome.tabPeek`.
+/// can ever be. Four and a half fit the width — see `AppChrome.tabsPerRow` and
+/// `AppChrome.tabPeek`.
 @MainActor
 final class TabSet: ObservableObject {
     static let shared = TabSet()

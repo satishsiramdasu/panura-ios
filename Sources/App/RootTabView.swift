@@ -238,8 +238,13 @@ struct RootTabView: View {
     /// No Library either. It was here for a moment, on the argument that a
     /// menu works from every tab — but what you have saved and what you have
     /// watched are things you go looking for, and looking for something is
-    /// what Home is for. They are tiles at the bottom of it, where Settings
-    /// and Clear Data already live.
+    /// what Home is for. They are tiles at the bottom of it, beside Clear
+    /// Data.
+    ///
+    /// Settings and Report a problem are here and *only* here, for the
+    /// mirror-image reason: they are wanted from whichever screen you are on
+    /// when something goes wrong, and a tile repeating a menu row teaches
+    /// people the menu is not worth opening.
     @ViewBuilder
     private var menuRows: some View {
         Button {

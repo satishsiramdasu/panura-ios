@@ -187,20 +187,22 @@ struct BrowserView: View {
         model.load(address)
     }
 
-    // MARK: header — Panura mark · address pill · cast
+    // MARK: header — address pill · private switch
 
-    /// The Panura mark opens the site panel; the address pill is only an
+    /// The site's own mark opens the site panel; the address pill is only an
     /// address again.
     ///
     /// The panel used to hang off a button inside the pill, which made the pill
     /// carry three jobs — where you are, saving the page, and every browser
-    /// option — in the width of a phone. The mark is already in this bar, it is
-    /// the one control that belongs to the app rather than to the page, and
-    /// this is the slot Brave, Chrome and Safari all use for the same panel.
+    /// option — in the width of a phone. It moved to the pill's leading cell,
+    /// the slot Brave, Chrome and Safari all reserve for whatever the address
+    /// is about, and then the artwork in that cell became the site's favicon
+    /// rather than the app's mark: this is the one screen where the app is the
+    /// least interesting thing present.
     ///
-    /// Going Home by tapping the mark goes with it. That was a second way to
-    /// reach a place the app bar already has a seat for; opening what this site
-    /// is allowed to do has no other way in.
+    /// Going Home by tapping the mark went with it. That was a second way to
+    /// reach a place the tab strip already has a seat for; opening what this
+    /// site is allowed to do has no other way in.
     private var header: some View {
         PanuraHeader(showsGlyph: false) {
             HStack(spacing: 8) {

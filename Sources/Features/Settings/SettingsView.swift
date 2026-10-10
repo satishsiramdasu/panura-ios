@@ -23,9 +23,9 @@ enum SettingsScreen: Hashable {
         case .playback: return "Playback"
         case .subtitles: return "Subtitles"
         case .gestures: return "Gestures"
-        case .localVideos: return "Videos"
+        case .localVideos: return "Local Videos"
         case .about: return "About"
-        case .support: return "Help & Support"
+        case .support: return "Support"
         }
     }
 }

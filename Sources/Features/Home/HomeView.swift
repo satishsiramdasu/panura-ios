@@ -181,10 +181,8 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    /// The two that are actions rather than places, kept small because that is
-    /// what they are.
-    /// The small things: two lists, and three ways to tidy up after
-    /// yourself.
+    /// The small things: two lists you go looking for, and one way to tidy
+    /// up after yourself.
     ///
     /// Watch Later and Watch History are here rather than in the header menu,
     /// which is where they briefly were. A menu is the right place for
@@ -225,20 +223,7 @@ struct HomeView: View {
         showLibrary = true
     }
 
-    /// The same tile, opening a menu instead of running an action.
-    private func optionMenu<Items: View>(
-        _ title: String,
-        systemImage: String,
-        @ViewBuilder items: () -> Items
-    ) -> some View {
-        Menu {
-            items()
-        } label: {
-            optionTileLabel(title, systemImage: systemImage)
-        }
-    }
-
-    /// The same header, whose action button opens a menu.
+    /// One of the squares at the foot of the screen.
     private func optionTile(
         _ title: String,
         systemImage: String,
@@ -250,7 +235,8 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    /// The drawing, shared by the button form and the menu form.
+    /// The drawing. Lifted out of `optionTile` because a menu form used to
+    /// share it; kept separate because the next one will.
     private func optionTileLabel(_ title: String, systemImage: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: systemImage)
@@ -339,9 +325,7 @@ struct HomeView: View {
             : PanuraTheme.surfaceVariant
     }
 
-    // MARK: brand + action links
-
-    /// The eyeglasses, worn by whichever control the pill is carrying.
+    // MARK: community links
 
     /// Share and Telegram, at the foot of the screen.
     ///

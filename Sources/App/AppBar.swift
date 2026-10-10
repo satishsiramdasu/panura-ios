@@ -9,8 +9,10 @@ import SwiftUI
 /// all five, in one list, with room to say what each one is for.
 enum AppDestination: Hashable, CaseIterable {
     case home, web, videos, stream, watchLater, settings
-    /// IPTV is one of the four fixed tabs; Server is offered by the shell's
-    /// `+`. See `TabSet`.
+    /// `ftp` is the Servers tab — one of the four fixed ones. `iptv` is no
+    /// longer a tab at all: the case survives only so a strip or a last-tab
+    /// key written before the merge can still be read and redirected. See
+    /// `TabSet.migrateIfNeeded`.
     case iptv, ftp
 
     var title: String {

@@ -30,8 +30,10 @@ struct PanuraHeader<Content: View>: View {
     /// protection is switched off for the site in the address bar.
     var glyphMarked: Bool = false
     var glyphLabel: String = "Home"
-    /// False where the content draws the mark itself — the browser and Home,
-    /// whose pills carry it in their leading cell.
+    /// False where the content has its own leading cell and the mark would be
+    /// a second one. The browser puts the site's favicon there; Home puts a
+    /// magnifying glass, and so carries no mark at all — four tabs below
+    /// already say which app this is.
     var showsGlyph: Bool = true
     /// Recolours the mark itself. Private browsing uses it.
     ///
