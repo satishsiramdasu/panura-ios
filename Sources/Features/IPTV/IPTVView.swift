@@ -561,8 +561,16 @@ struct IPTVView: View {
     /// glyph and a clear button.
     private var filterRow: some View {
         HStack(spacing: 8) {
-            searchField.layoutPriority(1)
-            if !searching, !store.groups.isEmpty { groupButton }
+            // The field is the one that gives way. It used to hold the
+            // priority, which a `TextField` spends by taking every point on
+            // offer — so the group button was squeezed to its chevron and the
+            // chosen category, which it was drawing all along, had nowhere to
+            // appear. The name is the whole reason the button exists, so the
+            // name is sized first and the field takes what is left.
+            searchField.frame(minWidth: 120)
+            if !searching, !store.groups.isEmpty {
+                groupButton.layoutPriority(1)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -619,7 +627,10 @@ struct IPTVView: View {
             group == nil ? PanuraTheme.surfaceContainerHigh : PanuraTheme.accentSoft,
             in: Capsule()
         )
-        .frame(maxWidth: 170, alignment: .trailing)
+        // Roughly half the row on a phone, and never more: enough for two
+        // or three words of a category name, with the rest trimmed. A name
+        // that fits takes only what it needs.
+        .frame(maxWidth: 168, alignment: .trailing)
         .accessibilityLabel("Group: " + (group ?? "all"))
     }
 
