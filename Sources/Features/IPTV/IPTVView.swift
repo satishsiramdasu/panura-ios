@@ -567,7 +567,11 @@ struct IPTVView: View {
             // chosen category, which it was drawing all along, had nowhere to
             // appear. The name is the whole reason the button exists, so the
             // name is sized first and the field takes what is left.
-            searchField.frame(minWidth: 120)
+            // `maxWidth: .infinity` is what actually fills the row. A min
+            // alone only stops it shrinking: the stack then hands the field
+            // its ideal width — glyph plus placeholder — and leaves the rest
+            // of the row empty between the two controls.
+            searchField.frame(minWidth: 120, maxWidth: .infinity)
             if !searching, !store.groups.isEmpty {
                 groupButton.layoutPriority(1)
             }
