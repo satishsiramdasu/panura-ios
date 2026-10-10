@@ -245,106 +245,136 @@ struct HomeView: View {
         .contentShape(Rectangle())
     }
 
-    // MARK: header — address pill, same shape as the browser's top bar
+    // MARK: header — a search bar, and the private switch beside it
 
+    /// Home asks one question — what do you want to watch — so its bar is a
+    /// search field and nothing else, with the one piece of state that changes
+    /// the answer standing next to it rather than hidden inside it.
+    ///
+    /// **No Panura mark in the field.** It sat in the pill's leading cell so
+    /// this bar and the browser's would read as one bar, which they do not:
+    /// the browser's pill shows a page and belongs to that page, while this
+    /// one is empty and is asking. A magnifying glass says what the control
+    /// does; a logo says which app you are in, and four tabs below already
+    /// said that.
     private var header: some View {
         PanuraHeader(showsGlyph: false) {
-            AddressPill(
-                title: "",
-                url: "",
-                placeholder: session.privateMode
-                    ? "Search privately"
-                    : "Search Google or enter website",
-                // Tinted for private browsing, as the browser's bar is — the
-                // two read as one bar and have to agree.
-                background: session.privateMode
-                    ? PanuraTheme.incognito.opacity(0.22)
-                    : PanuraTheme.surfaceVariant,
-                onTap: { withoutSheetAnimation { showAddress = true } },
-                leading: {
-                    // The mark, in the same cell the browser's pill gives it,
-                    // so the two bars stay the one bar they are meant to read
-                    // as. It replaces a magnifying glass that was saying what
-                    // the placeholder beside it already says.
-                    //
-                    // Tapping it opens the address screen like the rest of the
-                    // pill: there is nowhere for a Home glyph to go, and a mark
-                    // that does nothing inside a control that does something is
-                    // a dead spot in the middle of the target.
-                    PanuraGlyph(
-                        onTap: { withoutSheetAnimation { showAddress = true } },
-                        label: "Search or enter website",
-                        tint: session.privateMode ? PanuraTheme.incognito : nil
-                    )
-                },
-                trailing: {
-                    // Same cell Android puts it in: last inside Home's pill. It
-                    // is browser state, but this is where a session is started,
-                    // so this is where it has to be switchable — the browser's
-                    // own copy of the switch is in its options panel.
-                    // A menu, not a confirmation dialog.
-                    //
-                    // A dialog appears where the system decides: a sheet from
-                    // the bottom of the phone, and on an iPad a popover aimed
-                    // at whatever it was attached to - which was the root of
-                    // Home, so it hung mid-screen pointing at nothing. Either
-                    // way the question arrived a long way from the switch that
-                    // raised it. A menu opens on its own label, so it is beside
-                    // the control on both.
-                    //
-                    // Only when there is a page to lose. With nothing open the
-                    // switch has no consequence worth a question, and a menu
-                    // that always opens would put a step in front of a toggle.
-                    //
-                    // The words are the browser's, from `PrivateSwitch`: one
-                    // switch with one consequence, described once.
-                    Group {
-                        if session.hasPage {
-                            Menu {
-                                Section(PrivateSwitch.message(turningOn: !session.privateMode)) {
-                                    Button {
-                                        session.setPrivateMode(!session.privateMode, keepingPage: true)
-                                    } label: {
-                                        Label("Keep this page", systemImage: "doc")
-                                    }
-                                    Button(role: .destructive) {
-                                        session.setPrivateMode(!session.privateMode, keepingPage: false)
-                                    } label: {
-                                        Label("Close it", systemImage: "xmark")
-                                    }
-                                }
-                            } label: {
-                                privateGlyph
-                            }
-                            .menuOrder(.fixed)
-                        } else {
-                            Button {
-                                session.setPrivateMode(!session.privateMode)
-                            } label: {
-                                privateGlyph
-                            }
-                            .buttonStyle(.plain)
+            HStack(spacing: 8) {
+                searchPill
+                privateTile
+            }
+        }
+    }
+
+    private var searchPill: some View {
+        Button { withoutSheetAnimation { showAddress = true } } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                Text(
+                    session.privateMode
+                        ? "Search privately"
+                        : "Search Google or enter website"
+                )
+                .font(.subheadline)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: Self.barHeight)
+            .frame(maxWidth: .infinity)
+            .background(barFill, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Search or enter website")
+    }
+
+    /// The private switch, as a control that shows its own state.
+    ///
+    /// It used to be a pair of spectacles inside the search field, which asked
+    /// people to know that a glyph changing colour meant a mode changing — and
+    /// put a second target inside the one thing on the screen you are meant to
+    /// press. A labelled switch beside the field says what it is and what it
+    /// is set to without being read.
+    private var privateTile: some View {
+        Group {
+            // A menu, not a confirmation dialog, and only when there is a page
+            // to lose. A dialog appears where the system decides — a sheet
+            // from the bottom of the phone, or on an iPad a popover aimed at
+            // the root of Home, hanging mid-screen pointing at nothing. A menu
+            // opens on its own label, beside the control that raised it. With
+            // nothing open the switch has no consequence worth a question, and
+            // a menu that always opened would put a step in front of a toggle.
+            if session.hasPage {
+                Menu {
+                    Section(PrivateSwitch.message(turningOn: !session.privateMode)) {
+                        Button {
+                            session.setPrivateMode(!session.privateMode, keepingPage: true)
+                        } label: {
+                            Label("Keep this page", systemImage: "doc")
+                        }
+                        Button(role: .destructive) {
+                            session.setPrivateMode(!session.privateMode, keepingPage: false)
+                        } label: {
+                            Label("Close it", systemImage: "xmark")
                         }
                     }
-                    .accessibilityLabel(
-                        session.privateMode ? "Turn off private browsing" : "Private browsing"
-                    )
+                } label: {
+                    privateTileLabel
                 }
-            )
+                .menuOrder(.fixed)
+            } else {
+                Button {
+                    session.setPrivateMode(!session.privateMode)
+                } label: {
+                    privateTileLabel
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .accessibilityLabel(
+            session.privateMode ? "Turn off private browsing" : "Private browsing"
+        )
+    }
+
+    private var privateTileLabel: some View {
+        VStack(spacing: 4) {
+            Text("PRIVATE")
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.4)
+                .foregroundStyle(
+                    session.privateMode ? PanuraTheme.incognito : PanuraTheme.onSurfaceVariant
+                )
+            MiniSwitch(on: session.privateMode, tint: PanuraTheme.incognito)
+        }
+        .padding(.horizontal, 10)
+        .frame(height: Self.barHeight)
+        .background(
+            barFill,
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    /// Both halves of the bar are this tall and this colour, which is what
+    /// makes them read as one control split in two rather than as a field with
+    /// a button parked next to it.
+    private static let barHeight: CGFloat = 46
+
+    private var barFill: Color {
+        // Tinted for private browsing, as the browser's own bar is — the two
+        // have to agree about what a session looks like.
+        session.privateMode
+            ? PanuraTheme.incognito.opacity(0.22)
+            : PanuraTheme.surfaceVariant
     }
 
     // MARK: brand + action links
 
     /// The eyeglasses, worn by whichever control the pill is carrying.
-    private var privateGlyph: some View {
-        Image(systemName: "eyeglasses")
-            .font(.system(size: 15))
-            .foregroundStyle(
-                session.privateMode ? PanuraTheme.incognito : PanuraTheme.onSurfaceVariant
-            )
-            .frame(width: 38, height: 38)
-    }
 
     /// Share and Telegram, at the foot of the screen.
     ///
