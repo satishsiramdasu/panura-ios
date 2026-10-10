@@ -28,12 +28,18 @@ struct IPTVView: View {
     @State private var editing: IPTVSource?
     @State private var editingPassword = ""
     @State private var openSeries: XtreamSeries?
-    /// Whether the search field has the row. False almost always — see
-    /// `filterRow`.
+    /// Whether the search field has the whole row to itself.
     @State private var searching = false
+    @State private var showGroups = false
     @FocusState private var searchFocused: Bool
 
     private static let reveal = Animation.easeInOut(duration: 0.2)
+
+    /// Above this many groups, the dropdown becomes a sheet that can be
+    /// searched. A native menu has no search and no index, so a panel's three
+    /// hundred categories in one are the chip strip's problem rotated ninety
+    /// degrees.
+    private static let menuLimit = 20
 
     var body: some View {
         Group {
@@ -539,37 +545,82 @@ struct IPTVView: View {
         .padding(.vertical, 4)
     }
 
-    /// One row: the search, then the group pills.
+    /// One row: the search, and the group it is filtered to.
     ///
-    /// The field used to own a full row of its own above the pills — two rows
-    /// of furniture over a list whose entire job is to show as many channels as
-    /// the screen will hold. A search field spends almost all of its life
-    /// empty, so it spends almost all of its life as a glyph, and takes the row
-    /// only while somebody is using it.
+    /// **The pills are gone.** A strip of them is the right control for five
+    /// or ten options — the Videos tab's albums — and the wrong one here: an
+    /// Xtream panel hands back hundreds of categories with long names, so the
+    /// strip became a scroll inside a scroll in which the one you wanted was
+    /// never on screen, and the chip saying where you were was usually
+    /// scrolled off it. A button that always reads the current group says the
+    /// same thing in a fixed space.
+    ///
+    /// The field takes the whole row while it is being typed in, and shares it
+    /// the rest of the time. A fixed half-and-half wastes the half nobody is
+    /// using, and half a row is not enough for "telugu movies" alongside a
+    /// glyph and a clear button.
     private var filterRow: some View {
         HStack(spacing: 8) {
-            if searching {
-                searchField
-            } else {
-                Button {
-                    withAnimation(Self.reveal) { searching = true }
-                    searchFocused = true
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        .frame(width: 34, height: 30)
-                        .background(PanuraTheme.surfaceContainerHigh, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Search")
-
-                if store.groups.isEmpty { Spacer() } else { groupStrip }
-            }
+            searchField.layoutPriority(1)
+            if !searching, !store.groups.isEmpty { groupButton }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(chrome)
+        .onChange(of: searchFocused) { focused in
+            withAnimation(Self.reveal) { searching = focused || !query.isEmpty }
+        }
+        .sheet(isPresented: $showGroups) {
+            IPTVGroupSheet(groups: store.groups, selection: $group)
+        }
+    }
+
+    /// The current group, and the way to change it.
+    ///
+    /// A menu while the list is short enough to read standing up; a searchable
+    /// sheet when it is not. Same button either way, so there is one place to
+    /// press whatever the provider's category list looks like.
+    @ViewBuilder
+    private var groupButton: some View {
+        if store.groups.count <= Self.menuLimit {
+            Menu {
+                Picker("Group", selection: Binding(
+                    get: { group ?? "" },
+                    set: { group = $0.isEmpty ? nil : $0 }
+                )) {
+                    Text("All groups").tag("")
+                    ForEach(store.groups, id: \.self) { Text($0).tag($0) }
+                }
+            } label: {
+                groupLabel
+            }
+        } else {
+            Button { showGroups = true } label: { groupLabel }
+                .buttonStyle(.plain)
+        }
+    }
+
+    /// Reads "All groups" when nothing is chosen — a dropdown has no equivalent
+    /// of the highlighted "All" chip, and without it people filter themselves
+    /// into a category and cannot find the way back out.
+    private var groupLabel: some View {
+        HStack(spacing: 4) {
+            Text(group ?? "All groups")
+                .font(.caption.weight(group == nil ? .regular : .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+        }
+        .foregroundStyle(group == nil ? PanuraTheme.onSurfaceVariant : PanuraTheme.onAccentSoft)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            group == nil ? PanuraTheme.surfaceContainerHigh : PanuraTheme.accentSoft,
+            in: Capsule()
+        )
+        .frame(maxWidth: 170, alignment: .trailing)
+        .accessibilityLabel("Group: " + (group ?? "all"))
     }
 
     private var searchField: some View {
@@ -582,18 +633,20 @@ struct IPTVView: View {
                 .autocorrectionDisabled()
                 .submitLabel(.search)
                 .focused($searchFocused)
-            // Clears and closes in one press. Closing without clearing would
-            // leave a filtered list with nothing on screen saying why.
-            Button {
-                query = ""
-                searchFocused = false
-                withAnimation(Self.reveal) { searching = false }
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            // Clears and closes in one press. Closing without clearing
+            // would leave a filtered list with nothing on screen saying why.
+            if searching {
+                Button {
+                    query = ""
+                    searchFocused = false
+                    withAnimation(Self.reveal) { searching = false }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close search")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
@@ -607,33 +660,6 @@ struct IPTVView: View {
         case .movies: return "Search films"
         case .series: return "Search series"
         }
-    }
-
-    private var groupStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                chip("All", active: group == nil) { group = nil }
-                ForEach(store.groups, id: \.self) { name in
-                    chip(name, active: group == name) { group = name }
-                }
-            }
-        }
-    }
-
-    private func chip(_ title: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption.weight(active ? .semibold : .regular))
-                .lineLimit(1)
-                .foregroundStyle(active ? PanuraTheme.onAccentSoft : PanuraTheme.onSurfaceVariant)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(
-                    active ? PanuraTheme.accentSoft : PanuraTheme.surfaceContainerHigh,
-                    in: Capsule()
-                )
-        }
-        .buttonStyle(.plain)
     }
 
     private func channelRow(_ channel: M3UChannel) -> some View {
@@ -676,6 +702,71 @@ struct IPTVView: View {
         PlaybackSession.shared.play(
             MediaItem(title: channel.name, url: channel.url, thumbnailURL: channel.logo)
         )
+    }
+}
+
+/// Every group, searchable.
+///
+/// For the panel with three hundred categories: a menu would list them all
+/// with no way to find one, and the chip strip it replaced was worse. The
+/// search here is over group names, not channels — the two are different
+/// questions and the row above asks the other one.
+private struct IPTVGroupSheet: View {
+    let groups: [String]
+    @Binding var selection: String?
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    private var matches: [String] {
+        let text = query.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return groups }
+        return groups.filter { $0.range(of: text, options: .caseInsensitive) != nil }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                row("All groups", chosen: selection == nil) { selection = nil }
+                ForEach(matches, id: \.self) { name in
+                    row(name, chosen: selection == name) { selection = name }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(PanuraTheme.background)
+            .searchable(text: $query, prompt: "Search groups")
+            .navigationTitle("Groups")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func row(
+        _ name: String, chosen: Bool, action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            action()
+            dismiss()
+        } label: {
+            HStack {
+                Text(name)
+                    .font(.subheadline)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                if chosen {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(PanuraTheme.accent)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(PanuraTheme.background)
     }
 }
 
