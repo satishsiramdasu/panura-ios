@@ -794,8 +794,8 @@ struct IPTVSourceForm: View {
                     Text(source.kind.detail)
                 }
 
-                Section("Playlist") {
-                    TextField("Name (optional)", text: $source.name)
+                Section("Name") {
+                    TextField("What you want to call it", text: $source.name)
                 }
 
                 switch source.kind {
@@ -836,7 +836,7 @@ struct IPTVSourceForm: View {
                     Text("Panura supplies no channels and cannot help with a subscription. The playlist and everything in it belongs to whoever you got it from.")
                 }
             }
-            .navigationTitle("Playlist")
+            .navigationTitle("Playlist server")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

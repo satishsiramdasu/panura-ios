@@ -88,11 +88,14 @@ struct ServersView: View {
         .background(chrome)
     }
 
-    /// One menu for every kind, grouped by what somebody is holding: an
-    /// address a list comes back from, or a machine with files on it.
+    /// One menu for every kind, grouped by what the thing is rather than by
+    /// what protocol it speaks: a playlist server hands back a list of
+    /// channels, a file server hands back folders. Media servers — Jellyfin,
+    /// Plex, Emby — are the third group when they arrive, and they go in here
+    /// rather than anywhere else for the same reason these two did.
     private func addMenu(_ title: String, filled: Bool = false) -> some View {
         Menu {
-            Section("Playlist") {
+            Section("Playlist server") {
                 Button("M3U") { addSource(.m3u) }
                 Button("Xtream") { addSource(.xtream) }
                 Button("Dispatcharr") { addSource(.dispatcharr) }
@@ -125,7 +128,7 @@ struct ServersView: View {
     private var list: some View {
         List {
             if !iptv.sources.isEmpty {
-                Section("Playlists") {
+                Section("Playlist servers") {
                     ForEach(iptv.sources) { source in
                         Button { Task { await iptv.load(source) } } label: {
                             row(

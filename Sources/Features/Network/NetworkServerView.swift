@@ -204,7 +204,7 @@ struct NetworkServerForm: View {
                     Text("Leave both empty for a guest or anonymous server. The password is kept in the iOS keychain on this device and is never sent anywhere but to this server.")
                 }
             }
-            .navigationTitle("Server")
+            .navigationTitle("File server")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
