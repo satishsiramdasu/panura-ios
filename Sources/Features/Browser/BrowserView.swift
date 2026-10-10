@@ -281,15 +281,6 @@ struct BrowserView: View {
         }
     }
 
-    private var privateCell: some View {
-        gridCellLabel(
-            "eyeglasses",
-            session.privateMode ? "Private On" : "Private",
-            enabled: true,
-            tint: session.privateMode ? PanuraTheme.incognito : nil
-        )
-    }
-
     /// Flips private browsing whichever way it is currently pointing.
     private func switchPrivate(keepPage: Bool) {
         if session.privateMode { leavePrivateMode(keepPage: keepPage) }
@@ -431,35 +422,6 @@ struct BrowserView: View {
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
             Spacer(minLength: 8)
-            // Where the star used to be in the pill. A site is bookmarked once
-            // and then never again, so it does not need to be on screen at all
-            // times - but it does need to be beside the site it is about, and
-            // this row names that site.
-            Button {
-                guard let current = model.currentURL,
-                      let root = SiteTitle.root(of: current)
-                else { return }
-                let key = root.absoluteString
-                if store.isBookmark(key) {
-                    store.removeBookmark(url: key)
-                    flash("Bookmark removed")
-                } else {
-                    bookmarkSite(root)
-                    flash("Bookmarked")
-                }
-                closeMenu()
-            } label: {
-                let saved = store.isBookmark(bookmarkKey)
-                Image(systemName: saved ? "bookmark.fill" : "bookmark")
-                    .font(.system(size: 15))
-                    .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!pageUsable)
-            .accessibilityLabel("Bookmark this site")
-
             if let host, !siteSettings.isDefault(host: host) {
                 Button("Reset") {
                     let wasBlocking = siteSettings.value(.adBlock, host: host)
@@ -473,6 +435,41 @@ struct BrowserView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
+    }
+
+    /// Keeps this site, or stops keeping it.
+    ///
+    /// The label is the state, not the verb: a filled glyph over
+    /// "Bookmarked" says this site is kept, the same way the panel's switches
+    /// show what they are set to. Naming the action instead ("Bookmark") would
+    /// leave a cell that looks identical whether or not the site is already
+    /// saved, which is the thing somebody opens this panel to find out.
+    @ViewBuilder
+    private var bookmarkCell: some View {
+        let saved = store.isBookmark(bookmarkKey)
+        Button {
+            guard let current = model.currentURL,
+                  let root = SiteTitle.root(of: current)
+            else { return }
+            let key = root.absoluteString
+            if saved {
+                store.removeBookmark(url: key)
+                flash("Bookmark removed")
+            } else {
+                bookmarkSite(root)
+                flash("Bookmarked")
+            }
+            closeMenu()
+        } label: {
+            gridCellLabel(
+                saved ? "bookmark.fill" : "bookmark",
+                saved ? "Bookmarked" : "Bookmark",
+                enabled: pageUsable,
+                tint: saved ? PanuraTheme.accent : nil
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!pageUsable)
     }
 
     /// The address a bookmark of this site would be stored under.
@@ -514,53 +511,17 @@ struct BrowserView: View {
     ///
     /// It was five and included Settings and Desktop Site, both of which now
     /// exist lower down this same panel — one as the row at the foot, the other
-    /// as a switch. Private browsing takes a seat here instead of the full-width
-    /// row it used to have: it is a thing you turn on, like the rest of them.
+    /// as a switch.
+    ///
+    /// Private browsing is no longer among them. It has a labelled switch on
+    /// the bar itself now, beside the address, where it is readable without
+    /// opening anything — and a mode you can be in without noticing has no
+    /// business being two taps deep. Bookmark takes the vacated seat: it was a
+    /// 15-point glyph in the corner of the row above, the smallest target on
+    /// the panel, for the one action here that most people actually came for.
     private var actionRow: some View {
         HStack(alignment: .top, spacing: 0) {
-            // A menu on the cell, not a dialog on the screen.
-            //
-            // Both used to be `confirmationDialog`s hung off the browser's
-            // outer stack, which on a phone is a sheet from the bottom edge and
-            // on an iPad a popover pointing at whatever it was attached to -
-            // either way, a question about this switch arriving nowhere near
-            // it. A menu opens on its own label. The panel is left standing
-            // while it is up, because closing it first would take the cell the
-            // menu is pointing at.
-            //
-            // Only when there is a page to lose; otherwise the switch has no
-            // consequence worth a question.
-            Group {
-                if pageUsable {
-                    Menu {
-                        Section(PrivateSwitch.message(turningOn: !session.privateMode)) {
-                            Button {
-                                showMenu = false
-                                switchPrivate(keepPage: true)
-                            } label: {
-                                Label("Keep this page", systemImage: "doc")
-                            }
-                            Button(role: .destructive) {
-                                showMenu = false
-                                switchPrivate(keepPage: false)
-                            } label: {
-                                Label("Close it", systemImage: "xmark")
-                            }
-                        }
-                    } label: {
-                        privateCell
-                    }
-                    .menuOrder(.fixed)
-                } else {
-                    Button {
-                        showMenu = false
-                        switchPrivate(keepPage: false)
-                    } label: {
-                        privateCell
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+            bookmarkCell
 
             if let url = model.currentURL {
                 ShareLink(item: url) {
