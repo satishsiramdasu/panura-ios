@@ -169,7 +169,7 @@ struct IPTVView: View {
                     .foregroundStyle(PanuraTheme.accent)
                 Text("No playlist yet")
                     .font(.headline)
-                Text("Sign in to an Xtream or Dispatcharr server, or paste an M3U address. Panura ships no channels of its own — it opens the playlist you enter, and nothing else.")
+                Text("Sign in to an Xtream or Dispatcharr server, or paste an M3U address — any IPTV subscription you already pay for. Panura ships no channels of its own: it opens the playlist you enter, and nothing else.")
                     .font(.footnote)
                     .foregroundStyle(PanuraTheme.onSurfaceVariant)
                     .multilineTextAlignment(.center)

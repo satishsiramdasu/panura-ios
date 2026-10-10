@@ -2,11 +2,11 @@ import Foundation
 
 /// Which tabs this person has in their strip, and which one the app opens on.
 ///
-/// Four are always there — Home, Browser, Videos, IPTV — because they are what
-/// the app is. Everything else is opt-in: the `+` at the end of the row offers
-/// what is left, and choosing one puts it in the strip for good and takes you
-/// straight to it. When there is nothing left to offer, the `+` goes away
-/// rather than opening an empty menu.
+/// Three are always there — Home, Browser, Videos — because they are what the
+/// app is for everybody. Everything else is opt-in: the `+` at the end of the
+/// row offers what is left, and choosing one puts it in the strip for good and
+/// takes you straight to it. When there is nothing left to offer, the `+` goes
+/// away rather than opening an empty menu.
 ///
 /// This is why the strip is a list and not a constant. A tab somebody added is
 /// a tab they asked for, which is a much better reason for it to be taking up a
@@ -21,11 +21,15 @@ final class TabSet: ObservableObject {
 
     /// Always present, always in this order, never removable.
     ///
-    /// IPTV earns its seat rather than sitting behind the `+`: for most of the
-    /// people this app is for it is the reason the app is open, and putting the
-    /// main feature behind a button that says "add" is asking them to go
-    /// looking for it.
-    nonisolated static let fixed: [AppDestination] = [.home, .web, .videos, .iptv]
+    /// IPTV used to be here and is not any more. Two reasons, and the product
+    /// one came first: most people who open this app have no subscription to
+    /// put in it, and a quarter of the row spent on a tab they will never
+    /// press is worse than one tap for the people who will. The second is that
+    /// the word is the one most likely to make an App Store reviewer go
+    /// looking for a pirate service, and behind the `+` it is read in context
+    /// — a thing somebody deliberately added, next to the line saying Panura
+    /// supplies no channels — rather than being the first thing on screen.
+    nonisolated static let fixed: [AppDestination] = [.home, .web, .videos]
 
     /// The pool the `+` offers from.
     ///
@@ -36,7 +40,7 @@ final class TabSet: ObservableObject {
     /// Play button, used once and left; it has a card on Home and opens as a
     /// sheet from there, which is the right shape for somewhere you go and come
     /// straight back out of.
-    nonisolated static var addable: [AppDestination] { [.ftp] }
+    nonisolated static var addable: [AppDestination] { [.iptv, .ftp] }
 
     nonisolated static let storageKey = "shell.added_tabs"
     nonisolated static let lastTabKey = "shell.last_tab"
@@ -56,18 +60,48 @@ final class TabSet: ObservableObject {
         Self.addable.filter { !added.contains($0) }
     }
 
+    /// One-time, for installs from before IPTV moved behind the `+`.
+    ///
+    /// Everybody had it in the strip then, so taking it away in an update
+    /// would look like the feature had been removed. A fresh install — which
+    /// is what App Review always gets — never runs this and starts with the
+    /// three.
+    nonisolated static let migratedKey = "shell.iptv_opt_in_migrated"
+
     private init() {
         added = Self.storedTabs()
+    }
+
+    /// Runs before anything reads the stored tabs, which is why it lives in
+    /// `storedTabs()` rather than in `init`: the shell asks `openingTab()` for
+    /// its initial state, and that is a static call that may land before this
+    /// object exists.
+    nonisolated static func migrateIfNeeded() {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: migratedKey) else { return }
+        defaults.set(true, forKey: migratedKey)
+
+        // Only for somebody who has used the app before. A first launch has
+        // no stored tab of any kind, and seeding one there would be the
+        // opposite of opt-in.
+        let returning = defaults.object(forKey: storageKey) != nil
+            || defaults.string(forKey: lastTabKey) != nil
+        guard returning else { return }
+
+        var keys = defaults.stringArray(forKey: storageKey) ?? []
+        guard !keys.contains(AppDestination.iptv.key) else { return }
+        keys.insert(AppDestination.iptv.key, at: 0)
+        defaults.set(keys, forKey: storageKey)
     }
 
     /// The tabs that were added, as storage has them.
     ///
     /// Filtered against the pool as it stands now, not as it stood when they
-    /// were written. That covers a tab since withdrawn, and it covers IPTV,
-    /// which somebody may have added from the `+` before it became one of the
-    /// four — left alone it would come back out of storage and sit in the strip
-    /// a second time.
+    /// were written — which covers a tab since withdrawn, and covered IPTV
+    /// back when it was one of the fixed three and could otherwise have come
+    /// out of storage and sat in the strip a second time.
     nonisolated static func storedTabs() -> [AppDestination] {
+        migrateIfNeeded()
         let keys = UserDefaults.standard.stringArray(forKey: storageKey) ?? []
         let pool = addable
         return keys.compactMap(AppDestination.init(key:)).filter { pool.contains($0) }

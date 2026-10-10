@@ -475,6 +475,13 @@ struct RootTabView: View {
         default:
             break
         }
+        // An opt-in tab reached from anywhere else — Home's Explore card,
+        // say — joins the strip on the way. Going somewhere that then has no
+        // tab to come back to is the kind of half-arrival that makes a strip
+        // look unreliable.
+        if TabSet.addable.contains(destination), !tabSet.tabs.contains(destination) {
+            tabSet.add(destination)
+        }
         withAnimation(.easeInOut(duration: 0.22)) {
             selection = destination
         }

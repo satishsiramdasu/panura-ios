@@ -11,6 +11,8 @@ struct HomeView: View {
 
     @ObservedObject private var store = BrowsingStore.shared
     @ObservedObject private var session = BrowserSession.shared
+    /// Only to know whether the IPTV card still has a job — see Explore.
+    @ObservedObject private var tabSet = TabSet.shared
 
     @State private var showAddress = false
     @State private var showBookmarksSheet = false
@@ -148,6 +150,14 @@ struct HomeView: View {
                 // on screen. A card that goes where the tab goes is a second
                 // door to the same room, and the two of them were taking half
                 // of Explore to repeat what the tab strip already says.
+                // IPTV is opt-in and lives behind the strip's `+`, which is
+                // the right default for the many people with no subscription
+                // and a poor hiding place for the ones who have one. The card
+                // is the second door: it adds the tab and opens it, and goes
+                // away once the tab is there.
+                if !tabSet.tabs.contains(.iptv) {
+                    sectionCard(.iptv, title: "IPTV")
+                }
                 sectionCard(.stream, title: "Network\nStream")
                 sectionCard(.watchLater, title: "Watch\nLater")
             }
