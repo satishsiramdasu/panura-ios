@@ -278,18 +278,41 @@ struct TrickPlay {
 }
 
 /// What the thumb is over: the still, and the part of the programme it is in.
+///
+/// **A fixed size, deliberately.** The player floats this above the bar at a
+/// known distance, and a box that measured itself would need its height read
+/// back up the view tree — which is both more machinery and a thing that
+/// arrives a frame late. Fixed also means it does not grow as the first sprite
+/// sheet lands or jump between a one-word chapter name and a long one.
 struct ScrubPreview: View {
+    static let width: CGFloat = 160
+    static let imageHeight: CGFloat = 90
+    static let captionHeight: CGFloat = 36
+
+    static func height(withImage: Bool) -> CGFloat {
+        (withImage ? imageHeight : 0) + captionHeight
+    }
+
     let image: UIImage?
+    /// Whether to keep room for a still — true for any stream that has sprite
+    /// sheets at all, so the box is its final size before the first one
+    /// arrives.
+    let reservesImage: Bool
     let chapter: String?
     let time: String
 
     var body: some View {
         VStack(spacing: 0) {
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 160, height: 90)
+            if reservesImage {
+                Rectangle()
+                    .fill(Color.black.opacity(0.55))
+                    .frame(width: Self.width, height: Self.imageHeight)
+                    .overlay {
+                        if let image {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        }
+                    }
+                    .clipped()
             }
             VStack(spacing: 1) {
                 if let chapter, !chapter.isEmpty {
@@ -301,7 +324,7 @@ struct ScrubPreview: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
-            .padding(.vertical, 6)
+            .frame(width: Self.width, height: Self.captionHeight)
         }
         .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 10))
         .overlay(

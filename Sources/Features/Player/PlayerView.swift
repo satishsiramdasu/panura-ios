@@ -586,6 +586,11 @@ struct PlayerView<Model: PlayerEngine>: View {
             }
             .padding(.horizontal, 18)
             .padding(.top, 6)
+            // Above the centre transport, which is drawn after it. The scrub
+            // preview hangs off the bar and the play button sat on top of it —
+            // the thumbnail appeared to go *under* the button. Nothing else
+            // overlaps, so this changes only that.
+            .zIndex(1)
 
             // Transport on the TRUE screen center, independent of bar heights.
             // Hidden only during a swipe-seek (not a slider drag) so the seek HUD
@@ -647,43 +652,21 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     private var bottomBar: some View {
         VStack(spacing: 12) {
-            // Above the slider and only while a thumb is on it. A stream with
-            // neither chapters nor sprites never draws this at all.
-            if let f = seekPreview, extras.hasPreviews || !extras.chapters.isEmpty {
-                ScrubPreview(
-                    image: extras.preview,
-                    chapter: extras.chapter(at: Double(f) * model.totalSeconds)?.title,
-                    time: PlayerClock.format(Double(f) * model.totalSeconds)
-                )
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
-
             HStack(spacing: 12) {
                 Text(displayElapsed).font(.caption.monospacedDigit())
-                Slider(
-                    value: Binding(
-                        get: { Double(seekPreview ?? model.position) },
-                        // Each increment stamps the clock rather than
-                        // cancelling anything. That, not the editing-ended
-                        // callback, is what guarantees the controls eventually
-                        // go: the last stamp lands as the finger lifts.
-                        set: {
-                            seekPreview = Float($0)
-                            lastScrubMove = Date()
-                            extras.requestPreview(at: $0 * model.totalSeconds)
-                        }
-                    ),
-                    in: 0...1,
-                    onEditingChanged: { editing in
-                        if editing { showControlsNow() }
-                        else {
-                            if let f = seekPreview { model.seek(to: f) }
-                            seekPreview = nil; lastScrubMove = nil; scheduleHide()
-                            extras.clearPreview()
-                        }
-                    }
+                ChapterScrubber(
+                    fraction: Double(seekPreview ?? model.position),
+                    cuts: chapterCuts,
+                    active: seekPreview != nil,
+                    onScrub: { scrub(to: $0) },
+                    onCommit: { commitScrub(to: $0) }
                 )
-                .tint(PanuraTheme.accent)
+                // An overlay, so the preview hangs above the bar without
+                // moving it. It used to be a row inside this stack, which
+                // pushed the whole bottom bar up into the middle of the screen
+                // the moment a finger touched the slider — the controls
+                // shifting under the finger that is using them.
+                .overlay(alignment: .topLeading) { scrubPreviewLayer }
                 // Time left (dimmed) stacked over total duration — matches Android.
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(model.remaining)
@@ -743,6 +726,66 @@ struct PlayerView<Model: PlayerEngine>: View {
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.35)
         .foregroundStyle(.white)
+    }
+
+    /// Chapter starts as fractions of the whole, for the bar's cuts.
+    ///
+    /// Empty until the duration is known: every cut would otherwise be at zero
+    /// and the bar would draw a stack of hairlines at its left edge.
+    private var chapterCuts: [Double] {
+        let total = model.totalSeconds
+        guard total > 0, extras.chapters.count > 1 else { return [] }
+        return extras.chapters.map { $0.start / total }
+    }
+
+    /// A finger is moving along the bar.
+    ///
+    /// Each move stamps the clock rather than cancelling the hide. That, and
+    /// not an editing-ended callback, is what guarantees the controls
+    /// eventually go — see `lastScrubMove`.
+    private func scrub(to fraction: Double) {
+        if seekPreview == nil { showControlsNow() }
+        seekPreview = Float(fraction)
+        lastScrubMove = Date()
+        extras.requestPreview(at: fraction * model.totalSeconds)
+    }
+
+    private func commitScrub(to fraction: Double) {
+        model.seek(to: Float(fraction))
+        seekPreview = nil
+        lastScrubMove = nil
+        scheduleHide()
+        extras.clearPreview()
+    }
+
+    /// The still under the thumb, floating above the bar and tracking it.
+    ///
+    /// Positioned by hand inside the scrubber's own width: at either end it
+    /// stops with its edge over the end of the bar, which is as far as it can
+    /// go and still be on screen, since the bar is the widest thing in the row.
+    @ViewBuilder
+    private var scrubPreviewLayer: some View {
+        if let f = seekPreview, extras.hasPreviews || !extras.chapters.isEmpty {
+            let seconds = Double(f) * model.totalSeconds
+            GeometryReader { geo in
+                ScrubPreview(
+                    image: extras.preview,
+                    reservesImage: extras.hasPreviews,
+                    chapter: extras.chapter(at: seconds)?.title,
+                    time: PlayerClock.format(seconds)
+                )
+                .offset(
+                    x: previewX(CGFloat(f), in: geo.size.width),
+                    y: -(ScrubPreview.height(withImage: extras.hasPreviews) + 8)
+                )
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func previewX(_ fraction: CGFloat, in width: CGFloat) -> CGFloat {
+        let centre = fraction * width - ScrubPreview.width / 2
+        return min(max(centre, 0), max(0, width - ScrubPreview.width))
     }
 
     private var displayElapsed: String {

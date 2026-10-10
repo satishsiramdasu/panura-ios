@@ -827,19 +827,25 @@ private struct IPTVSeriesSheet: View {
 
     private func row(_ episode: XtreamEpisode) -> some View {
         HStack(spacing: 12) {
-            AsyncImage(url: episode.still) { phase in
-                if case .success(let image) = phase {
-                    image.resizable().scaledToFill()
-                } else {
-                    Image(systemName: "play.rectangle")
-                        .font(.system(size: 14))
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            // Big enough to be a picture rather than a bullet point. A still is
+            // the only thing that distinguishes one episode from the next when
+            // the panel leaves the titles empty, which it routinely does, and
+            // at thumbnail size it was doing that job for nobody.
+            Rectangle()
+                .fill(PanuraTheme.surfaceContainerHigh)
+                .frame(width: 112, height: 63)
+                .overlay {
+                    AsyncImage(url: episode.still) { phase in
+                        if case .success(let image) = phase {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Image(systemName: "play.rectangle")
+                                .font(.system(size: 18))
+                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        }
+                    }
                 }
-            }
-            .frame(width: 56, height: 32)
-            .clipped()
-            .background(PanuraTheme.surfaceContainerHigh, in: RoundedRectangle(cornerRadius: 6))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("\(episode.number). \(episode.title)")
