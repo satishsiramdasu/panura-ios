@@ -128,13 +128,20 @@ struct ServersView: View {
                         .buttonStyle(.plain)
                         .listRowBackground(PanuraTheme.background)
                         .swipeActions {
+                            // Tinted by hand. A swipe action takes the app's
+                            // accent unless told otherwise, so the two came
+                            // out the same amber — Remove not reading as
+                            // destructive, and a white pencil nearly invisible
+                            // on it.
                             Button(role: .destructive) { iptv.remove(source) } label: {
                                 Label("Remove", systemImage: "trash")
                             }
+                            .tint(.red)
                             Button {
                                 editingPassword = iptv.password(for: source)
                                 editingSource = source
                             } label: { Label("Edit", systemImage: "pencil") }
+                                .tint(PanuraTheme.outline)
                         }
                     }
                 }
@@ -159,10 +166,12 @@ struct ServersView: View {
                             Button(role: .destructive) { servers.remove(server) } label: {
                                 Label("Remove", systemImage: "trash")
                             }
+                            .tint(.red)
                             Button {
                                 serverPassword = servers.password(for: server)
                                 editingServer = server
                             } label: { Label("Edit", systemImage: "pencil") }
+                                .tint(PanuraTheme.outline)
                         }
                     }
                 }
