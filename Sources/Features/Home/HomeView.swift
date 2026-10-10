@@ -16,7 +16,6 @@ struct HomeView: View {
     @State private var showBookmarksSheet = false
     @State private var editingBookmark: SiteEntry?
 
-    @State private var showReport = false
     @State private var showClearData = false
     @State private var showLibrary = false
     /// Which of the Library's three tabs the next opening lands on.
@@ -106,7 +105,6 @@ struct HomeView: View {
             }
         }
         .sheet(item: $editingBookmark) { BookmarkEditor(entry: $0) }
-        .sheet(isPresented: $showReport) { ReportIssueSheet(source: "home") }
         .confirmationDialog(
             "Remove from Continue Watching?",
             isPresented: Binding(
@@ -196,24 +194,25 @@ struct HomeView: View {
     /// header shortcut vanished exactly when there was nothing to continue,
     /// which is when somebody wants what they saved.
     ///
-    /// Settings is not somewhere you go, it is something you adjust, which is
-    /// why it sits with these rather than with the cards above.
+    /// Settings and Report Issue are not here. Both are one tap away in the
+    /// header menu, from every tab — a tile that repeats a menu row teaches
+    /// people the menu is not worth opening, and Home has better things to
+    /// spend a third of a row on.
+    ///
+    /// Clear Data stays, because its only other home is two levels down in
+    /// Settings → Web Browser, and it is the one thing on that path people
+    /// actually come looking for.
     ///
     /// "Clear Data", not "Clear History": history is one of seven things it
     /// can take. One tile, one dialog, every choice in it — rather than a menu
     /// whose items each did a different amount of damage with no way to see
     /// what any of them would take.
     private var housekeepingRow: some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
-            spacing: 10
-        ) {
+        HStack(spacing: 10) {
             optionTile("Watch Later", systemImage: "clock") { openLibrary(.later) }
             optionTile("Watch History", systemImage: "checkmark.circle") {
                 openLibrary(.history)
             }
-            optionTile("Settings", systemImage: "gearshape") { onOpenSection(.settings) }
-            optionTile("Report Issue", systemImage: "ladybug") { showReport = true }
             optionTile("Clear Data", systemImage: "trash") {
                 withAnimation(.easeOut(duration: 0.15)) { showClearData = true }
             }
