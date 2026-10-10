@@ -63,6 +63,9 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     // Gesture HUD state
     @State private var seekPreview: Float?          // fraction while horizontal-dragging
+    /// Chapters and scrub thumbnails, when the stream carries them. Empty and
+    /// silent when it does not.
+    @StateObject private var extras = HLSExtras()
     @State private var seekBase: Float = 0
     @State private var isGestureSeeking = false     // true only for the swipe-seek (not the slider)
     @State private var verticalAxis: PlayerZone?    // active vertical gesture: .left=brightness, .right=volume
@@ -217,6 +220,9 @@ struct PlayerView<Model: PlayerEngine>: View {
         }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
+        // Chapters and sprite sheets, if the stream has them. Keyed on the URL
+        // so a next-in-playlist reloads them and a redraw does not.
+        .task(id: item.url) { await extras.load(item) }
         .onAppear {
             index = playlist?.startIndex ?? 0
             OrientationManager.allowAll()
@@ -291,11 +297,13 @@ struct PlayerView<Model: PlayerEngine>: View {
                 // regardless of length (it used to jump the whole video).
                 let target = Double(seekBase) * total + Double(dx) * 90 * gestureSensitivity
                 seekPreview = clamp01f(Float(target / total))
+                extras.requestPreview(at: target)
                 lastScrubMove = Date()
             },
             onSeekEnded: {
                 guard !locked, let f = seekPreview else { return }
                 model.seek(to: f); seekPreview = nil; isGestureSeeking = false
+                extras.clearPreview()
                 lastScrubMove = nil; scheduleHide()
             },
             onVerticalBegan: { beginVertical($0) },
@@ -489,6 +497,12 @@ struct PlayerView<Model: PlayerEngine>: View {
         let target = Double(f) * total
         let delta = target - model.elapsedSeconds
         return VStack(spacing: 4) {
+            if let chapter = extras.chapter(at: target)?.title {
+                Text(chapter)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(1)
+            }
             Text(PlayerClock.format(target)).font(.title2.monospacedDigit().bold())
             Text("\(delta >= 0 ? "+" : "-")\(PlayerClock.format(abs(delta)))")
                 .font(.caption.monospacedDigit())
@@ -633,6 +647,17 @@ struct PlayerView<Model: PlayerEngine>: View {
 
     private var bottomBar: some View {
         VStack(spacing: 12) {
+            // Above the slider and only while a thumb is on it. A stream with
+            // neither chapters nor sprites never draws this at all.
+            if let f = seekPreview, extras.hasPreviews || !extras.chapters.isEmpty {
+                ScrubPreview(
+                    image: extras.preview,
+                    chapter: extras.chapter(at: Double(f) * model.totalSeconds)?.title,
+                    time: PlayerClock.format(Double(f) * model.totalSeconds)
+                )
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+
             HStack(spacing: 12) {
                 Text(displayElapsed).font(.caption.monospacedDigit())
                 Slider(
@@ -642,7 +667,11 @@ struct PlayerView<Model: PlayerEngine>: View {
                         // cancelling anything. That, not the editing-ended
                         // callback, is what guarantees the controls eventually
                         // go: the last stamp lands as the finger lifts.
-                        set: { seekPreview = Float($0); lastScrubMove = Date() }
+                        set: {
+                            seekPreview = Float($0)
+                            lastScrubMove = Date()
+                            extras.requestPreview(at: $0 * model.totalSeconds)
+                        }
                     ),
                     in: 0...1,
                     onEditingChanged: { editing in
@@ -650,6 +679,7 @@ struct PlayerView<Model: PlayerEngine>: View {
                         else {
                             if let f = seekPreview { model.seek(to: f) }
                             seekPreview = nil; lastScrubMove = nil; scheduleHide()
+                            extras.clearPreview()
                         }
                     }
                 )
