@@ -235,24 +235,17 @@ struct RootTabView: View {
     /// away, and a menu that repeats what the bar already offers teaches people
     /// the bar is not to be trusted.
     ///
-    /// Library is here rather than on Home, and it is the one door that is
-    /// always open. Home's shortcut sits in Continue Watching's header, which
-    /// is not drawn when there is nothing to continue — precisely the state in
-    /// which somebody goes looking for the thing they saved for later. A menu
-    /// row costs no space on any screen and works from every tab.
+    /// No Library either. It was here for a moment, on the argument that a
+    /// menu works from every tab — but what you have saved and what you have
+    /// watched are things you go looking for, and looking for something is
+    /// what Home is for. They are tiles at the bottom of it, where Settings
+    /// and Clear Data already live.
     @ViewBuilder
     private var menuRows: some View {
         Button {
             settingsDeepLink = nil
             showSettings = true
         } label: { Label("Settings", systemImage: "gearshape") }
-
-        Button {
-            libraryTab = .watching
-            showLibrary = true
-        } label: {
-            Label("Library", systemImage: "bookmark")
-        }
 
         Button { showFAQ = true } label: {
             Label("Help", systemImage: "questionmark.circle")

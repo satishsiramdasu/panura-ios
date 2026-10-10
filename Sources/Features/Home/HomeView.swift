@@ -18,7 +18,9 @@ struct HomeView: View {
 
     @State private var showReport = false
     @State private var showClearData = false
-    @State private var showResumeManager = false
+    @State private var showLibrary = false
+    /// Which of the Library's three tabs the next opening lands on.
+    @State private var libraryTab: LibrarySheet.Tab = .watching
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
     /// The card a Remove was asked for — held until it is confirmed.
@@ -93,8 +95,8 @@ struct HomeView: View {
             )
         }
         .sheet(isPresented: $showBookmarksSheet) { bookmarksSheet }
-        .sheet(isPresented: $showResumeManager) {
-            LibrarySheet(tab: .watching, onOpenBrowser: onOpenBrowser)
+        .sheet(isPresented: $showLibrary) {
+            LibrarySheet(tab: libraryTab, onOpenBrowser: onOpenBrowser)
         }
         // An overlay, not a sheet: it has to arrive centred, where the eye
         // already is, rather than sliding up from the far end of the screen.
@@ -183,23 +185,45 @@ struct HomeView: View {
 
     /// The two that are actions rather than places, kept small because that is
     /// what they are.
+    /// The small things: two lists, and three ways to tidy up after
+    /// yourself.
+    ///
+    /// Watch Later and Watch History are here rather than in the header menu,
+    /// which is where they briefly were. A menu is the right place for
+    /// something you need from every screen; these are things you go looking
+    /// for, and looking for something on Home is what Home is. It also means
+    /// Watch Later no longer depends on Continue Watching having a row — the
+    /// header shortcut vanished exactly when there was nothing to continue,
+    /// which is when somebody wants what they saved.
+    ///
+    /// Settings is not somewhere you go, it is something you adjust, which is
+    /// why it sits with these rather than with the cards above.
+    ///
+    /// "Clear Data", not "Clear History": history is one of seven things it
+    /// can take. One tile, one dialog, every choice in it — rather than a menu
+    /// whose items each did a different amount of damage with no way to see
+    /// what any of them would take.
     private var housekeepingRow: some View {
-        HStack(spacing: 10) {
-            // Settings is not somewhere you go, it is something you adjust, and
-            // it was taking a quarter of the navigation grid to say so. Down
-            // here with the other two things you do to the app rather than with
-            // it, and still on the drawer for anyone who looks there first.
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
+            spacing: 10
+        ) {
+            optionTile("Watch Later", systemImage: "clock") { openLibrary(.later) }
+            optionTile("Watch History", systemImage: "checkmark.circle") {
+                openLibrary(.history)
+            }
             optionTile("Settings", systemImage: "gearshape") { onOpenSection(.settings) }
             optionTile("Report Issue", systemImage: "ladybug") { showReport = true }
-            // "Clear Data", not "Clear History": history is one of seven
-            // things it can take. One tile, one dialog, every choice in it -
-            // rather than a menu whose items each did a different amount of
-            // damage with no way to see what any of them would take.
             optionTile("Clear Data", systemImage: "trash") {
                 withAnimation(.easeOut(duration: 0.15)) { showClearData = true }
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    private func openLibrary(_ tab: LibrarySheet.Tab) {
+        libraryTab = tab
+        showLibrary = true
     }
 
     /// The same tile, opening a menu instead of running an action.
@@ -476,7 +500,7 @@ struct HomeView: View {
                 actionLabel: "Manage",
                 actionIcon: "slider.horizontal.3"
             ) {
-                showResumeManager = true
+                openLibrary(.watching)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
