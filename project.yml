@@ -106,6 +106,24 @@ targets:
         NSAppTransportSecurity:
           NSAllowsArbitraryLoads: true # extraction/browser hits arbitrary http hosts
         NSPhotoLibraryUsageDescription: Panura needs access to your videos to play and cast them.
+        # The browser's, not the app's. A web page can ask for the camera two
+        # ways — an upload field with `capture`, which WebKit answers with the
+        # system camera, and `getUserMedia` — and iOS kills the process the
+        # instant either touches the hardware without a string here. That is
+        # what "the app closes when I press Camera" was: not a dismissal, a
+        # termination.
+        #
+        # The microphone goes with it. The same upload field can record video,
+        # and video capture takes both; declaring only the camera moves the
+        # crash rather than fixing it.
+        NSCameraUsageDescription: >-
+          A website you are using can ask to take a photo or record a video —
+          to upload one, or for a video call. Panura passes the request on and
+          uses the camera for nothing else.
+        NSMicrophoneUsageDescription: >-
+          A website you are using can ask to record sound, which is also needed
+          to record a video. Panura passes the request on and uses the
+          microphone for nothing else.
         # Local network — required for PanuraCast and Chromecast discovery.
         #
         # ONE block only. There were briefly two, and since a later duplicate key

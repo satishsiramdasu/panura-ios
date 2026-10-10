@@ -584,6 +584,24 @@ struct WebViewContainer: UIViewRepresentable {
             """
         }
 
+        /// A page asking for the camera or the microphone.
+        ///
+        /// Unimplemented, WebKit's default is to refuse without asking — so a
+        /// video call or a camera upload fails silently and looks like a
+        /// broken page. `.prompt` hands it to WebKit's own permission sheet,
+        /// which names the site and remembers nothing: the page asks, the
+        /// person answers, and iOS asks for the hardware permission on top of
+        /// that the first time.
+        func webView(
+            _ webView: WKWebView,
+            requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+            initiatedByFrame frame: WKFrameInfo,
+            type: WKMediaCaptureType,
+            decisionHandler: @escaping (WKPermissionDecision) -> Void
+        ) {
+            decisionHandler(.prompt)
+        }
+
         // Catch direct video navigations the JS scan would miss.
         func webView(
             _ webView: WKWebView,
