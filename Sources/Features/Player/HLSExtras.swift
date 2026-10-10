@@ -168,7 +168,7 @@ final class HLSExtras: ObservableObject {
         text.split(whereSeparator: \.isNewline).first { $0.contains(needle) }.map(String.init)
     }
 
-    static func attribute(_ key: String, in line: String?) -> String? {
+    nonisolated static func attribute(_ key: String, in line: String?) -> String? {
         guard let line, let range = line.range(of: "\(key)=\"") else { return nil }
         let rest = line[range.upperBound...]
         guard let end = rest.firstIndex(of: "\"") else { return nil }
@@ -176,7 +176,12 @@ final class HLSExtras: ObservableObject {
     }
 
     /// Unquoted attribute, for `LAYOUT=5x4` and `DURATION=10.000`.
-    static func value(_ key: String, in line: String) -> String? {
+    ///
+    /// `nonisolated`, along with `attribute` above, because `TrickPlay` parses
+    /// a playlist in its own initialiser and is not an actor's business — this
+    /// class is `@MainActor` for its published state, and string reading has
+    /// nothing to do with that.
+    nonisolated static func value(_ key: String, in line: String) -> String? {
         guard let range = line.range(of: "\(key)=") else { return nil }
         let rest = line[range.upperBound...]
         let end = rest.firstIndex { $0 == "," } ?? rest.endIndex
