@@ -479,22 +479,19 @@ struct IPTVView: View {
     /// using, and half a row is not enough for "telugu movies" alongside a
     /// glyph and a clear button.
     private var filterRow: some View {
-        HStack(spacing: 8) {
-            // The field is the one that gives way. It used to hold the
-            // priority, which a `TextField` spends by taking every point on
-            // offer — so the group button was squeezed to its chevron and the
-            // chosen category, which it was drawing all along, had nowhere to
-            // appear. The name is the whole reason the button exists, so the
-            // name is sized first and the field takes what is left.
-            // `maxWidth: .infinity` is what actually fills the row. A min
-            // alone only stops it shrinking: the stack then hands the field
-            // its ideal width — glyph plus placeholder — and leaves the rest
-            // of the row empty between the two controls.
-            searchField.frame(minWidth: 120, maxWidth: .infinity)
-            if !searching, !store.groups.isEmpty {
-                groupButton.layoutPriority(1)
+        // The width is needed in the row rather than guessed at, because the
+        // one real constraint is proportional: the button may grow to show a
+        // long category name, but never past about three fifths, so the field
+        // keeps a usable share whatever the provider calls its categories.
+        GeometryReader { geo in
+            HStack(spacing: 8) {
+                searchField.frame(maxWidth: .infinity)
+                if !searching, !store.groups.isEmpty {
+                    groupButton(within: geo.size.width)
+                }
             }
         }
+        .frame(height: Self.control)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(chrome)
@@ -506,13 +503,17 @@ struct IPTVView: View {
         }
     }
 
+    /// Both controls are this tall, which is the only way two capsules side by
+    /// side look like one row rather than two sizes of button.
+    private static let control: CGFloat = 36
+
     /// The current group, and the way to change it.
     ///
     /// A menu while the list is short enough to read standing up; a searchable
     /// sheet when it is not. Same button either way, so there is one place to
     /// press whatever the provider's category list looks like.
     @ViewBuilder
-    private var groupButton: some View {
+    private func groupButton(within width: CGFloat) -> some View {
         if store.groups.count <= Self.menuLimit {
             Menu {
                 Picker("Group", selection: Binding(
@@ -523,10 +524,10 @@ struct IPTVView: View {
                     ForEach(store.groups, id: \.self) { Text($0).tag($0) }
                 }
             } label: {
-                groupLabel
+                groupLabel(within: width)
             }
         } else {
-            Button { showGroups = true } label: { groupLabel }
+            Button { showGroups = true } label: { groupLabel(within: width) }
                 .buttonStyle(.plain)
         }
     }
@@ -534,27 +535,48 @@ struct IPTVView: View {
     /// Reads "All groups" when nothing is chosen — a dropdown has no equivalent
     /// of the highlighted "All" chip, and without it people filter themselves
     /// into a category and cannot find the way back out.
-    private var groupLabel: some View {
+    ///
+    /// **`fixedSize`, and the name shortened in code rather than by a frame.**
+    /// This is where the gap came from: a `.frame(maxWidth:)` is flexible, so
+    /// the stack handed the button its whole maximum and the capsule — which
+    /// hugs its text — sat at the trailing end of it with the slack showing as
+    /// empty space between the two controls. Capping the *string* instead
+    /// leaves the capsule the exact width of what it draws, and the field
+    /// takes everything else.
+    private func groupLabel(within width: CGFloat) -> some View {
         HStack(spacing: 4) {
-            Text(group ?? "All groups")
+            Text(groupTitle(within: width))
                 .font(.caption.weight(group == nil ? .regular : .semibold))
                 .lineLimit(1)
-                .truncationMode(.tail)
             Image(systemName: "chevron.down")
                 .font(.system(size: 9, weight: .semibold))
         }
         .foregroundStyle(group == nil ? PanuraTheme.onSurfaceVariant : PanuraTheme.onAccentSoft)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 12)
+        .frame(height: Self.control)
         .background(
             group == nil ? PanuraTheme.surfaceContainerHigh : PanuraTheme.accentSoft,
             in: Capsule()
         )
-        // Roughly half the row on a phone, and never more: enough for two
-        // or three words of a category name, with the rest trimmed. A name
-        // that fits takes only what it needs.
-        .frame(maxWidth: 168, alignment: .trailing)
+        .fixedSize()
         .accessibilityLabel("Group: " + (group ?? "all"))
+    }
+
+    /// The category name, trimmed to what the row can spare.
+    ///
+    /// Measured in characters off an estimate of caption width, which is
+    /// coarse and is the right kind of coarse: being a few points out moves
+    /// the capsule's edge slightly, where being wrong about layout flexibility
+    /// put a hole in the middle of the row.
+    private func groupTitle(within width: CGFloat) -> String {
+        let name = group ?? "All groups"
+        // Three fifths of the row for the name, so the field keeps the rest —
+        // the chevron, the padding and the gap come out of the button's share
+        // before the text does.
+        let room = max(0, width * 0.6 - 44)
+        let budget = max(6, Int(room / 6.5))
+        guard name.count > budget else { return name }
+        return String(name.prefix(budget - 1)) + "…"
     }
 
     private var searchField: some View {
@@ -583,7 +605,7 @@ struct IPTVView: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .frame(height: Self.control)
         .background(PanuraTheme.surfaceVariant, in: Capsule())
         .transition(.opacity)
     }
