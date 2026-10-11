@@ -281,8 +281,22 @@ final class AdManager: NSObject {
     /// 30-second floor for repeat requests on a unit, which is
     /// invalid-traffic territory. A short-lived view also never survives long
     /// enough to reach the server-side refresh cycle where banner revenue
-    /// actually accumulates. Refresh is the unit's own setting in AdMob;
-    /// there is deliberately no refresh code here.
+    /// actually accumulates.
+    ///
+    /// **Refresh is 30 seconds, set on the unit in the AdMob console — not
+    /// here.** There is deliberately no refresh code, which is exactly why
+    /// the decision needs writing down somewhere: 30 rather than the usual 60
+    /// because banner revenue tracks *visible seconds*, and this app has
+    /// unusually few of them. The player hides the banner and the player is
+    /// where the time goes, so a session leaves only two to four minutes of
+    /// banner-visible time. A shorter cycle converts more of what little there
+    /// is — eCPM dips as it shortens, but not proportionally. In an app where
+    /// somebody sits on one screen for twenty minutes the session is not the
+    /// constraint and 60 is fine; here it is the constraint.
+    ///
+    /// 30 is also the floor: below it, repeat requests on one unit are
+    /// invalid-traffic territory — the same number quoted above, for the same
+    /// reason.
     private(set) var banner: BannerView?
 
     /// ⚠️ **Needs creating in AdMob** — no banner unit exists on the iOS app
