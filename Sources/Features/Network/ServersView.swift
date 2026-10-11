@@ -265,9 +265,28 @@ struct ServersView: View {
                 .foregroundStyle(PanuraTheme.accent)
             Text("Nothing added yet")
                 .font(.headline)
-            Text("Add a file server that speaks SMB, SFTP or FTP — a NAS in the house, or a machine anywhere else — or a playlist address, or the sign-in for an IPTV account you already have. Panura supplies none of it: it opens what you enter, and nothing else.")
+            // Three kinds, named the way the Add menu names them. "IPTV
+            // account" was the old wording and it said the wrong thing twice:
+            // the menu calls these playlist servers, and "IPTV" describes a
+            // category of service rather than the thing being added, which is
+            // either an address or an account.
+            Text("""
+            Add a file server that speaks SMB, SFTP or FTP — a NAS in the \
+            house, or a machine anywhere else. Or a direct M3U playlist \
+            address. Or sign in to a playlist server account you already have.
+            """)
                 .font(.footnote)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+
+            // Its own line, because it is its own point. Run on to the end of
+            // the list above, it read as a footnote to the last kind rather
+            // than as what it is: the one sentence that says what this app is
+            // and is not, on the screen where somebody is deciding what to
+            // expect from it.
+            Text("Panura supplies none of it — it opens what you enter, and nothing else.")
+                .font(.caption)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant.opacity(0.85))
                 .multilineTextAlignment(.center)
             addMenu("Add a server", filled: true)
                 .padding(.top, 2)
