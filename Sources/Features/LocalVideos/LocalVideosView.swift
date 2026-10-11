@@ -13,9 +13,15 @@ import UniformTypeIdentifiers
 struct LocalVideosView: View {
     @StateObject private var model = LocalVideosModel()
     /// Open while the file picker is up. Only reachable from the permission
-    /// screen, which is the one place somebody has said no and still wants to
-    /// watch something.
+    /// screens, which are the one place somebody has said no and still wants
+    /// to watch something.
     @State private var pickingFile = false
+    /// Same, for the photo picker — which is the better of the two here and so
+    /// the one offered first. See `pickAnyway`.
+    @State private var pickingVideo = false
+    /// A picked video is copied out of the picker's staging directory before
+    /// it can be played, and a film takes a moment.
+    @State private var preparing = false
     /// Watched only to re-read the photo authorization on return from Settings.
     @Environment(\.scenePhase) private var scenePhase
     @State private var playIndex = 0
@@ -119,6 +125,13 @@ struct LocalVideosView: View {
             allowedContentTypes: Self.pickableTypes
         ) { result in
             play(pickedFile: result)
+        }
+        .sheet(isPresented: $pickingVideo) {
+            VideoPicker { provider in
+                preparing = true
+                PickedVideo.play(provider) { _ in preparing = false }
+            }
+            .ignoresSafeArea()
         }
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
@@ -719,12 +732,8 @@ struct LocalVideosView: View {
     /// nothing leaves the phone — is the one worth answering before they
     /// decide rather than in a privacy policy afterwards.
     ///
-    /// **And there is a way past it.** `fileImporter` reads a single file the
-    /// user points at, with no library permission of any kind, so somebody who
-    /// does not want to hand over their camera roll is not left on a dead
-    /// screen. It is also the only route to video that is *not* in Photos —
-    /// iCloud Drive, a Files download, something AirDropped — which the Videos
-    /// tab otherwise cannot see at all.
+    /// **And there are two ways past it**, neither of which asks for
+    /// anything. See `pickAnyway`.
     private var permissionPrompt: some View {
         VStack(spacing: 14) {
             Image(systemName: "photo.on.rectangle.angled")
@@ -756,17 +765,63 @@ struct LocalVideosView: View {
             }
             .buttonStyle(.plain)
 
-            Button { pickingFile = true } label: {
-                Label("Open a file instead", systemImage: "folder")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(PanuraTheme.accent)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 9)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            pickAnyway
         }
         .padding(.horizontal, 24)
+    }
+
+    /// Two ways to watch something without granting anything.
+    ///
+    /// **The photo picker comes first, because this screen is about the camera
+    /// roll.** `PHPickerViewController` runs out of process and needs no
+    /// library authorisation at all — it shows the user their own videos and
+    /// hands back only the one they point at. So the thing the screen is
+    /// asking permission to list can be played without the permission, one
+    /// video at a time, which is a far better answer to "not now" than a file
+    /// browser is.
+    ///
+    /// The file picker stays, second, because it reaches what Photos cannot
+    /// hold: `.mkv`, `.avi`, `.ts`, `.flv` — the formats somebody installs a
+    /// player like this one *for*, and which the photo library will not store
+    /// at all — plus iCloud Drive, a Files download and anything AirDropped.
+    /// Two sources, not two spellings of one.
+    ///
+    /// Only the permission screens show these. Once access is granted the
+    /// library itself is right there, and a picker on top of it would be a
+    /// second way to do the thing the screen already does.
+    @ViewBuilder
+    private var pickAnyway: some View {
+        if preparing {
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small).tint(PanuraTheme.accent)
+                Text("Getting it ready\u{2026}")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            }
+            .frame(height: 38)
+        } else {
+            VStack(spacing: 2) {
+                Button { pickingVideo = true } label: {
+                    Label("Pick a video", systemImage: "play.rectangle.on.rectangle")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PanuraTheme.accent)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Button { pickingFile = true } label: {
+                    Label("Open a file", systemImage: "folder")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     /// The screen after a refusal, which is a different screen because the
@@ -797,6 +852,11 @@ struct LocalVideosView: View {
             Text("Settings \u{203A} Panura \u{203A} Photos")
                 .font(.caption)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
+
+            // The same two ways out, and they matter more here: iOS shows the
+            // library alert once per install, so this screen is where somebody
+            // who refused actually lives.
+            pickAnyway
         }
         .padding(.horizontal, 24)
     }
