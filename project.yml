@@ -11,7 +11,18 @@ options:
 
 settings:
   base:
-    MARKETING_VERSION: "1.0"
+    # The version users see, and the one App Store Connect calls a "train". A
+    # train CLOSES the moment its version is approved: once 1.0 was live, every
+    # upload claiming 1.0 was refused with "Invalid Pre-Release Train ... closed
+    # for new build submissions" and "must contain a higher version than that of
+    # the previously approved version". So this rises on the release AFTER one
+    # goes live, not on the one that does.
+    #
+    # The release workflow's `marketing_version` input overrides it per run;
+    # this is the default so a run with the box left empty is still valid.
+    MARKETING_VERSION: "1.1"
+    # Overwritten on CI by the run number, which is monotonic and needs no
+    # state. Only here so a local build has something.
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "5.9"
     DEVELOPMENT_TEAM: "" # set on CI via env / xcconfig
