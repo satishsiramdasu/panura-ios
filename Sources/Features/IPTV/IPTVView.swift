@@ -232,6 +232,18 @@ struct IPTVView: View {
     private func refresh() {
         guard !refreshing else { return }
         refreshing = true
+        // Inside the free hour there is nothing to earn, so nothing is asked
+        // for. `AdPolicy`'s own hour is not the same clock: that one runs from
+        // the last ad *shown*, and the rule the user agreed is measured from
+        // the last refresh — a retry two minutes after a failed fetch must be
+        // free even if no ad has played all day.
+        guard let source = store.open, ServerRefresh.adDue(source.id) else {
+            Task {
+                await store.refresh()
+                refreshing = false
+            }
+            return
+        }
         AdManager.shared.showRewarded { granted in
             guard granted else {
                 refreshing = false

@@ -81,8 +81,14 @@ final class AdManager: NSObject {
 
     private var ads: [Slot: InterstitialAd] = [:]
     private var rewarded: RewardedAd?
-    /// True once ATT has been answered (either way) and the SDK has started.
+    /// True once `MobileAds` has finished initialising. **Not** "we have
+    /// asked it to": the SDK's configuration arrives asynchronously, and a
+    /// request made before it lands comes back empty.
     private var ready = false
+    /// True from the first `startIfEnabled` onwards, so a second call does not
+    /// start a second consent round while the first is still in flight.
+    /// `ready` cannot do that job any more — it now lands much later.
+    private var starting = false
     /// One full-screen ad at a time. Two presentations racing is a black
     /// screen, and both of these can be triggered by things happening at once
     /// — a cast confirming while a player is closing.
@@ -103,12 +109,34 @@ final class AdManager: NSObject {
     /// serving EEA and UK traffic altogether, so a form that has not been
     /// answered is worth more than a few seconds of earlier preloading.
     func startIfEnabled() async {
-        guard FeatureFlags.adsEnabled, !ready else { return }
-        await AdConsent.gather()
+        guard FeatureFlags.adsEnabled, !starting else { return }
+        starting = true
+        // Consent first, but never fatally. A UMP call that does not come back
+        // would stall this function, and with it every interstitial and the
+        // rewarded unit — while the banner, which waits on none of it, carried
+        // on working. That asymmetry is exactly what a stuck consent step
+        // looks like from the outside, and it is not worth risking for a step
+        // that is best-effort by design.
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await AdConsent.gather() }
+            group.addTask { try? await Task.sleep(nanoseconds: 10_000_000_000) }
+            _ = await group.next()
+            group.cancelAll()
+        }
         await requestTrackingPermission()
-        MobileAds.shared.start(completionHandler: nil)
-        ready = true
-        preloadAll()
+        // **Ads are loaded from the completion handler, not after the call.**
+        // `start` is asynchronous: the mediation configuration arrives over the
+        // network, and an `InterstitialAd.load` issued in the same turn of the
+        // run loop goes out before the SDK has it. Those loads fail silently,
+        // which is why a first player-exit showed no ad while the banner —
+        // built later, when a screen first needed it — always had one.
+        MobileAds.shared.start { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.ready = true
+                self.preloadAll()
+            }
+        }
     }
 
     /// Raised once, ever — and only when personalised ads are actually wanted.
@@ -161,15 +189,47 @@ final class AdManager: NSObject {
         preloadRewarded()
     }
 
+    /// How many times a slot's load has failed in a row, so a retry can back
+    /// off instead of hammering a unit that is not filling.
+    private var loadFailures: [Slot: Int] = [:]
+
     func preload(_ slot: Slot) {
-        guard FeatureFlags.adsEnabled, ready, slot.placement != nil else { return }
+        guard FeatureFlags.adsEnabled, ready, slot.placement != nil, ads[slot] == nil else { return }
         InterstitialAd.load(with: slot.unitID, request: makeRequest()) { [weak self] ad, error in
-            guard let ad, error == nil else { return }
             Task { @MainActor in
+                guard let self else { return }
+                guard let ad, error == nil else {
+                    // **Retried, because the old code only tried again after a
+                    // missed impression.** One failed load at launch — no
+                    // network yet, no fill, the SDK a moment behind — left the
+                    // slot empty until the user finished a video, got no ad,
+                    // and that miss queued the next attempt. The first ad of
+                    // every install was spent discovering the load had failed.
+                    let failures = (self.loadFailures[slot] ?? 0) + 1
+                    self.loadFailures[slot] = failures
+                    self.log("interstitial \(slot) load failed (\(failures)): \(error?.localizedDescription ?? "no ad")")
+                    guard failures <= 4 else { return }
+                    let delay = UInt64(min(120, 15 << (failures - 1))) * 1_000_000_000
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: delay)
+                        self.preload(slot)
+                    }
+                    return
+                }
+                self.loadFailures[slot] = 0
                 ad.fullScreenContentDelegate = self
-                self?.ads[slot] = ad
+                self.ads[slot] = ad
             }
         }
+    }
+
+    /// Ad failures are otherwise invisible: every one of them is a silent
+    /// no-op by design, so without this there is no way to tell an ad that
+    /// was not due from one that never loaded.
+    private func log(_ message: String) {
+        #if DEBUG
+        print("[ads] " + message)
+        #endif
     }
 
     /// Shows `slot` if its clock allows, then runs `then` — whether an ad
@@ -186,6 +246,7 @@ final class AdManager: NSObject {
               let ad = ads[slot],
               let root = Self.topViewController()
         else {
+            log("no interstitial for \(slot): loaded=\(ads[slot] != nil) presenting=\(presenting) ready=\(ready)")
             then?()
             preload(slot)
             return
@@ -226,15 +287,22 @@ final class AdManager: NSObject {
     /// Loaded with the `async` form rather than a completion handler — it is
     /// the one Google documents for `RewardedAd`, and a documented signature
     /// beats one inferred from `InterstitialAd`'s.
-    private func preloadRewarded() {
-        guard FeatureFlags.adsEnabled, ready, !Self.rewardedUnitID.isEmpty else { return }
+    private func preloadRewarded(attempt: Int = 1) {
+        guard FeatureFlags.adsEnabled, ready, rewarded == nil, !Self.rewardedUnitID.isEmpty else { return }
         Task {
-            guard let ad = try? await RewardedAd.load(
-                with: Self.rewardedUnitID,
-                request: makeRequest()
-            ) else { return }
-            ad.fullScreenContentDelegate = self
-            rewarded = ad
+            do {
+                let ad = try await RewardedAd.load(
+                    with: Self.rewardedUnitID,
+                    request: makeRequest()
+                )
+                ad.fullScreenContentDelegate = self
+                rewarded = ad
+            } catch {
+                log("rewarded load failed (\(attempt)): \(error.localizedDescription)")
+                guard attempt <= 4 else { return }
+                try? await Task.sleep(nanoseconds: UInt64(min(120, 15 << (attempt - 1))) * 1_000_000_000)
+                preloadRewarded(attempt: attempt + 1)
+            }
         }
     }
 
