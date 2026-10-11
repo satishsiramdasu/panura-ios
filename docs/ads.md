@@ -178,16 +178,28 @@ rule: the reward has to be described before the ad. A screen whose only control
 is Refresh would otherwise be an interstitial with a reward unit's paperwork.
 Backing out of the server is the decline path.
 
-### Two clocks, and the trap in them
+### The free hour is anchored to the last ad, not the last refresh
 
-The placement's own gap and the per-server free hour are **different clocks**,
-and the refresh path has to consult the right one. The placement clock runs
-from the last ad *shown*; the free hour runs from the last *refresh*. Gate the
-ad on the per-server clock first — asking the ad layer alone means a retry two
-minutes after a failed fetch plays an ad, because no ad has played all day.
+This is the one thing in the design that is easy to get backwards, and getting
+it backwards makes the rewarded ad **unreachable**.
 
-(iOS shipped that bug: `refresh()` called the rewarded path unconditionally
-and only `AdPolicy`'s hour stood in the way.)
+The per-server timestamp moves on *every* refresh — it has to, because it also
+drives the 24-hour wall and the catalogue really was just refreshed. So "has an
+hour passed since the last refresh" is a question that can never answer yes to
+anybody who refreshes more than once an hour: pressing the button resets the
+clock the button is waiting on.
+
+Gate the ad on the **ad** clock — one hour since the last rewarded ad was
+*shown* — which pressing Refresh does not touch. That gives exactly the agreed
+behaviour: an ad, then an hour of unlimited free refreshes, then the next ad.
+
+The per-server timestamp still has two jobs, neither of them the hour: the
+24-hour expiry, and "has this server ever loaded" (nothing is owed by somebody
+who has not finished opening it once).
+
+iOS shipped the wrong version of this for one build. The symptom is the
+tell — every other placement fires, the rewarded gap reads *ready*, and the ad
+never comes.
 
 ### One door
 

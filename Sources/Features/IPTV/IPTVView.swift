@@ -250,7 +250,7 @@ struct IPTVView: View {
     /// Whether pressing Refresh right now will play an ad.
     private var adDueForRefresh: Bool {
         guard let source = store.open else { return false }
-        return ServerRefresh.adDue(source.id) && AdPolicy.allows(.servers)
+        return ServerRefresh.hasLoadedOnce(source.id) && AdPolicy.allows(.servers)
     }
 
     /// Refreshes, with the ad in front of it when one is due.
@@ -266,18 +266,16 @@ struct IPTVView: View {
     private func refresh() {
         guard !refreshing else { return }
         refreshing = true
-        // Inside the free hour there is nothing to earn, so nothing is asked
-        // for. `AdPolicy`'s own hour is not the same clock: that one runs from
-        // the last ad *shown*, and the rule the user agreed is measured from
-        // the last refresh — a retry two minutes after a failed fetch must be
-        // free even if no ad has played all day.
-        guard let source = store.open, ServerRefresh.adDue(source.id) else {
-            Task {
-                await store.refresh()
-                refreshing = false
-            }
-            return
-        }
+        // **The hour is not read here.** It was, and that was the bug: this
+        // asked whether an hour had passed since the last refresh, while a
+        // refresh stamps that very clock — so refreshing more than once an
+        // hour reset the thing it was waiting for, and the ad never came.
+        //
+        // `showRewarded` owns the question instead. It gates on
+        // `AdPolicy.servers`, which runs from the last ad *shown*: the hour
+        // after an ad is unlimited free refreshes, which is the rule as
+        // agreed, and the hour can actually run out because pressing Refresh
+        // does not touch it.
         AdManager.shared.showRewarded { granted in
             guard granted else {
                 refreshing = false

@@ -26,6 +26,8 @@ enum ServerRefresh {
     /// After this, the catalogue is not shown until it is refreshed.
     static let expiry: TimeInterval = 24 * 60 * 60
     /// Inside this, refreshing is free however many times it is pressed.
+    /// Counted by `AdPolicy.servers` from the last ad shown, not from here —
+    /// see `hasLoadedOnce`. Kept as the record of the agreed number.
     static let free: TimeInterval = 60 * 60
 
     private static func key(_ id: UUID) -> String { "server.refreshed." + id.uuidString }
@@ -85,14 +87,25 @@ enum ServerRefresh {
         return Date().timeIntervalSince(last) > expiry
     }
 
-    /// Whether a refresh pressed right now should play an ad first.
+    /// Whether this server has been loaded at least once.
     ///
-    /// False inside the free hour, and false when there is no clock yet —
-    /// nothing has been earned from somebody who has not finished opening the
-    /// thing once.
-    static func adDue(_ id: UUID) -> Bool {
-        guard FeatureFlags.adsEnabled, let last = lastRefresh(id) else { return false }
-        return Date().timeIntervalSince(last) >= free
+    /// The only per-server part of "should this refresh cost an ad". Nothing
+    /// is owed by somebody who has not finished opening the thing once, and
+    /// the hour itself is `AdPolicy`'s.
+    ///
+    /// **This used to be the hour, and the hour could never elapse.** It asked
+    /// whether an hour had passed since the last refresh, while `refresh()`
+    /// stamps on every refresh — so anybody pressing Refresh more than once
+    /// an hour reset the clock they were waiting on, and the rewarded ad was
+    /// unreachable. The free window has to be anchored to the last *ad*, which
+    /// `AdPolicy.servers` already records and this cannot: one ad an hour is a
+    /// rule about the person, not about each of their servers.
+    ///
+    /// `lastRefresh` keeps moving on every refresh, because it also drives the
+    /// 24-hour wall and the catalogue really was just refreshed. The two
+    /// questions needed two clocks; they were sharing one.
+    static func hasLoadedOnce(_ id: UUID) -> Bool {
+        FeatureFlags.adsEnabled && lastRefresh(id) != nil
     }
 
     /// How old the catalogue is, in words. Vague on purpose: the exact
