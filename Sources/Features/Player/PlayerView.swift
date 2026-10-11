@@ -1056,7 +1056,33 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// The X. Through the session, so the engine, its surface and the parking
     /// view all go together — `model.stop()` alone left the session holding a
     /// dead engine.
-    private func close() { PlaybackSession.shared.stop(); dismiss() }
+    private func close() {
+        queueAdIfEarned()
+        PlaybackSession.shared.stop()
+        dismiss()
+    }
+
+    /// Asks for an interstitial on the way back to the page, if this was a
+    /// page's video and enough of it was actually watched.
+    ///
+    /// Queued rather than shown. The ad has to arrive *after* this screen has
+    /// gone — it is a cover presented by the root view, and a second
+    /// presentation from the same presenter while this one is still up is the
+    /// thing that silently does nothing. `RootTabView` flushes it from the
+    /// cover's `onDismiss`.
+    ///
+    /// The watched check is the important half. Without it a stream that dies
+    /// after eight seconds counts as playback ending, and somebody who was
+    /// waiting on a video gets an advert for the trouble.
+    private func queueAdIfEarned() {
+        guard item.origin == .browser,
+              AdPolicy.watchedEnough(
+                  seconds: model.elapsedSeconds,
+                  duration: model.totalSeconds > 0 ? model.totalSeconds : item.durationSeconds
+              )
+        else { return }
+        AdManager.shared.queue(.browser)
+    }
 
     private var engineName: String { Model.self == VLCPlayerModel.self ? "vlc" : "av" }
 

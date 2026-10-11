@@ -27,6 +27,23 @@ struct MediaItem: Identifiable, Hashable {
     /// `hls` | `mp4` | `dash` hint from the manifest rule; drives the cast MIME
     /// type, which cannot be guessed from an extensionless URL.
     var contentType: String?
+    /// Which part of the app started this.
+    ///
+    /// Only the browser's player carries an interstitial, so the player has to
+    /// be able to tell a page's video from a channel, a NAS file or something
+    /// in the camera roll. `isLocal` cannot answer it — an IPTV channel and a
+    /// browser stream are both remote.
+    var origin: Origin = .other
+
+    enum Origin: String, Hashable {
+        /// Found on a web page by the browser. The one that monetises.
+        case browser
+        /// Everything else: the library, a server, a playlist, a pasted
+        /// address. Ad-free, and AirPlay is ad-free for the same reason —
+        /// we monetise what we built, and the system's route picker is not
+        /// ours.
+        case other
+    }
 
     init(
         id: String = UUID().uuidString,
@@ -38,7 +55,8 @@ struct MediaItem: Identifiable, Hashable {
         headers: [String: String] = [:],
         castHeaders: [String: String] = [:],
         subtitles: [SubtitleTrack] = [],
-        contentType: String? = nil
+        contentType: String? = nil,
+        origin: Origin = .other
     ) {
         self.id = id
         self.title = title
@@ -51,6 +69,7 @@ struct MediaItem: Identifiable, Hashable {
         self.castHeaders = castHeaders.isEmpty ? headers : castHeaders
         self.subtitles = subtitles
         self.contentType = contentType
+        self.origin = origin
     }
 }
 

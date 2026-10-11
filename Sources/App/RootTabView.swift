@@ -106,7 +106,12 @@ struct RootTabView: View {
         // screen that could start a video owned its own cover — and none of
         // them could reopen it once the user had walked away, which is exactly
         // what the bar has to do.
-        .fullScreenCover(item: $playback.presented) { playing in
+        // `onDismiss` is where the browser player's interstitial lands: the
+        // player queues it on the way out and it is shown once this cover has
+        // actually gone, because one presenter cannot hold two presentations.
+        .fullScreenCover(item: $playback.presented, onDismiss: {
+            AdManager.shared.flushQueued()
+        }) { playing in
             PlayerScreen(item: playing.item, playlist: playing.playlist)
         }
         // One screen for the whole of casting — getting the video ready, the
@@ -212,6 +217,12 @@ struct RootTabView: View {
             // header and the panel has to cover what it is about.
             CastPanelOverlay()
         }
+        // The app's bottom edge, outermost on purpose: `safeAreaInset`
+        // composes, so this sits lowest and every inset applied inside a
+        // screen — the browser's found-video bar, the cast bar — stacks above
+        // it without either of them knowing. They get pushed up by it; it is
+        // never covered. See `BannerStrip`.
+        .safeAreaInset(edge: .bottom, spacing: 0) { BannerStrip() }
     }
 
     /// The tone behind the header and the tab strip: the selected

@@ -217,6 +217,16 @@ targets:
       - package: GoogleCast
         product: GoogleCast
       - package: GoogleMobileAds
+      # The consent SDK, a second product of the same package. Declared
+      # explicitly because `import UserMessagingPlatform` needs the product
+      # linked, not merely present: its framework was already landing in the
+      # bundle as a transitive dependency of the ads binary, which is enough
+      # to ship it and not enough to import it.
+      #
+      # Required, not optional. Without a certified CMP, AdMob stops serving
+      # EEA and UK traffic altogether — see `AdConsent`.
+      - package: GoogleMobileAds
+        product: UserMessagingPlatform
       - package: Swifter
       - package: SafariConverterLib
         product: ContentBlockerConverter

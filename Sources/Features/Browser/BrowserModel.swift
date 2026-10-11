@@ -281,7 +281,11 @@ final class BrowserModel: ObservableObject {
             headers: video.headers,
             castHeaders: video.castHeaders,
             subtitles: foundSubtitles,
-            contentType: video.contentType
+            contentType: video.contentType,
+            // The one origin that carries an ad. Set here rather than at the
+            // call site because this is the browser's own factory: anything
+            // built by it came off a page.
+            origin: .browser
         )
     }
 

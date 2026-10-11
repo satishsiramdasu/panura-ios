@@ -30,6 +30,22 @@ struct ServersView: View {
     @State private var editingServer: NetworkServer?
     @State private var serverPassword = ""
 
+    /// What to open once the unlock has been earned. Non-nil puts the offer on
+    /// screen; the two cases are the two kinds of thing a row can be.
+    @State private var pendingUnlock: Unlock?
+
+    private enum Unlock: Identifiable {
+        case playlist(IPTVSource)
+        case server(NetworkServer)
+
+        var id: String {
+            switch self {
+            case let .playlist(source): return "p" + source.id.uuidString
+            case let .server(server):   return "s" + server.id.uuidString
+            }
+        }
+    }
+
     var body: some View {
         Group {
             if iptv.open != nil {
@@ -51,6 +67,19 @@ struct ServersView: View {
                 },
                 onCancel: { editingSource = nil }
             )
+        }
+        .confirmationDialog(
+            "Open your servers for an hour",
+            isPresented: Binding(
+                get: { pendingUnlock != nil },
+                set: { if !$0 { pendingUnlock = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingUnlock
+        ) { what in
+            unlockOffer(what)
+        } message: { _ in
+            Text("Panura is free. One short ad opens every server you have added for the next hour — playlists, shares, all of them.")
         }
         .sheet(item: $editingServer) { server in
             NetworkServerForm(
@@ -130,7 +159,7 @@ struct ServersView: View {
             if !iptv.sources.isEmpty {
                 Section("Playlist servers") {
                     ForEach(iptv.sources) { source in
-                        Button { Task { await iptv.load(source) } } label: {
+                        Button { open(.playlist(source)) } label: {
                             row(
                                 title: source.displayName,
                                 detail: source.subtitle,
@@ -163,9 +192,7 @@ struct ServersView: View {
             if !servers.servers.isEmpty {
                 Section("File servers") {
                     ForEach(servers.servers) { server in
-                        Button {
-                            browser.open(server, password: servers.password(for: server))
-                        } label: {
+                        Button { open(.server(server)) } label: {
                             row(
                                 title: server.displayName,
                                 detail: server.subtitle,
@@ -253,6 +280,57 @@ struct ServersView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)
+    }
+
+    // MARK: opening something
+
+    /// Opens a source, asking for the unlock first when one is due.
+    ///
+    /// **The ask is not optional, and it is not a surprise.** A rewarded ad
+    /// has to be offered — AdMob requires the reward described before the ad
+    /// plays and a way to decline — and an unannounced full-screen ad on a
+    /// row tap would be an interstitial wearing a rewarded unit's clothes.
+    /// So: a dialog naming what it buys, with Not now beside it.
+    ///
+    /// Once an hour, and the hour starts only when an ad is actually watched.
+    /// Most taps reach `openNow` directly, because most taps are inside an
+    /// hour somebody already paid for — which is the whole point of pricing
+    /// it per hour rather than per server. Navigating folders never re-asks,
+    /// because only this screen's rows go through here.
+    private func open(_ what: Unlock) {
+        guard AdManager.shared.serverUnlockDue else { openNow(what); return }
+        pendingUnlock = what
+    }
+
+    private func openNow(_ what: Unlock) {
+        switch what {
+        case let .playlist(source):
+            Task { await iptv.load(source) }
+        case let .server(server):
+            browser.open(server, password: servers.password(for: server))
+        }
+    }
+
+    /// The offer itself.
+    ///
+    /// A `confirmationDialog` rather than a sheet: it is one sentence and two
+    /// buttons, and it has to arrive over whatever row was pressed rather
+    /// than as a place you have gone.
+    @ViewBuilder
+    private func unlockOffer(_ what: Unlock) -> some View {
+        Button("Watch a short ad") {
+            AdManager.shared.showRewarded { granted in
+                // `granted` is true when no ad could be shown at all - no
+                // fill, no network, nothing configured. Fill is our problem,
+                // not the user's: a server they added, on hardware they own,
+                // must never stay shut because an ad network had nothing to
+                // serve. False only means they opened it and closed it early,
+                // which takes nothing away - the row is still there.
+                guard granted else { return }
+                openNow(what)
+            }
+        }
+        Button("Not now", role: .cancel) {}
     }
 
     private func addSource(_ kind: IPTVSource.Kind) {

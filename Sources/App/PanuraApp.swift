@@ -36,6 +36,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         #endif
         // First, so a crash anywhere later in launch is still reported.
         startFirebase()
+        // Counted before anything can ask whether an ad is allowed: the
+        // whole first session is ad-free, and that is measured in launches.
+        AdPolicy.noteLaunch()
         // Ads start themselves, after the ATT prompt: the SDK must not be
         // started before that answer exists, or the first requests go out
         // personalised regardless of it. AdManager does nothing at all while

@@ -38,6 +38,11 @@ final class CastManager: NSObject, ObservableObject {
     /// Time left on the TV, pre-formatted; empty when live or unknown.
     @Published private(set) var remoteTimeLeft = ""
 
+    /// A cast interstitial waiting on the receiver's confirmation. See
+    /// `armCastAd`.
+    fileprivate var castAdPending = false
+    fileprivate var castAdTimeout: Task<Void, Never>?
+
     /// True when a video is loaded on the receiver, not merely connected to it.
     var isCasting: Bool { isConnected && castingTitle != nil }
 
@@ -167,7 +172,7 @@ final class CastManager: NSObject, ObservableObject {
         session.remoteMediaClient?.loadMedia(with: request.build())
         castingTitle = item.title
         session.remoteMediaClient?.add(self)
-        if advertise { AdManager.shared.showInterstitial(.cast) }
+        if advertise { armCastAd() }
     }
 }
 
@@ -203,7 +208,7 @@ extension CastManager {
         session.remoteMediaClient?.loadMedia(with: request.build())
         castingTitle = title
         session.remoteMediaClient?.add(self)
-        if advertise { AdManager.shared.showInterstitial(.cast) }
+        if advertise { armCastAd() }
     }
 }
 
@@ -244,6 +249,56 @@ extension CastManager: GCKDiscoveryManagerListener {
 }
 
 
+// MARK: - the ad that waits for the TV
+
+extension CastManager {
+    /// Arms the cast interstitial. It fires when the receiver reports the
+    /// video actually playing — not now.
+    ///
+    /// It used to fire here, the instant after `loadMedia`, which means it
+    /// fired before anything had been confirmed by anybody. `castLocalFile` is
+    /// the weak path for exactly this reason: an iPhone records HEVC
+    /// QuickTime and most Chromecasts cannot decode it at all, so a rejected
+    /// cast showed an ad and *then* failed. The user was looking at the TV,
+    /// waiting, and got an advert for the trouble.
+    ///
+    /// So the signal is `GCKMediaStatus.playerState == .playing`, which the
+    /// media-status listener below already computes for the cast bar. The
+    /// receiver has the media, has fetched it, and is showing frames.
+    func armCastAd() {
+        castAdPending = true
+        castAdTimeout?.cancel()
+        // If nothing confirms, nothing fires. Fifteen seconds is long enough
+        // for a receiver on a slow network to start, and short enough that a
+        // stalled cast cannot arm an ad for a video played minutes later.
+        castAdTimeout = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.castAdPending = false
+        }
+    }
+
+    /// Cancels an armed ad. For a cast that failed, was refused, or was
+    /// stopped before it ever played.
+    func disarmCastAd() {
+        castAdPending = false
+        castAdTimeout?.cancel()
+        castAdTimeout = nil
+    }
+
+    /// The receiver is playing: show the ad.
+    ///
+    /// Presented over the cast screen, which is already open — it is raised on
+    /// cast *start* so the wait is never silent, since a Dolby Vision
+    /// conversion can take minutes. So the sequence the user sees is: cast,
+    /// progress, confirmed, ad, controls showing a playing video.
+    fileprivate func castConfirmed() {
+        guard castAdPending else { return }
+        disarmCastAd()
+        AdManager.shared.showInterstitial(.cast)
+    }
+}
+
 // MARK: - What is on the TV
 
 extension CastManager: GCKRemoteMediaClientListener {
@@ -259,16 +314,30 @@ extension CastManager: GCKRemoteMediaClientListener {
         let duration = mediaStatus?.mediaInformation?.streamDuration ?? 0
         let elapsed = mediaStatus?.streamPosition ?? 0
         let left = duration.isFinite && duration > 0 ? max(0, duration - elapsed) : 0
-        let ended = mediaStatus?.playerState == .idle
+        let idle = mediaStatus?.playerState == .idle
+        // `idle` alone was treated as "the video ended", which is three
+        // different events wearing one name: a video that finished, one the
+        // user cancelled, and one the receiver refused. The last is the
+        // interesting one — it is how a cast fails — and it was clearing the
+        // title as though everything had gone fine.
+        let reason = mediaStatus?.idleReason
+        let failed = idle && (reason == .error || reason == .interrupted)
+        let ended = idle && !failed
 
         Task { @MainActor in
             self.isRemotePlaying = playing
             self.remoteTimeLeft = left > 0 ? PlayerClock.format(left) + " left" : ""
-            if ended {
+            if idle {
                 self.castingTitle = nil
             } else if let title, !title.isEmpty {
                 self.castingTitle = title
             }
+            // The receiver is showing frames: this is the only moment a cast
+            // is known to have worked, and so the only moment an ad is owed.
+            if playing { self.castConfirmed() }
+            // Nothing played, so nothing is owed. `ended` covers a normal
+            // finish, which also means the armed ad has missed its moment.
+            if failed || ended { self.disarmCastAd() }
         }
     }
 
