@@ -52,9 +52,14 @@ final class AdManager: NSObject {
     }
 
     // Google's own sample units. Safe to tap, pay nothing, always fill.
-    static let testInterstitialUnitID = "ca-app-pub-3940256099942544/4411468910"
-    static let testRewardedUnitID = "ca-app-pub-3940256099942544/1712485313"
-    static let testBannerUnitID = "ca-app-pub-3940256099942544/2435281174"
+    //
+    // `nonisolated`, because this class is `@MainActor` and so are its statics
+    // by inheritance — while `Slot` is a plain nested enum and is not. `Slot.unitID`
+    // reading a main-actor constant is a Swift 6 error, and the same pattern
+    // is why `TabSet`'s statics carry the keyword.
+    nonisolated static let testInterstitialUnitID = "ca-app-pub-3940256099942544/4411468910"
+    nonisolated static let testRewardedUnitID = "ca-app-pub-3940256099942544/1712485313"
+    nonisolated static let testBannerUnitID = "ca-app-pub-3940256099942544/2435281174"
 
     /// The rewarded unit, which unlocks server content.
     ///

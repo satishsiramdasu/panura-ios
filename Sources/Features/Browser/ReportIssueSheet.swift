@@ -16,7 +16,10 @@ struct ReportIssueSheet: View {
     @State private var reason: String = ""
     @State private var details: String = ""
 
-    private static let endpoint = URL(string: "https://panura-reports.satishsiramdasu.workers.dev")!
+    /// `nonisolated`: the POST runs in a detached task, and a main-actor
+    /// constant read from there is a Swift 6 error. Same keyword, same reason,
+    /// as `AdManager`'s test unit ids.
+    nonisolated private static let endpoint = URL(string: "https://panura-reports.satishsiramdasu.workers.dev")!
     /// A bare reason ("App crash") is not actionable, so app reports have to say
     /// something. Long enough to rule out "asd" without demanding an essay.
     private static let minDetailChars = 10

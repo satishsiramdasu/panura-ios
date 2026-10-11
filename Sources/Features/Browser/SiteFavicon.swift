@@ -20,6 +20,11 @@ struct SiteFavicon: View {
     var label: String
     var onTap: () -> Void
 
+    /// The cell's diameter. Read by `PanelMetrics.glyphCentre`, which has to
+    /// put an arrow under the middle of it — the two drifting apart is how
+    /// that arrow ended up pointing at the address text instead.
+    static let size: CGFloat = 30
+
     var body: some View {
         Button(action: onTap) {
             ZStack {
@@ -36,7 +41,7 @@ struct SiteFavicon: View {
                         .offset(x: 9, y: -9)
                 }
             }
-            .frame(width: 30, height: 30)
+            .frame(width: Self.size, height: Self.size)
             .contentShape(Circle())
         }
         .buttonStyle(.plain)

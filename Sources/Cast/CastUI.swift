@@ -212,6 +212,19 @@ struct CastToolbarButton: View {
 /// Nothing is scanned until asked. Discovery is a live multicast on the local
 /// network, and someone opening this to reach their Panura TV has no reason to
 /// pay for a Chromecast sweep.
+/// **Centred, not anchored to the cast mark.** It used to hang off that mark
+/// with an arrow, like the browser's site panel — and the two are not the same
+/// kind of thing. The site panel is *about* the button it hangs from: it says
+/// what this site is allowed to do, and the arrow is what ties the two
+/// together. Choosing a television is about the room you are in, has nothing
+/// to do with which corner of the screen the mark occupies, and is the
+/// longest-lived thing in the app that is not a screen — a scan, a list
+/// filling in, sometimes a conversion. Pinned to a corner it read as a menu
+/// that had got stuck.
+///
+/// It also stops being 360 points wide against the right edge on an iPad,
+/// which is where an anchored panel lands when its button sits in a bar that
+/// spans a tablet.
 struct CastDevicesView: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
@@ -649,9 +662,26 @@ struct CastPanelOverlay: View {
 
     var body: some View {
         if picker.isShowing {
-            PanelScaffold(side: .trailing, onDismiss: { picker.close() }) {
-                CastDevicesView().environmentObject(CastManager.shared)
+            ZStack {
+                // Tapping away is the same as closing, which is what people
+                // expect of anything that dims the screen behind it.
+                Color.black.opacity(0.55)
+                    .ignoresSafeArea()
+                    .onTapGesture { picker.close() }
+
+                CastDevicesView()
+                    .environmentObject(CastManager.shared)
+                    .frame(maxWidth: 360)
+                    .padding(.horizontal, 24)
+                    // Grows from its own middle. The panel's old transition
+                    // grew out of the corner it was pinned to, which is the
+                    // right motion for something anchored and the wrong one
+                    // for something centred.
+                    .transition(
+                        .scale(scale: 0.94, anchor: .center).combined(with: .opacity)
+                    )
             }
+            .transition(.opacity)
             .zIndex(50)
         }
     }

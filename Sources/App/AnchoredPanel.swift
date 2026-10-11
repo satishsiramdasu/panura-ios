@@ -76,17 +76,43 @@ enum PanelMetrics {
     static var surface: Color { PanuraTheme.surfaceContainerHigh }
     /// Header, then a hair of daylight, so the arrow has somewhere to be.
     static var topOffset: CGFloat { PanuraHeader<AnyView>.height + 2 }
-    /// The middle of the Panura mark, from the left edge of the screen.
+    /// The middle of the site favicon, from the left edge of the screen.
     ///
-    /// The mark moved inside the address pill, so the sum gained a term: bar
-    /// padding, the 38-point menu button, the bar's spacing, the pill's own 6
-    /// points of padding, then half of a 44-point button. Computed rather than
-    /// written down, because two of those terms are smaller on a 375pt phone
-    /// and an arrow three points off its button is visible.
+    /// Three terms and no more: the bar's own padding, the address pill's 6
+    /// points, then half the favicon.
+    ///
+    /// It had five, two of them wrong — a 38-point menu button and the
+    /// header's spacing, from when the leading cell of this bar held the app's
+    /// mark and the header drew a button before it. The browser's header
+    /// passes `showsGlyph: false` and the favicon is 30 points, not 44, so the
+    /// arrow was landing 49 points right of what it pointed at: past the
+    /// favicon, in the middle of the address text.
+    ///
+    /// Computed rather than written down, because `headerPadding` is smaller
+    /// on a 375-point phone and an arrow three points off its button shows.
     static var glyphCentre: CGFloat {
-        AppChrome.headerPadding + 38 + AppChrome.headerSpacing + 6 + 22
+        AppChrome.headerPadding + 6 + SiteFavicon.size / 2
     }
-    /// The middle of the cast mark, from the right edge.
+
+    /// How much of the bar opens the site panel.
+    ///
+    /// The favicon alone is a 30-point target for the only way into what a
+    /// site is allowed to do — and a favicon reads as decoration rather than
+    /// as a button, so it is a target people have to be told about. Running
+    /// the hit area on into the start of the pill makes it a comfortable press
+    /// without giving the panel a control of its own and without taking a
+    /// visible bite out of the title: the favicon stays where it is, and the
+    /// strip beside it is simply live.
+    ///
+    /// Fixed points rather than a share of a measured pill. On a phone this is
+    /// about a fifth of it, which is what was wanted, and it needs no
+    /// `GeometryReader` in the one bar that rebuilds on every page-title
+    /// change.
+    static let siteTriggerWidth: CGFloat = 58
+
+    /// The middle of the cast mark, from the right edge. Unused since the TV
+    /// list became a centred dialog; kept because `.trailing` is still a side
+    /// a panel can take, and this is the number it would need.
     static let castCentre: CGFloat = 28
     /// What the panel keeps between itself and the side of the screen. Small,
     /// because the arrow has to reach a button that is itself near the edge.

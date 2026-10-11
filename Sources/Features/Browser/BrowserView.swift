@@ -242,14 +242,28 @@ struct BrowserView: View {
                     // The behaviour is unchanged: it still opens the site
                     // controls, which have no other way in. Only the artwork
                     // is the page's.
-                    SiteFavicon(
-                        url: model.faviconURL,
-                        active: showMenu,
-                        marked: siteLowered,
-                        tint: session.privateMode ? PanuraTheme.incognito : nil,
-                        label: showMenu ? "Close site controls" : "Site controls and browser menu",
-                        onTap: { withAnimation(PanelMetrics.motion) { showMenu.toggle() } }
-                    )
+                    //
+                    // The *target* is wider than the artwork. A favicon is 30
+                    // points and reads as decoration, which is a poor button
+                    // for the only door to what a site may do - so the strip
+                    // of pill beside it is live too, and the icon stays put.
+                    // See `PanelMetrics.siteTriggerWidth`.
+                    HStack(spacing: 0) {
+                        SiteFavicon(
+                            url: model.faviconURL,
+                            active: showMenu,
+                            marked: siteLowered,
+                            tint: session.privateMode ? PanuraTheme.incognito : nil,
+                            label: showMenu ? "Close site controls" : "Site controls and browser menu",
+                            onTap: { toggleSitePanel() }
+                        )
+                        Spacer(minLength: 0)
+                    }
+                    .frame(width: PanelMetrics.siteTriggerWidth)
+                    // A `Spacer` draws nothing and so is nothing to hit; the
+                    // shape is what makes the gap answer at all.
+                    .contentShape(Rectangle())
+                    .onTapGesture { toggleSitePanel() }
                 },
                 trailing: {
                     HStack(spacing: 0) {
@@ -390,6 +404,13 @@ struct BrowserView: View {
 
     private func closeMenu() {
         withAnimation(PanelMetrics.motion) { showMenu = false }
+    }
+
+    /// Opens or closes the site panel. Named because the favicon and the strip
+    /// of address bar beside it both do it, and two copies of an animation
+    /// curve is how they end up differing.
+    private func toggleSitePanel() {
+        withAnimation(PanelMetrics.motion) { showMenu.toggle() }
     }
 
     /// The panel that hangs off the Panura mark, pointing back at it.

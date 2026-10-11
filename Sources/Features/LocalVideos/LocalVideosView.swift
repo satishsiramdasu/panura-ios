@@ -810,8 +810,10 @@ struct LocalVideosView: View {
     /// this view can see would pull the file out from under whatever is
     /// reading it. The scope is released when the process ends, which for a
     /// one-shot pick is the right lifetime.
-    private func play(pickedFile result: Result<[URL], Error>) {
-        guard case let .success(urls) = result, let url = urls.first else { return }
+    private func play(pickedFile result: Result<URL, Error>) {
+        // One URL, not an array: `fileImporter` without
+        // `allowsMultipleSelection` is the single-file overload.
+        guard case let .success(url) = result else { return }
         _ = url.startAccessingSecurityScopedResource()
         PlaybackSession.shared.play(
             MediaItem(
