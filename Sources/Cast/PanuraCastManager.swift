@@ -186,6 +186,7 @@ final class PanuraCastManager: ObservableObject {
         server.streamURL = file
         server.headers = [:]
         server.masterOverride = nil
+        server.remux = nil
         return true
     }
 
@@ -203,7 +204,35 @@ final class PanuraCastManager: ObservableObject {
         server.streamURL = base
         server.headers = [:]
         server.masterOverride = master
+        server.remux = nil
         return true
+    }
+
+    /// Starts the HTTP server for a stream whose audio this phone is folding
+    /// into its video. See `CastRemux`.
+    ///
+    /// Unlike `startServerForMaster` this leaves the phone serving the film
+    /// rather than a playlist, so the server has to stay up and on the network
+    /// until the television is finished. `base` still decides the proxy URL's
+    /// extension, and the master served at it points every variant back here.
+    func startServerForRemux(_ session: CastRemux.Session) -> Bool {
+        start()
+        guard isServerRunning, let ip = PanuraCastServer.localIPv4() else { return false }
+        server.streamURL = session.original.url
+        server.headers = session.headers
+        server.remux = session
+        server.masterOverride = session.master(root: "http://\(ip):\(PanuraCastServer.httpPort)")
+        return true
+    }
+
+    /// Drops a muxing session, and with it the segments it is holding.
+    ///
+    /// Called when a cast ends as well as when one begins: the cache is a few
+    /// megabytes of somebody else's film, and there is no reason for it to
+    /// outlive the viewing.
+    func clearRemux() {
+        guard isServerRunning else { return }
+        server.remux = nil
     }
 
     func castLocal(file: URL, title: String) {
@@ -214,6 +243,7 @@ final class PanuraCastManager: ObservableObject {
         // Nothing to replay: the file is on disk, not behind a gate.
         server.headers = [:]
         server.masterOverride = nil
+        server.remux = nil
         guard let proxy = PanuraCastServer.proxyURL(for: file) else {
             lastError = "No Wi-Fi address — the TV has no way to reach this device."
             return
@@ -256,6 +286,7 @@ final class PanuraCastManager: ObservableObject {
         // Panura's own receiver plays alternate audio perfectly well and has
         // its own track picker, so it gets the real playlist.
         server.masterOverride = nil
+        server.remux = nil
         guard let proxy = PanuraCastServer.proxyURL(for: item.url) else {
             lastError = "No Wi-Fi address — the TV has no way to reach this device."
             return

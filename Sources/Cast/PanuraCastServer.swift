@@ -56,6 +56,15 @@ final class PanuraCastServer: NSObject {
     /// cleared by anything that sets `streamURL` for its own purposes, or a
     /// later cast is handed the previous film's playlist.
     var masterOverride: String?
+    /// A stream whose audio this phone is folding into its video, segment by
+    /// segment, for a television that cannot play the two separately.
+    ///
+    /// Unlike `masterOverride` — a kilobyte, once — this one puts the phone in
+    /// the path of the whole film: every segment the TV asks for is fetched
+    /// here, muxed, and handed on. Cleared by anything that sets `streamURL`,
+    /// for the same reason and with more at stake: a stale session would serve
+    /// the previous film's pictures under this film's playlist.
+    var remux: CastRemux.Session?
 
     var onMessage: ((CastMessage) -> Void)?
     var onClientCountChanged: ((Int) -> Void)?
@@ -285,6 +294,50 @@ final class PanuraCastServer: NSObject {
             else { return .notFound }
             return self.serve(url, range: request.headers["range"], rewrite: false)
         }
+
+        // Playlists and segments this phone builds rather than forwards.
+        //
+        // Its own route because nothing here is a proxy: `/pl/` and `/seg/`
+        // hand on what upstream said, while these are assembled from two
+        // upstream objects and exist at no address but this one.
+        http["/mux/:name"] = { [weak self] request in
+            if request.method.uppercased() == "OPTIONS" { return Self.preflight }
+            guard let self, let name = request.params[":name"],
+                  let session = self.remux, let ip = Self.localIPv4()
+            else { return .notFound }
+            return self.serveMuxed(name, session: session, root: "http://\(ip):\(Self.httpPort)")
+        }
+    }
+
+    /// `v<variant>.m3u8` for a playlist, `<variant>-<number>.ts` for a segment.
+    private func serveMuxed(
+        _ name: String, session: CastRemux.Session, root: String
+    ) -> HttpResponse {
+        if name.hasPrefix("v"), name.hasSuffix(".m3u8"),
+           let variant = Int(name.dropFirst().dropLast(5)) {
+            guard let text = session.playlist(variant: variant, root: root) else { return .notFound }
+            onProxyRequest?("muxed playlist \(variant)", 200, text.utf8.count)
+            return Self.playlist(Data(text.utf8))
+        }
+
+        let parts = name.replacingOccurrences(of: ".ts", with: "").split(separator: "-")
+        guard parts.count == 2, let variant = Int(parts[0]), let number = Int(parts[1])
+        else { return .notFound }
+        guard let data = session.segment(variant: variant, number: number) else {
+            // Worth reporting rather than swallowing: this is the one failure
+            // that means the phone could not reach the CDN mid-film, which
+            // looks from the sofa exactly like the television giving up.
+            onProxyRequest?("mux \(name) FAILED", 502, 0)
+            return .internalServerError
+        }
+        // No `Accept-Ranges`. A muxed segment exists only as a whole — there is
+        // nothing to seek within and no stable byte offsets to honour — and
+        // claiming ranges we would then ignore is worse than not offering them.
+        var headers = Self.cors
+        headers["Content-Type"] = "video/mp2t"
+        headers["Content-Length"] = "\(data.count)"
+        onProxyRequest?("mux \(name)", 200, data.count)
+        return .raw(200, "OK", headers) { try $0.write(data) }
     }
 
     private func target(_ id: String) -> URL? {

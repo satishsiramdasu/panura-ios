@@ -14,6 +14,12 @@ struct HLSAudioRendition: Identifiable, Hashable {
     /// The `LANGUAGE` attribute, an ISO code — `tel`, `tam`, `en`.
     let language: String?
     let isDefault: Bool
+    /// Its `URI`, as written in the master — relative or absolute.
+    ///
+    /// Unused by `singleAudio`, which only ever moves the whole line around.
+    /// `CastRemux` needs it: muxing means actually fetching the audio playlist
+    /// rather than pointing the television at it.
+    let uri: String
 
     var label: String {
         guard !name.isEmpty else { return language ?? "Audio \(id + 1)" }
@@ -212,7 +218,8 @@ enum CastAudioMaster {
                     group: attribute("GROUP-ID", in: line) ?? "",
                     name: attribute("NAME", in: line) ?? "",
                     language: attribute("LANGUAGE", in: line),
-                    isDefault: attribute("DEFAULT", in: line) == "YES"
+                    isDefault: attribute("DEFAULT", in: line) == "YES",
+                    uri: attribute("URI", in: line) ?? ""
                 )
             )
         }

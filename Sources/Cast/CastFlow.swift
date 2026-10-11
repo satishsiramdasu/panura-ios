@@ -177,6 +177,10 @@ final class CastFlow: ObservableObject {
         queue.removeAll()
         nowPlaying = nil
         audio = nil
+        muxed = nil
+        sent = nil
+        canMux = false
+        PanuraCastManager.shared.clearRemux()
         stage = .idle
         work?.cancel()
         work = nil
@@ -209,6 +213,10 @@ final class CastFlow: ObservableObject {
         // The next thing in the queue is a different stream with different
         // tracks; `play` sets this again if it has any.
         audio = nil
+        muxed = nil
+        sent = nil
+        canMux = false
+        PanuraCastManager.shared.clearRemux()
         if queue.isEmpty {
             stage = .idle
         } else {
@@ -225,27 +233,143 @@ final class CastFlow: ObservableObject {
     /// anything that is not HLS.
     @Published private(set) var audio: CastAudioMaster.Prepared?
 
+    /// The stream this phone is folding audio into, if that is what is
+    /// happening instead. See `CastRemux`.
+    ///
+    /// Never set at the same time as `audio`: they are two answers to one
+    /// question. Filtering the master hands the television a playlist and gets
+    /// out of the way; muxing stays in the path of every segment for the
+    /// length of the film.
+    @Published private(set) var muxed: CastRemux.Session?
+
+    /// True while a strategy is being prepared.
+    ///
+    /// Worth showing. Switching reads two playlists and an audio segment
+    /// before anything is sent, and until it lands the television is still
+    /// playing the old way — so without this the screen says nothing happened.
+    @Published private(set) var reloading = false
+
+    /// Whether muxing is worth offering: an HLS master with its audio declared
+    /// separately. Anything else it cannot help, so the option is not shown.
+    @Published private(set) var canMux = false
+
+    /// Set when muxing was asked for and could not be done.
+    ///
+    /// Without this the switch sits on while nothing changes, which is the
+    /// worst of the three states: the film still stops, the setting says it is
+    /// being handled, and there is nothing to read. The reasons are real and
+    /// worth naming — a live channel has no fixed segment list to renumber,
+    /// encrypted segments cannot be opened, and fragmented MP4 is a different
+    /// container.
+    @Published private(set) var muxUnavailable = false
+
+    /// The stream as the page gave it to us, whichever path it took. Kept so a
+    /// change of strategy or of track can start again from the original rather
+    /// than from whatever local address is currently on the television.
+    private var sent: MediaItem?
+
+    /// The audio tracks the television could be given, whichever path is in
+    /// use — so the picker needs to know about neither.
+    var tracks: [HLSAudioRendition] { muxed?.tracks ?? audio?.tracks ?? [] }
+    var chosenTrack: Int? { muxed?.chosen ?? audio?.chosen }
+    /// Whether this phone is in the path of the film.
+    var isMuxing: Bool { muxed != nil }
+
+    /// Turns phone-side muxing on or off for this television, and starts the
+    /// film again the new way.
+    ///
+    /// The answer is remembered against the TV's name, so somebody with one
+    /// old set in the bedroom neither re-answers it per film nor makes their
+    /// good television pay for it. See `CastPreferences.needsMuxing`.
+    func setMuxing(_ on: Bool) {
+        guard let device = deviceName, let media = sent else { return }
+        CastPreferences.setMuxing(on, on: device)
+        Task { await resend(media, track: chosenTrack) }
+    }
+
     /// Sends the same video again with a different audio track.
     ///
     /// **It reloads on the television, and there is no way around that.** The
-    /// receiver is playing a playlist that declares one audio track; another
-    /// track is another playlist, and Cast has no notion of swapping one
-    /// underneath a running stream. So the position is read back and handed to
-    /// the new load — the picture jumps, the film does not.
+    /// receiver is playing a stream that carries one audio track; another
+    /// track is another stream, and Cast has no notion of swapping one
+    /// underneath a running load. So the position is read back and handed to
+    /// the new one — the picture jumps, the film does not.
     ///
     /// No ad, deliberately: this is not a new cast, it is the same one being
     /// corrected, and an interstitial in the middle of a task is the pattern
     /// the whole ad design avoids.
     func changeAudio(to id: Int) {
-        guard let current = audio, current.chosen != id,
-              let next = CastAudioMaster.reselect(current, to: id)
-        else { return }
-        audio = next
-        CastManager.shared.cast(
-            next.send,
-            advertise: false,
-            startAt: CastManager.shared.remotePosition
-        )
+        guard chosenTrack != id, let media = sent else { return }
+        Task { await resend(media, track: id) }
+    }
+
+    /// Prepares `media` again and replaces what the television is playing,
+    /// from where it had got to.
+    private func resend(_ media: MediaItem, track: Int?) async {
+        reloading = true
+        let at = CastManager.shared.remotePosition
+        let payload = await chromecastPayload(media, track: track)
+        reloading = false
+        CastManager.shared.cast(payload, advertise: false, startAt: at)
+    }
+
+    /// What a Chromecast should actually be sent.
+    ///
+    /// Three outcomes, in the order they are tried:
+    ///
+    /// - **Muxed on the phone**, when this television has been marked as
+    ///   needing it. The only thing that helps a set whose Chromecast cannot
+    ///   run audio and video as two streams, and by far the most expensive —
+    ///   every byte of the film passes through here.
+    /// - **One audio rendition**, when the master declares several, several
+    ///   groups, or a codec the hardware cannot decode. A kilobyte, once.
+    /// - **Untouched**, which is most streams.
+    ///
+    /// Falling through is deliberate at every step: a stream that cannot be
+    /// read here may still play on the television, and refusing to cast it
+    /// because an optimisation failed would be worse than the fault being
+    /// worked around.
+    private func chromecastPayload(_ media: MediaItem, track: Int?) async -> MediaItem {
+        audio = nil
+        muxed = nil
+        muxUnavailable = false
+        PanuraCastManager.shared.clearRemux()
+
+        let wanted = CastPreferences.needsMuxing(on: deviceName ?? "")
+        if wanted,
+           let session = await CastRemux.prepare(media, track: track),
+           PanuraCastManager.shared.startServerForRemux(session),
+           let address = PanuraCastServer.proxyURL(for: media.url),
+           // **The track is in the address on purpose.** Changing it serves a
+           // different stream at the same path, and a receiver holding the
+           // previous playlist would answer the next load out of its own cache.
+           let local = URL(string: address + "?a=\(session.chosen)") {
+            muxed = session
+            canMux = true
+            var copy = media
+            copy.url = local
+            // The address ends `.m3u8` before the query, but say it anyway:
+            // the Cast MIME type is chosen from this first and a wrong guess
+            // is a refused load.
+            copy.contentType = "hls"
+            return copy
+        }
+
+        var prepared = await CastAudioMaster.prepare(media)
+        if let track, let current = prepared, current.chosen != track {
+            prepared = CastAudioMaster.reselect(current, to: track) ?? prepared
+        }
+        audio = prepared
+        // A master worth filtering is a master with audio declared separately,
+        // so it is also one worth offering to mux; only when there was nothing
+        // to filter is it worth a look of its own.
+        canMux = prepared != nil ? true : await CastRemux.looksMuxable(media)
+        // Reaching here with muxing switched on means it was tried and could
+        // not be done. The switch stays where the person put it — it is right
+        // about their television — and the screen says why this film is an
+        // exception.
+        muxUnavailable = wanted && canMux
+        return prepared?.send ?? media
     }
 
     private func play(_ item: CastQueueItem, auto: Bool) async {
@@ -261,12 +385,12 @@ final class CastFlow: ObservableObject {
                 // television — cannot play alternate audio renditions at all.
                 // Panura's own receiver can, and is handed the original above.
                 // nil means there was nothing to change. See `CastAudioMaster`.
-                let prepared = await CastAudioMaster.prepare(media)
-                audio = prepared
+                sent = media
+                let payload = await chromecastPayload(media, track: nil)
                 // A Cast session that has gone between the tap and here is
                 // the one case worth reporting: the old code said "playing"
                 // over a load that never left the phone.
-                guard CastManager.shared.cast(prepared?.send ?? media, advertise: !auto) else {
+                guard CastManager.shared.cast(payload, advertise: !auto) else {
                     stage = .failed("Lost the connection to \(deviceName ?? "the TV").")
                     return
                 }

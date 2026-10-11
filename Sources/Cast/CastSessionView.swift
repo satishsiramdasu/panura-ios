@@ -212,6 +212,8 @@ struct ChromecastControlView: View {
 
                     castError
 
+                    muxToggle
+
                     audioPicker
 
                     Text("This television is a Chromecast, so play and pause are all it reports back.")
@@ -265,30 +267,81 @@ struct ChromecastControlView: View {
         }
     }
 
+    /// The switch for a television whose Chromecast cannot play audio and
+    /// video as two separate streams.
+    ///
+    /// **It is offered rather than decided because nothing here can decide
+    /// it.** A set that lacks the second pipeline does not say so: it loads
+    /// the stream, shows one frame and stops — which is also what a slow
+    /// network, a refused manifest and an undecodable codec look like from the
+    /// sofa. So the person in front of the television is the detector, and
+    /// once they have answered, the answer is kept against that set's name and
+    /// not asked again. See `CastPreferences.needsMuxing`.
+    ///
+    /// Shown only where it could help: an HLS stream whose audio is declared
+    /// separately. Anywhere else the audio is already inside the video, and a
+    /// switch that changes nothing would send somebody chasing the wrong
+    /// fault.
+    @ViewBuilder
+    private var muxToggle: some View {
+        if flow.canMux {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(get: { flow.isMuxing }, set: { flow.setMuxing($0) })) {
+                    Text("Combine sound into the picture")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .tint(PanuraTheme.accent)
+                .disabled(flow.reloading)
+
+                Text(muxCaption)
+                    .font(.caption2)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(12)
+            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    /// Three states, and the middle one is the reason this is not one string:
+    /// switched on and working, switched on and impossible for this particular
+    /// film, and off.
+    private var muxCaption: String {
+        if flow.reloading { return "Preparing the stream…" }
+        if flow.muxUnavailable {
+            return """
+            This video cannot be combined on the phone — a live channel,             encrypted segments or a format this cannot open. It has been sent             the ordinary way instead.
+            """
+        }
+        return """
+        For older televisions that start a video and stop a few seconds in.         The phone joins the picture and sound together before sending them, so         it has to stay on this network while the film plays.
+        """
+    }
+
     /// Which audio is on the television, and how to change it.
     ///
     /// **Only for a stream that had more than one to begin with.** A
-    /// Chromecast cannot play alternate audio, so the playlist it was handed
-    /// declares exactly one track — see `CastAudioMaster`. That means the
-    /// receiver has no track list to report and this is the only place the
-    /// choice exists at all; it is read from what the phone built, not from
-    /// anything the television says.
+    /// Chromecast cannot play alternate audio, so whatever the phone built for
+    /// it carries exactly one track — whether that was a filtered master or a
+    /// muxed stream. The receiver therefore has no track list to report, and
+    /// this is the only place the choice exists at all; it is read from what
+    /// the phone built, not from anything the television says.
     ///
     /// Absent entirely for a single-audio stream, which is most of them. A row
     /// reading "Audio: Default" with one option under it teaches people to
     /// stop reading this part of the screen.
     @ViewBuilder
     private var audioPicker: some View {
-        if let audio = flow.audio, audio.tracks.count > 1 {
+        if flow.tracks.count > 1 {
             VStack(spacing: 6) {
                 Menu {
-                    ForEach(audio.tracks) { track in
+                    ForEach(flow.tracks) { track in
                         Button {
                             flow.changeAudio(to: track.id)
                         } label: {
                             Label(
                                 track.label,
-                                systemImage: track.id == audio.chosen ? "checkmark" : ""
+                                systemImage: track.id == flow.chosenTrack ? "checkmark" : ""
                             )
                         }
                     }
@@ -296,7 +349,7 @@ struct ChromecastControlView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "waveform")
                             .font(.system(size: 13, weight: .semibold))
-                        Text(audio.chosenTrack?.label ?? "Audio")
+                        Text(flow.tracks.first { $0.id == flow.chosenTrack }?.label ?? "Audio")
                             .font(.subheadline.weight(.semibold))
                             .lineLimit(1)
                         Image(systemName: "chevron.down")
