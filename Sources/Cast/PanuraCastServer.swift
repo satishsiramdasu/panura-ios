@@ -195,6 +195,49 @@ final class PanuraCastServer: NSObject {
 
     // MARK: HTTP proxy
 
+    /// Headers every response carries.
+    ///
+    /// **A Cast receiver fetches adaptive streams with XHR, so the browser
+    /// rules apply.** Google's media docs are explicit — "with adaptive
+    /// bitrate streaming protocols, you must implement CORS" — and a manifest
+    /// the receiver is refused shows up as error 3116403, which the error
+    /// reference attributes to exactly this. No `Access-Control-Allow-Origin`
+    /// means the receiver never gets to parse the playlist at all, and from
+    /// the sofa that is indistinguishable from a stream it cannot decode.
+    ///
+    /// It is also why casting these streams *directly* works: the CDN sends
+    /// this very set. Serving a playlist from the phone without it put a
+    /// stricter server in front of the same video.
+    ///
+    /// `Expose-Headers` matters as much as the first line. Ranged segment
+    /// reads are answered with `Content-Range`, and a response whose length
+    /// and range the receiver cannot read is one it cannot seek in.
+    ///
+    /// Harmless to Panura's own receiver, which plays with ExoPlayer natively
+    /// and has never cared what a browser would make of these.
+    static let cors = [
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Access-Control-Allow-Headers": "Range, Origin, Accept, Content-Type",
+        "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
+    ]
+
+    /// The answer to a preflight: the headers and nothing else.
+    private static var preflight: HttpResponse {
+        .raw(204, "No Content", cors) { _ in }
+    }
+
+    /// A playlist, with the headers that let a receiver read it.
+    ///
+    /// `.ok(.data(_:contentType:))` cannot carry extra headers, which is how
+    /// every playlist this server ever served went out without CORS.
+    private static func playlist(_ data: Data) -> HttpResponse {
+        var headers = cors
+        headers["Content-Type"] = "application/vnd.apple.mpegurl"
+        headers["Content-Length"] = "\(data.count)"
+        return .raw(200, "OK", headers) { try $0.write(data) }
+    }
+
     /// Proxy URL for `streamURL`, matching Android's `CastServer.proxyUrl` — the
     /// extension is what tells the TV's player which container to expect, so a
     /// progressive file must not be advertised as a playlist.
@@ -211,10 +254,11 @@ final class PanuraCastServer: NSObject {
         // The stream itself. Both paths serve the same thing; only the extension
         // differs, and the TV picks its demuxer from it.
         let serveStream: (HttpRequest) -> HttpResponse = { [weak self] request in
+            if request.method.uppercased() == "OPTIONS" { return Self.preflight }
             guard let self, let url = self.streamURL else { return .notFound }
             // A master we built ourselves: no upstream fetch, no rewriting.
             if let master = self.masterOverride {
-                return .ok(.data(Data(master.utf8), contentType: "application/vnd.apple.mpegurl"))
+                return Self.playlist(Data(master.utf8))
             }
             // A video out of the library is on this phone's disk, not behind a
             // CDN. It has no headers to replay and must never be read whole
@@ -230,11 +274,13 @@ final class PanuraCastServer: NSObject {
         // Sub-playlists and segments from a rewritten playlist. Split by role:
         // only `/pl/` is re-parsed, so a segment is never scanned as a playlist.
         http["/pl/:id"] = { [weak self] request in
+            if request.method.uppercased() == "OPTIONS" { return Self.preflight }
             guard let self, let id = request.params[":id"], let url = self.target(id)
             else { return .notFound }
             return self.serve(url, range: nil, rewrite: true)
         }
         http["/seg/:id"] = { [weak self] request in
+            if request.method.uppercased() == "OPTIONS" { return Self.preflight }
             guard let self, let id = request.params[":id"], let url = self.target(id)
             else { return .notFound }
             return self.serve(url, range: request.headers["range"], rewrite: false)
@@ -283,13 +329,14 @@ final class PanuraCastServer: NSObject {
            let text = String(data: data, encoding: .utf8) {
             data = Data(rewritePlaylist(text, base: url).utf8)
             onProxyRequest?("playlist \(url.lastPathComponent)", status, data.count)
-            return .ok(.data(data, contentType: "application/vnd.apple.mpegurl"))
+            return Self.playlist(data)
         }
 
         // Whole-body only: stripping bytes would invalidate the offsets a ranged
         // response was answered with.
         let out = range == nil ? StreamProxy.stripDecoyHeader(data) : data
-        var responseHeaders = [
+        var responseHeaders = Self.cors
+        responseHeaders.merge([
             "Content-Type": mime ?? "application/octet-stream",
             "Accept-Ranges": "bytes",
             // Required. A `.raw` response sets no length itself, so without this
@@ -298,7 +345,7 @@ final class PanuraCastServer: NSObject {
             // segment to its demuxer. NanoHTTPD sets it for free on Android,
             // which is why the same protocol works there.
             "Content-Length": "\(out.count)",
-        ]
+        ]) { _, new in new }
         contentRange.map { responseHeaders["Content-Range"] = $0 }
         onProxyRequest?(url.lastPathComponent, status, out.count)
         return .raw(status, status == 206 ? "Partial Content" : "OK", responseHeaders) { writer in
