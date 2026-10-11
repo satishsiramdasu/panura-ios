@@ -219,7 +219,14 @@ final class CastFlow: ObservableObject {
             if PanuraCastManager.shared.isTVConnected {
                 PanuraCastManager.shared.cast(media)
             } else {
-                CastManager.shared.cast(media, advertise: !auto)
+                // Chromecast only. A multi-audio HLS master is rewritten to a
+                // single audio track first, because the Cast hardware this is
+                // aimed at — a Chromecast built into an Android 6 or 7
+                // television — cannot play alternate audio renditions at all.
+                // Panura's own receiver can, and is handed the original above.
+                // nil means there was nothing to change. See `CastAudioMaster`.
+                let sending = await CastAudioMaster.prepare(media) ?? media
+                CastManager.shared.cast(sending, advertise: !auto)
             }
             stage = .playing
         case let .photo(identifier):

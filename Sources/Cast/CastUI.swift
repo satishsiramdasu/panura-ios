@@ -256,8 +256,9 @@ struct CastDevicesView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 18)
         }
-        // No width, no background, no corners: it is a popover's content now,
-        // and the popover owns all three.
+        // No width, no background, no corners: whatever presents this owns all
+        // three. `CastPanelOverlay` is a centred dialog and supplies them; it
+        // was a popover before, which did the same.
         // Whatever the way out — dismissing, connecting — the scan ends with the
         // screen. An idle scan costs battery and the SDK will not stop one on
         // its own.
@@ -671,6 +672,18 @@ struct CastPanelOverlay: View {
 
                 CastDevicesView()
                     .environmentObject(CastManager.shared)
+                    // **The surface the popover used to own.** This view was
+                    // written as popover content and says so — no width, no
+                    // background, no corners, because all three came from the
+                    // thing presenting it. Turning it into a centred dialog
+                    // took that away and left the list floating on the dim,
+                    // which is the transparent background it shipped with.
+                    // Same surface and radius as `ClearDataDialog`, so the
+                    // app's two dialogs are one shape.
+                    .background(
+                        PanuraTheme.surfaceContainerHigh,
+                        in: RoundedRectangle(cornerRadius: 20)
+                    )
                     .frame(maxWidth: 360)
                     .padding(.horizontal, 24)
                     // Grows from its own middle. The panel's old transition

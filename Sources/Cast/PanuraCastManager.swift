@@ -185,6 +185,24 @@ final class PanuraCastManager: ObservableObject {
         guard isServerRunning else { return false }
         server.streamURL = file
         server.headers = [:]
+        server.masterOverride = nil
+        return true
+    }
+
+    /// Starts the HTTP server and points it at a playlist built on this phone,
+    /// for a Chromecast that cannot play the original's alternate audio. See
+    /// `CastAudioMaster`.
+    ///
+    /// `base` is the real master's address. It decides the proxy URL's
+    /// extension — the television picks its demuxer from that — and nothing
+    /// else, because the playlist being served names absolute upstream URLs
+    /// and the server is never asked for anything but the playlist.
+    func startServerForMaster(_ master: String, base: URL) -> Bool {
+        start()
+        guard isServerRunning else { return false }
+        server.streamURL = base
+        server.headers = [:]
+        server.masterOverride = master
         return true
     }
 
@@ -195,6 +213,7 @@ final class PanuraCastManager: ObservableObject {
         server.streamURL = file
         // Nothing to replay: the file is on disk, not behind a gate.
         server.headers = [:]
+        server.masterOverride = nil
         guard let proxy = PanuraCastServer.proxyURL(for: file) else {
             lastError = "No Wi-Fi address — the TV has no way to reach this device."
             return
@@ -234,6 +253,9 @@ final class PanuraCastManager: ObservableObject {
         // Untrimmed: the TV needs everything the page sent, and the proxy must
         // fetch on the same terms the TV would.
         server.headers = item.castHeaders
+        // Panura's own receiver plays alternate audio perfectly well and has
+        // its own track picker, so it gets the real playlist.
+        server.masterOverride = nil
         guard let proxy = PanuraCastServer.proxyURL(for: item.url) else {
             lastError = "No Wi-Fi address — the TV has no way to reach this device."
             return

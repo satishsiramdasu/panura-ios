@@ -46,6 +46,16 @@ final class PanuraCastServer: NSObject {
     /// Stream currently being served, with the headers to fetch it.
     var streamURL: URL?
     var headers: [String: String] = [:]
+    /// A master playlist to hand over verbatim instead of fetching
+    /// `streamURL`. Set by `CastAudioMaster` to give a Chromecast a stream
+    /// with one audio rendition instead of five.
+    ///
+    /// Served as it is, with no rewriting, because every URI in it is already
+    /// absolute and upstream — so this answers one request of about a kilobyte
+    /// and the television streams the video straight from the CDN. Must be
+    /// cleared by anything that sets `streamURL` for its own purposes, or a
+    /// later cast is handed the previous film's playlist.
+    var masterOverride: String?
 
     var onMessage: ((CastMessage) -> Void)?
     var onClientCountChanged: ((Int) -> Void)?
@@ -202,6 +212,10 @@ final class PanuraCastServer: NSObject {
         // differs, and the TV picks its demuxer from it.
         let serveStream: (HttpRequest) -> HttpResponse = { [weak self] request in
             guard let self, let url = self.streamURL else { return .notFound }
+            // A master we built ourselves: no upstream fetch, no rewriting.
+            if let master = self.masterOverride {
+                return .ok(.data(Data(master.utf8), contentType: "application/vnd.apple.mpegurl"))
+            }
             // A video out of the library is on this phone's disk, not behind a
             // CDN. It has no headers to replay and must never be read whole
             // into memory — a holiday clip is gigabytes.
