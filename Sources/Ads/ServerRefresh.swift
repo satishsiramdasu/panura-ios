@@ -61,6 +61,19 @@ enum ServerRefresh {
         UserDefaults.standard.removeObject(forKey: key(id))
     }
 
+    /// Drops every server's clock. For the ad-state panel in a test build:
+    /// the free hour, the ad-due hour and the 24-hour wall are otherwise only
+    /// reachable by waiting or by reinstalling, and reinstalling resets the
+    /// launch count too — which turns ads off altogether for that session and
+    /// makes the next hour of testing meaningless.
+    static func forgetAll() {
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys
+        where key.hasPrefix("server.refreshed.") {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     /// Whether this catalogue may be shown at all.
     ///
     /// A server that has never been refreshed is **not** expired: the first

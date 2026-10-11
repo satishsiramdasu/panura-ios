@@ -7,6 +7,9 @@ import SwiftUI
 struct AboutView: View {
     @ObservedObject private var versions = VersionStore.shared
     @State private var checked = false
+    /// Bumped to re-read `AdManager.diagnostics`, which is a computed snapshot
+    /// and so changes nothing SwiftUI watches.
+    @State private var adStateTick = 0
     @State private var showShare = false
 
     private var appVersion: String {
@@ -29,6 +32,7 @@ struct AboutView: View {
     private var adState: some View {
         if FeatureFlags.adsEnabled, FeatureFlags.adsUseTestUnits {
             Section {
+                let _ = adStateTick
                 ForEach(AdManager.shared.diagnostics) { row in
                     HStack {
                         Text(row.id)
@@ -39,6 +43,21 @@ struct AboutView: View {
                             .foregroundStyle(PanuraTheme.onSurfaceVariant)
                             .multilineTextAlignment(.trailing)
                     }
+                }
+
+                // Every clock, forgotten. The gaps are 15 minutes and an hour,
+                // which is the right length in somebody's hands and far too
+                // long in front of four placements that each need checking —
+                // and the alternative, a reinstall, resets the launch count
+                // and turns ads off for the whole session.
+                Button {
+                    AdPolicy.reset()
+                    ServerRefresh.forgetAll()
+                    adStateTick += 1
+                } label: {
+                    Text("Reset every clock")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PanuraTheme.accent)
                 }
             } header: {
                 Text("Ad state")
