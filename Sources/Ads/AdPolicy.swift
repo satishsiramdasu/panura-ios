@@ -124,6 +124,15 @@ enum AdPolicy {
         )
     }
 
+    /// How long until `placement` may fire again, or zero if it may now.
+    /// For the ad-state panel: "blocked by a gap" and "never loaded" look
+    /// identical from outside, and they need completely different fixes.
+    static func remaining(_ placement: Placement) -> TimeInterval {
+        let last = UserDefaults.standard.double(forKey: placement.lastShownKey)
+        guard last > 0 else { return 0 }
+        return max(0, placement.gap - (Date().timeIntervalSince1970 - last))
+    }
+
     /// Whether anything may be drawn for ads at all — what the banner asks.
     ///
     /// The banner has no gap of its own: it is passive, it refreshes on the

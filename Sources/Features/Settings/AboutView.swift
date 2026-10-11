@@ -15,10 +15,47 @@ struct AboutView: View {
         return "\(name) (\(code))"
     }
 
+    /// The ad gates, while the app is serving test units.
+    ///
+    /// **It takes itself away.** The condition is `adsUseTestUnits`, the flag
+    /// that must be false in any build that is submitted — so this panel is
+    /// present in exactly the builds being tested and absent from the one
+    /// that ships, with no second flag to remember.
+    ///
+    /// Not behind `#if DEBUG`: TestFlight and sideloaded builds are Release
+    /// builds, and those are the only places the ad paths can be verified at
+    /// all. There is no console on either.
+    @ViewBuilder
+    private var adState: some View {
+        if FeatureFlags.adsEnabled, FeatureFlags.adsUseTestUnits {
+            Section {
+                ForEach(AdManager.shared.diagnostics) { row in
+                    HStack {
+                        Text(row.id)
+                            .font(.subheadline)
+                        Spacer(minLength: 12)
+                        Text(row.value)
+                            .font(.subheadline)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            .multilineTextAlignment(.trailing)
+                    }
+                }
+            } header: {
+                Text("Ad state")
+            } footer: {
+                Text("""
+                Test units only — this section is not in a released build. An                 ad needs every line above it to be in order: the SDK ready,                 an ad loaded, a gap that has run out, and a session that is                 not the first.
+                """)
+            }
+        }
+    }
+
     var body: some View {
         List {
             Section { appCard.listRowInsets(EdgeInsets()) }
                 .listRowBackground(Color.clear)
+
+            adState
 
             Section {
                 PreferenceButton(

@@ -402,6 +402,53 @@ final class AdManager: NSObject {
         return view
     }
 
+    // MARK: what state everything is in
+
+    /// Every gate an ad has to pass, as text. Read by the ad-state panel in
+    /// About.
+    ///
+    /// **This exists because the failures are invisible.** Every one of them
+    /// is a deliberate silent no-op — an ad that is not due, not loaded, not
+    /// filled, or a session that is somebody's first — and from outside the
+    /// app all of them look the same: no ad. On a sideloaded or TestFlight
+    /// build there is no console either, so without this the only way to tell
+    /// a 15-minute gap from an SDK that never started is to read the source
+    /// and guess which.
+    ///
+    /// `ready` is the one worth looking at first. It is false until
+    /// `MobileAds` finishes initialising, nothing preloads while it is false,
+    /// and the banner does not depend on it — so "banners fine, interstitials
+    /// never" is exactly what it looks like.
+    struct Diagnostic: Identifiable {
+        /// The label, which is unique, which makes it the id.
+        let id: String
+        let value: String
+    }
+
+    var diagnostics: [Diagnostic] {
+        func clock(_ placement: AdPolicy.Placement) -> String {
+            let left = AdPolicy.remaining(placement)
+            guard left > 0 else { return "ready" }
+            return "\(Int(left / 60) + 1) min to go"
+        }
+        let rewardedState = Self.rewardedUnitID.isEmpty
+            ? "no unit set"
+            : (rewarded != nil ? "loaded" : "empty")
+        return [
+            Diagnostic(id: "Ads enabled", value: FeatureFlags.adsEnabled ? "yes" : "no"),
+            Diagnostic(id: "Units", value: FeatureFlags.adsUseTestUnits ? "Google test" : "live"),
+            Diagnostic(id: "Session", value: AdPolicy.isFirstSession ? "first — all ads off" : "ads on"),
+            Diagnostic(id: "Consent", value: AdConsent.canRequestAds ? "may request" : "not yet"),
+            Diagnostic(id: "SDK ready", value: ready ? "yes" : "no — nothing can preload"),
+            Diagnostic(id: "Player ad", value: ads[.browser] != nil ? "loaded" : "empty"),
+            Diagnostic(id: "Cast ad", value: ads[.cast] != nil ? "loaded" : "empty"),
+            Diagnostic(id: "Rewarded", value: rewardedState),
+            Diagnostic(id: "Player gap", value: clock(.player)),
+            Diagnostic(id: "Cast gap", value: clock(.cast)),
+            Diagnostic(id: "Refresh gap", value: clock(.servers)),
+        ]
+    }
+
     private static func topViewController() -> UIViewController? {
         let scenes = UIApplication.shared.connectedScenes
         let window = scenes
