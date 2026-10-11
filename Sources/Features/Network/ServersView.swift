@@ -133,7 +133,7 @@ struct ServersView: View {
                         Button { Task { await iptv.load(source) } } label: {
                             row(
                                 title: source.displayName,
-                                detail: source.subtitle,
+                                detail: detail(for: source),
                                 glyph: "list.and.film",
                                 badge: source.kind.label
                             )
@@ -192,6 +192,27 @@ struct ServersView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+
+    /// A playlist row's tagline: where it points, and when it last updated.
+    ///
+    /// The age is the reason this row exists rather than just a name. A
+    /// playlist is somebody else's list and it changes without warning, so
+    /// "updated 3 days ago" is both the answer to "why is that channel
+    /// missing" and the thing that makes the Refresh inside worth pressing.
+    /// It is read here rather than inside the server because it is a question
+    /// asked while *choosing* between servers.
+    ///
+    /// `ServerRefresh`'s clock, not the catalogue's fetch time: that one is
+    /// reset by the automatic three-hour refetch, so it would read "moments
+    /// ago" for a list nobody has deliberately refreshed in a week. This is
+    /// the clock the 24-hour wall counts down, which makes the row and the
+    /// wall agree.
+    private func detail(for source: IPTVSource) -> String {
+        guard let age = ServerRefresh.ageDescription(source.id, style: .short) else {
+            return source.subtitle
+        }
+        return source.subtitle + " · updated " + age
     }
 
     /// One row shape for both kinds, with the kind said in a badge rather than

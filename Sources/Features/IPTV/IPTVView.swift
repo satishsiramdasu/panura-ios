@@ -79,7 +79,10 @@ struct IPTVView: View {
                 Text(store.open?.displayName ?? "Playlist")
                     .font(.headline)
                     .lineLimit(1)
-                if !store.channels.isEmpty {
+                // On the subtitle rather than on the channel count: an
+                // Xtream account opened straight onto Films has films to
+                // report and no channels yet, and the line should say so.
+                if !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.caption2)
                         .foregroundStyle(PanuraTheme.onSurfaceVariant)
@@ -88,23 +91,14 @@ struct IPTVView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Outside the loading branch: the layout is a preference about
-            // what is already on screen, and taking it away while a refetch
-            // runs would be taking away the one control that still works.
-            glyph(
-                layout.next.icon,
-                label: layout == .grid ? "Show a list" : "Show a grid"
-            ) {
-                layout = layout.next
-            }
-            if store.isLoading {
+            // The layout toggle is in the filter row now, beside the
+            // search: a glyph and a labelled button side by side read as two
+            // unrelated sizes of control, and this bar's job is the server's
+            // name and the one action the server has.
+            if store.isLoading || refreshing {
                 ProgressView().controlSize(.small).frame(width: 34, height: 34)
             } else if store.open != nil {
-                // The same gate as the wall's button. A reload inside the free
-                // hour is free; after it, it is the rewarded refresh — one
-                // door, so the clock cannot be walked round by using the bar
-                // instead of the wall.
-                glyph("arrow.clockwise", label: "Reload channels") { refresh() }
+                refreshButton
             }
         }
         .padding(.horizontal, 12)
@@ -112,21 +106,61 @@ struct IPTVView: View {
         .background(chrome)
     }
 
-    /// How many channels, how old they are, and when the subscription runs
-    /// out.
+    /// Refresh, in words.
     ///
-    /// The age matters here in a way it does not elsewhere: a playlist is
-    /// somebody else's list and it changes without warning, so "loaded an hour
-    /// ago" is the answer to "why is that channel missing". And the expiry is
-    /// the question every one of these users eventually has, asked of an app
-    /// that has it to hand and has no reason to keep it.
-    private var subtitle: String {
-        var parts = ["\(store.channels.count) channels"]
-        if let at = store.fetchedAt {
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .short
-            parts.append(formatter.localizedString(for: at, relativeTo: Date()))
+    /// **It was a glyph, and a glyph was wrong for it.** A circular arrow in a
+    /// row of circular-arrow glyphs means "reload this screen", which is
+    /// roughly free and reads as such. This one fetches somebody else's
+    /// catalogue again, resets a 24-hour clock and may play an ad for the
+    /// privilege — the only action on this screen with a cost. Naming it is
+    /// also what the rewarded format asks for: the reward has to be legible
+    /// before the ad, and "Refresh" is the reward.
+    ///
+    /// Soft-filled rather than accent-filled: a solid accent capsule in a
+    /// header outshouts the server's own name, which is the thing somebody
+    /// came to this screen to read.
+    private var refreshButton: some View {
+        Button { refresh() } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Refresh")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(PanuraTheme.accent)
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(PanuraTheme.accentSoft, in: Capsule())
+            .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(adDueForRefresh ? "Refresh, plays a short ad first" : "Refresh")
+    }
+
+    /// What this server holds, and when the subscription runs out.
+    ///
+    /// **Every section, not just the one that is showing.** It counted
+    /// channels alone, on a screen with three tabs — so a panel with four
+    /// hundred films and ninety series described itself by the only number it
+    /// was not currently displaying. What a server holds is the answer to
+    /// "which of my servers was this", and it is the same answer whichever tab
+    /// is in front.
+    ///
+    /// A section is named only once it has something in it. Xtream fetches
+    /// films and series when their tab is first opened, so printing "0 films"
+    /// before then would be reporting our own laziness as the provider's
+    /// catalogue.
+    ///
+    /// **The age is gone from here**, to the servers list, where it belongs:
+    /// the question "when did this last update" is asked while choosing
+    /// between servers, not after opening one. The expiry stays — it is the
+    /// question every one of these users eventually has, asked of an app that
+    /// has it to hand.
+    private var subtitle: String {
+        var parts: [String] = []
+        if !store.channels.isEmpty { parts.append("\(store.channels.count) channels") }
+        if !store.movies.isEmpty { parts.append("\(store.movies.count) films") }
+        if !store.series.isEmpty { parts.append("\(store.series.count) series") }
         if let expires = store.account?.expires {
             parts.append("expires " + expires.formatted(date: .abbreviated, time: .omitted))
         }
@@ -617,6 +651,16 @@ struct IPTVView: View {
                 searchField.frame(maxWidth: .infinity)
                 if !searching, !store.groups.isEmpty {
                     groupButton(within: geo.size.width)
+                }
+                // Down here from the header, and still outside any loading
+                // branch: the layout is a preference about what is already on
+                // screen, and taking it away during a refetch would remove the
+                // one control that still works.
+                glyph(
+                    layout.next.icon,
+                    label: layout == .grid ? "Show a list" : "Show a grid"
+                ) {
+                    layout = layout.next
                 }
             }
         }

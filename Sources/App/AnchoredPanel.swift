@@ -100,9 +100,14 @@ enum PanelMetrics {
     /// site is allowed to do — and a favicon reads as decoration rather than
     /// as a button, so it is a target people have to be told about. Running
     /// the hit area on into the start of the pill makes it a comfortable press
-    /// without giving the panel a control of its own and without taking a
-    /// visible bite out of the title: the favicon stays where it is, and the
-    /// strip beside it is simply live.
+    /// without giving the panel a control of its own.
+    ///
+    /// **Applied as an overlay, never as a width.** Sizing the favicon's cell
+    /// to this is what it did first, and it bought the target by pushing the
+    /// title 28 points right — a hole between a page's mark and a page's name.
+    /// An overlay takes no part in layout, so the mark sits hard against the
+    /// title and the strip over the first of it is live anyway. See
+    /// `BrowserView.siteTrigger`.
     ///
     /// Fixed points rather than a share of a measured pill. On a phone this is
     /// about a fifth of it, which is what was wanted, and it needs no

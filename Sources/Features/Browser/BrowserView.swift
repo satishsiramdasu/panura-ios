@@ -213,6 +213,57 @@ struct BrowserView: View {
     }
 
     private var addressPill: some View {
+        pill.overlay(alignment: .leading) { siteTrigger }
+    }
+
+    /// The part of the pill that opens the site panel.
+    ///
+    /// **An overlay, which is the whole point.** A favicon is 30 points and
+    /// reads as decoration — a poor button for the only door to what a site is
+    /// allowed to do — so the first stretch of the pill beside it answers as
+    /// well. Done by widening the cell, that target cost a 28-point gap
+    /// between the mark and the title; as an overlay it costs nothing, because
+    /// an overlay takes no part in layout. The mark sits where it always sat,
+    /// hard against the name of the page.
+    ///
+    /// It draws nothing and it is inside the pill's own bounds, so there is no
+    /// clipping to lose a tap to. Hidden from VoiceOver: `SiteFavicon`
+    /// underneath is already the labelled button for this, and two elements
+    /// doing one job is worse than a small target.
+    private var siteTrigger: some View {
+        Rectangle()
+            .fill(.clear)
+            .frame(width: PanelMetrics.siteTriggerWidth)
+            .contentShape(Rectangle())
+            .onTapGesture { toggleSitePanel() }
+            .accessibilityHidden(true)
+    }
+
+    /// The icon for the pill's leading cell: the page's own, with a fallback
+    /// that is still the page's own.
+    ///
+    /// `model.faviconURL` is nil for the whole of every page load —
+    /// `didStartProvisionalNavigation` clears it and `FaviconScript` does not
+    /// answer until document end. Flipping private browsing rebuilds the web
+    /// view and reloads from `lastURL`, so that window is exactly when the
+    /// cell fell back to the app's mark, which is why private mode looked like
+    /// it loses the favicon. It never did; it was waiting.
+    ///
+    /// `/favicon.ico` off the page's own origin covers the wait. Every site
+    /// has had one since before any of this was standardised, and it is the
+    /// same guess `FaviconScript` makes when a page declares no icon. Same
+    /// origin, so it tells nobody anything — the rule this cell keeps is that
+    /// a favicon must never be fetched from a third-party icon service, which
+    /// would hand over every site visited.
+    private var siteIcon: URL? {
+        if let declared = model.faviconURL { return declared }
+        guard let current = model.currentURL,
+              let scheme = current.scheme, let host = current.host
+        else { return nil }
+        return URL(string: "\(scheme)://\(host)/favicon.ico")
+    }
+
+    private var pill: some View {
             AddressPill(
                 title: model.pageTitle,
                 url: model.currentURL?.absoluteString ?? "",
@@ -243,27 +294,20 @@ struct BrowserView: View {
                     // controls, which have no other way in. Only the artwork
                     // is the page's.
                     //
-                    // The *target* is wider than the artwork. A favicon is 30
-                    // points and reads as decoration, which is a poor button
-                    // for the only door to what a site may do - so the strip
-                    // of pill beside it is live too, and the icon stays put.
-                    // See `PanelMetrics.siteTriggerWidth`.
-                    HStack(spacing: 0) {
-                        SiteFavicon(
-                            url: model.faviconURL,
-                            active: showMenu,
-                            marked: siteLowered,
-                            tint: session.privateMode ? PanuraTheme.incognito : nil,
-                            label: showMenu ? "Close site controls" : "Site controls and browser menu",
-                            onTap: { toggleSitePanel() }
-                        )
-                        Spacer(minLength: 0)
-                    }
-                    .frame(width: PanelMetrics.siteTriggerWidth)
-                    // A `Spacer` draws nothing and so is nothing to hit; the
-                    // shape is what makes the gap answer at all.
-                    .contentShape(Rectangle())
-                    .onTapGesture { toggleSitePanel() }
+                    // Its natural 30 points, and no more. A wider cell was
+                    // how the target grew, and it bought the target by pushing
+                    // the title 28 points right — a hole between the mark and
+                    // the name of the page it belongs to, which is the one
+                    // pairing in this bar that has to read as one thing.
+                    // `siteTrigger` takes the target back without it.
+                    SiteFavicon(
+                        url: siteIcon,
+                        active: showMenu,
+                        marked: siteLowered,
+                        tint: session.privateMode ? PanuraTheme.incognito : nil,
+                        label: showMenu ? "Close site controls" : "Site controls and browser menu",
+                        onTap: { toggleSitePanel() }
+                    )
                 },
                 trailing: {
                     HStack(spacing: 0) {

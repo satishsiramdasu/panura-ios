@@ -82,12 +82,20 @@ enum ServerRefresh {
         return Date().timeIntervalSince(last) >= free
     }
 
-    /// How old the catalogue is, for the wall to say so. Vague on purpose: the
-    /// exact minute is not the point and "2 days" reads better than a date.
-    static func ageDescription(_ id: UUID) -> String? {
+    /// How old the catalogue is, in words. Vague on purpose: the exact
+    /// minute is not the point and "2 days ago" reads better than a date.
+    ///
+    /// Two styles because there are two readers. The wall is a paragraph and
+    /// takes `.full` — "2 days ago". A row in the servers list is a tagline
+    /// under a name and takes `.short` — "2 days ago" shortened to fit beside
+    /// the address it shares the line with.
+    static func ageDescription(
+        _ id: UUID,
+        style: RelativeDateTimeFormatter.UnitsStyle = .full
+    ) -> String? {
         guard let last = lastRefresh(id) else { return nil }
         let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
+        formatter.unitsStyle = style
         return formatter.localizedString(for: last, relativeTo: Date())
     }
 }
