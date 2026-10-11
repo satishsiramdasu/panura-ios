@@ -178,6 +178,7 @@ struct CastSessionView: View {
 /// trust would be a slider that fights the TV.
 struct ChromecastControlView: View {
     @ObservedObject private var cast = CastManager.shared
+    @ObservedObject private var flow = CastFlow.shared
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -209,6 +210,8 @@ struct ChromecastControlView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(cast.isRemotePlaying ? "Pause" : "Play")
 
+                    audioPicker
+
                     Text("This television is a Chromecast, so play and pause are all it reports back.")
                         .font(.caption)
                         .foregroundStyle(PanuraTheme.onSurfaceVariant)
@@ -231,6 +234,59 @@ struct ChromecastControlView: View {
             .padding(.bottom, 8)
         }
         .background(PanuraTheme.background)
+    }
+
+    /// Which audio is on the television, and how to change it.
+    ///
+    /// **Only for a stream that had more than one to begin with.** A
+    /// Chromecast cannot play alternate audio, so the playlist it was handed
+    /// declares exactly one track — see `CastAudioMaster`. That means the
+    /// receiver has no track list to report and this is the only place the
+    /// choice exists at all; it is read from what the phone built, not from
+    /// anything the television says.
+    ///
+    /// Absent entirely for a single-audio stream, which is most of them. A row
+    /// reading "Audio: Default" with one option under it teaches people to
+    /// stop reading this part of the screen.
+    @ViewBuilder
+    private var audioPicker: some View {
+        if let audio = flow.audio, audio.tracks.count > 1 {
+            VStack(spacing: 6) {
+                Menu {
+                    ForEach(audio.tracks) { track in
+                        Button {
+                            flow.changeAudio(to: track.id)
+                        } label: {
+                            Label(
+                                track.label,
+                                systemImage: track.id == audio.chosen ? "checkmark" : ""
+                            )
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(audio.chosenTrack?.label ?? "Audio")
+                            .font(.subheadline.weight(.semibold))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(PanuraTheme.accent)
+                    .padding(.horizontal, 16)
+                    .frame(height: 38)
+                    .background(PanuraTheme.accentSoft, in: Capsule())
+                    .contentShape(Capsule())
+                }
+
+                Text("Changing audio restarts the video on the TV from where it is now.")
+                    .font(.caption2)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .multilineTextAlignment(.center)
+            }
+            .accessibilityLabel("Audio track")
+        }
     }
 }
 

@@ -40,6 +40,25 @@ struct HLSAudioRendition: Identifiable, Hashable {
 /// re-injects. Nothing is proxied, nothing is transcoded, and a dropped Wi-Fi
 /// on the phone does not stall the film.
 enum CastAudioMaster {
+    /// A multi-audio stream, reduced to one track and ready for a Chromecast.
+    ///
+    /// The original item and the untouched master are both kept, because
+    /// changing the track later means building a different playlist from the
+    /// same source — and by then the thing on the television is our local
+    /// address, which names neither.
+    struct Prepared: Equatable {
+        /// What the receiver is handed.
+        let send: MediaItem
+        /// The stream as the page gave it to us.
+        let original: MediaItem
+        /// The master as it was fetched, unfiltered.
+        let master: String
+        let tracks: [HLSAudioRendition]
+        let chosen: Int
+
+        var chosenTrack: HLSAudioRendition? { tracks.first { $0.id == chosen } }
+    }
+
     /// Rewrites `item` for the Cast path if — and only if — it is an HLS
     /// master with more than one audio rendition. nil means send it as it is.
     ///
@@ -48,28 +67,60 @@ enum CastAudioMaster {
     /// refusing to cast it because this optimisation could not run would be
     /// worse than the bug it fixes.
     @MainActor
-    static func prepare(_ item: MediaItem) async -> MediaItem? {
+    static func prepare(_ item: MediaItem) async -> Prepared? {
         guard looksLikeHLS(item),
               let master = await fetch(item),
               master.contains("#EXT-X-STREAM-INF")
         else { return nil }
 
         let found = renditions(in: master)
-        guard found.count > 1 else { return nil }
+        guard found.count > 1, let keep = preferred(among: found) else { return nil }
+        return build(item: item, master: master, tracks: found, choosing: keep.id)
+    }
 
-        guard let keep = preferred(among: found) else { return nil }
-        let filtered = singleAudio(master, base: item.url, keeping: keep.id)
+    /// The same stream with a different audio track, ready to be re-sent.
+    @MainActor
+    static func reselect(_ prepared: Prepared, to id: Int) -> Prepared? {
+        guard prepared.tracks.contains(where: { $0.id == id }) else { return nil }
+        return build(
+            item: prepared.original,
+            master: prepared.master,
+            tracks: prepared.tracks,
+            choosing: id
+        )
+    }
+
+    @MainActor
+    private static func build(
+        item: MediaItem,
+        master: String,
+        tracks: [HLSAudioRendition],
+        choosing id: Int
+    ) -> Prepared? {
+        let filtered = singleAudio(master, base: item.url, keeping: id)
         guard PanuraCastManager.shared.startServerForMaster(filtered, base: item.url),
               let address = PanuraCastServer.proxyURL(for: item.url),
-              let local = URL(string: address)
+              // **The track number is in the address on purpose.** Changing
+              // audio serves a different playlist at the same path, and a
+              // receiver that cached the last one would play the last one. A
+              // query string is enough — the server's routes ignore it — and it
+              // is the smallest thing that makes the two loads different URLs.
+              let local = URL(string: address + "?a=\(id)")
         else { return nil }
 
         var copy = item
         copy.url = local
-        // The local address ends `.m3u8`, but say it anyway: the Cast MIME type
-        // is chosen from this first and a wrong guess is a refused load.
+        // The local address ends `.m3u8` before the query, but say it anyway:
+        // the Cast MIME type is chosen from this first and a wrong guess is a
+        // refused load.
         copy.contentType = "hls"
-        return copy
+        return Prepared(
+            send: copy,
+            original: item,
+            master: master,
+            tracks: tracks,
+            chosen: id
+        )
     }
 
     // MARK: reading
@@ -115,8 +166,17 @@ enum CastAudioMaster {
         return found
     }
 
-    /// Which track to send: the language chosen in the player's settings, then
-    /// whatever the stream itself marks `DEFAULT`, then the first.
+    /// Which track to send first.
+    ///
+    /// The first track in the playlist, in effect — which is what a provider
+    /// puts first and what `DEFAULT` almost always marks. The player's
+    /// preferred-language setting wins when it has been set, because somebody
+    /// who has told this app they want Telugu has already answered this
+    /// question once; it is empty unless they filled it in, so the ordinary
+    /// case is "the first one".
+    ///
+    /// Either way it is only a starting point: the cast screen can change it,
+    /// which is the whole reason this does not ask.
     ///
     /// The setting is shared with the player on purpose. Somebody who has told
     /// this app they want Telugu has told it once, and being asked again at the

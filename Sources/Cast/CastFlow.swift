@@ -176,6 +176,7 @@ final class CastFlow: ObservableObject {
     func stopCasting() {
         queue.removeAll()
         nowPlaying = nil
+        audio = nil
         stage = .idle
         work?.cancel()
         work = nil
@@ -205,11 +206,46 @@ final class CastFlow: ObservableObject {
     private func finished() {
         guard case .playing = stage else { return }
         nowPlaying = nil
+        // The next thing in the queue is a different stream with different
+        // tracks; `play` sets this again if it has any.
+        audio = nil
         if queue.isEmpty {
             stage = .idle
         } else {
             advance(auto: true)
         }
+    }
+
+    /// The multi-audio stream on a Chromecast, if that is what is playing.
+    ///
+    /// Lives here rather than in `CastAudioMaster` — which is deliberately
+    /// stateless string work — because this object already owns everything
+    /// between "send this" and a picture, and the cast screen already watches
+    /// it. Nil for a single-audio stream, for Panura's own receiver, and for
+    /// anything that is not HLS.
+    @Published private(set) var audio: CastAudioMaster.Prepared?
+
+    /// Sends the same video again with a different audio track.
+    ///
+    /// **It reloads on the television, and there is no way around that.** The
+    /// receiver is playing a playlist that declares one audio track; another
+    /// track is another playlist, and Cast has no notion of swapping one
+    /// underneath a running stream. So the position is read back and handed to
+    /// the new load — the picture jumps, the film does not.
+    ///
+    /// No ad, deliberately: this is not a new cast, it is the same one being
+    /// corrected, and an interstitial in the middle of a task is the pattern
+    /// the whole ad design avoids.
+    func changeAudio(to id: Int) {
+        guard let current = audio, current.chosen != id,
+              let next = CastAudioMaster.reselect(current, to: id)
+        else { return }
+        audio = next
+        CastManager.shared.cast(
+            next.send,
+            advertise: false,
+            startAt: CastManager.shared.remotePosition
+        )
     }
 
     private func play(_ item: CastQueueItem, auto: Bool) async {
@@ -225,8 +261,9 @@ final class CastFlow: ObservableObject {
                 // television — cannot play alternate audio renditions at all.
                 // Panura's own receiver can, and is handed the original above.
                 // nil means there was nothing to change. See `CastAudioMaster`.
-                let sending = await CastAudioMaster.prepare(media) ?? media
-                CastManager.shared.cast(sending, advertise: !auto)
+                let prepared = await CastAudioMaster.prepare(media)
+                audio = prepared
+                CastManager.shared.cast(prepared?.send ?? media, advertise: !auto)
             }
             stage = .playing
         case let .photo(identifier):

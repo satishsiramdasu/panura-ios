@@ -37,6 +37,10 @@ final class CastManager: NSObject, ObservableObject {
     @Published private(set) var isRemotePlaying = false
     /// Time left on the TV, pre-formatted; empty when live or unknown.
     @Published private(set) var remoteTimeLeft = ""
+    /// Where the television is in the video, as it last reported. Read when a
+    /// cast has to be re-sent — changing the audio track is a fresh load, and
+    /// starting it from zero would be a new viewing of the same film.
+    @Published private(set) var remotePosition: TimeInterval = 0
 
     /// A cast interstitial waiting on the receiver's confirmation. See
     /// `armCastAd`.
@@ -145,7 +149,7 @@ final class CastManager: NSObject, ObservableObject {
     /// be in a pocket while the television plays, and throwing an interstitial
     /// up then is both a poor surprise and an impression AdMob has every reason
     /// to treat as unsolicited.
-    func cast(_ item: MediaItem, advertise: Bool = true) {
+    func cast(_ item: MediaItem, advertise: Bool = true, startAt: TimeInterval = 0) {
         guard let session = GCKCastContext.sharedInstance()
             .sessionManager.currentCastSession else { return }
         let metadata = GCKMediaMetadata(metadataType: .movie)
@@ -178,6 +182,9 @@ final class CastManager: NSObject, ObservableObject {
 
         let request = GCKMediaLoadRequestDataBuilder()
         request.mediaInformation = builder.build()
+        // Non-zero only when this load is replacing one already playing — an
+        // audio change. `startTime` is in seconds from the beginning.
+        if startAt > 0 { request.startTime = startAt }
         session.remoteMediaClient?.loadMedia(with: request.build())
         castingTitle = item.title
         session.remoteMediaClient?.add(self)
@@ -375,6 +382,9 @@ extension CastManager: GCKRemoteMediaClientListener {
         Task { @MainActor in
             self.isRemotePlaying = playing
             self.remoteTimeLeft = left > 0 ? PlayerClock.format(left) + " left" : ""
+            // Kept even while idle: an audio change reloads, and the position
+            // read a moment before that is the one worth resuming from.
+            if elapsed.isFinite, elapsed > 0 { self.remotePosition = elapsed }
             if idle {
                 self.castingTitle = nil
             } else if let title, !title.isEmpty {
