@@ -765,7 +765,7 @@ struct LocalVideosView: View {
             }
             .buttonStyle(.plain)
 
-            pickAnyway
+            pickAnyway()
         }
         .padding(.horizontal, 24)
     }
@@ -789,8 +789,13 @@ struct LocalVideosView: View {
     /// Only the permission screens show these. Once access is granted the
     /// library itself is right there, and a picker on top of it would be a
     /// second way to do the thing the screen already does.
+    ///
+    /// `prominent` is for the refusal screen. There, picking is not a way
+    /// *past* the screen — it is the only thing on it that works, so it gets
+    /// the filled button. On the screen that is still asking, `Allow Access`
+    /// owns that weight and these stay quiet beneath it.
     @ViewBuilder
-    private var pickAnyway: some View {
+    private func pickAnyway(prominent: Bool = false) -> some View {
         if preparing {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small).tint(PanuraTheme.accent)
@@ -800,21 +805,24 @@ struct LocalVideosView: View {
             }
             .frame(height: 38)
         } else {
-            VStack(spacing: 2) {
+            VStack(spacing: prominent ? 6 : 2) {
                 Button { pickingVideo = true } label: {
                     Label("Pick a video", systemImage: "play.rectangle.on.rectangle")
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(PanuraTheme.accent)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 9)
-                        .contentShape(Rectangle())
+                        .foregroundStyle(prominent ? PanuraTheme.onAccent : PanuraTheme.accent)
+                        .padding(.horizontal, prominent ? 22 : 16)
+                        .padding(.vertical, prominent ? 11 : 9)
+                        .background {
+                            if prominent { Capsule().fill(PanuraTheme.accent) }
+                        }
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
 
                 Button { pickingFile = true } label: {
                     Label("Open a file", systemImage: "folder")
                         .font(.footnote.weight(.semibold))
-                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .foregroundStyle(prominent ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 7)
                         .contentShape(Rectangle())
@@ -837,26 +845,49 @@ struct LocalVideosView: View {
                 .font(.largeTitle)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
             Text("Access to your videos is off").font(.headline)
-            Text("Turn on Photos in Settings and your videos will appear here.")
+            Text("""
+            Panura cannot list your library without it. Everything else still \
+            works — pick a video or a file and it plays, with no access of \
+            any kind.
+            """)
                 .font(.footnote)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 260)
-            Button("Open Settings") {
+                .frame(maxWidth: 280)
+
+            // Kept, and kept first, because somebody may well change their
+            // mind — but not filled. `.borderedProminent` was both the
+            // loudest thing on the screen and pointed at the one action this
+            // person has already declined, and it paints its label white,
+            // which is the thing every other filled button in this app had to
+            // be hand-built to avoid.
+            Button {
                 if let url = URL(string: UIApplication.openSettingsURLString) {
                     UIApplication.shared.open(url)
                 }
+            } label: {
+                Text("Open Settings")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PanuraTheme.accent)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .background(PanuraTheme.accentSoft, in: Capsule())
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.borderedProminent)
-            .tint(PanuraTheme.accent)
+            .buttonStyle(.plain)
             Text("Settings \u{203A} Panura \u{203A} Photos")
                 .font(.caption)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
 
-            // The same two ways out, and they matter more here: iOS shows the
-            // library alert once per install, so this screen is where somebody
-            // who refused actually lives.
-            pickAnyway
+            Divider().frame(maxWidth: 200).padding(.vertical, 2)
+
+            // **This is the screen, not a footnote on it.** iOS shows the
+            // library alert once per install, so for anybody who said no —
+            // and for anybody who never intends to say yes — this is the
+            // Videos tab, permanently. A dead end with a workaround stapled
+            // underneath is the wrong shape for a tab somebody keeps opening,
+            // so the thing that actually works is the filled button here.
+            pickAnyway(prominent: true)
         }
         .padding(.horizontal, 24)
     }
