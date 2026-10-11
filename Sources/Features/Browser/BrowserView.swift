@@ -120,10 +120,23 @@ struct BrowserView: View {
         .sheet(isPresented: $showPanuraControls) {
             CastSessionView()
         }
-        // The video that asked for a TV goes as soon as one answers. The panel
-        // is drawn at the root, so this only watches it close.
+        // The video that asked for a TV goes as soon as one answers.
+        //
+        // **Both triggers, and the connection is the important one.** Only the
+        // dismissal was watched, and picking a television does not dismiss
+        // anything — the dialog stays up and turns into its connected state,
+        // reading "play a video to send it over" while the video that asked
+        // for it sat in `pendingCast` doing nothing. It went on the way out,
+        // which is why closing the dialog by hand looked like what started
+        // playback.
         .onChange(of: castPicker.isShowing) { shown in
             if !shown { castPendingIfConnected() }
+        }
+        .onChange(of: cast.isConnected) { connected in
+            if connected { castPendingIfConnected() }
+        }
+        .onChange(of: panuraCast.isTVConnected) { connected in
+            if connected { castPendingIfConnected() }
         }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
         // The best stream is open on arrival, and re-chosen each time rather
@@ -165,16 +178,26 @@ struct BrowserView: View {
         PlaybackSession.shared.play(model.playable(video))
     }
 
-    /// A cast that had to wait for a TV. Sending it on dismissal rather than
-    /// making the user find the button again is the whole point of remembering
-    /// which video asked.
+    /// A cast that had to wait for a TV. Sending it the moment one answers,
+    /// rather than making the user find the button again, is the whole point
+    /// of remembering which video asked.
+    ///
+    /// Called from two places — a television connecting, and the dialog
+    /// closing — so it has to be safe to call twice. Clearing `pendingCast`
+    /// before the connection check is what makes it: a dismissal with nothing
+    /// connected is somebody changing their mind, and the second call finds
+    /// nothing waiting.
+    ///
+    /// It closes the dialog itself. The dialog's job was to find a television
+    /// and it has found one; leaving it up over the video it just sent would
+    /// be asking the same question twice.
     private func castPendingIfConnected() {
         guard let item = pendingCast else { return }
         pendingCast = nil
-        if panuraCast.isTVConnected || cast.isConnected {
-            CastFlow.shared.replace(with: [CastFlow.item(for: item)])
-            showPanuraControls = true
-        }
+        guard panuraCast.isTVConnected || cast.isConnected else { return }
+        CastPicker.shared.close()
+        CastFlow.shared.replace(with: [CastFlow.item(for: item)])
+        showPanuraControls = true
     }
 
     /// Load whatever Home handed over, then clear it.

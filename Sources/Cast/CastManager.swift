@@ -149,9 +149,14 @@ final class CastManager: NSObject, ObservableObject {
     /// be in a pocket while the television plays, and throwing an interstitial
     /// up then is both a poor surprise and an impression AdMob has every reason
     /// to treat as unsolicited.
-    func cast(_ item: MediaItem, advertise: Bool = true, startAt: TimeInterval = 0) {
+    /// Returns whether the receiver was actually handed anything. False means
+    /// there was no session — which the caller has to know, because reporting
+    /// "playing" over a load that never happened is the shape of bug that
+    /// makes a television look broken.
+    @discardableResult
+    func cast(_ item: MediaItem, advertise: Bool = true, startAt: TimeInterval = 0) -> Bool {
         guard let session = GCKCastContext.sharedInstance()
-            .sessionManager.currentCastSession else { return }
+            .sessionManager.currentCastSession else { return false }
         let metadata = GCKMediaMetadata(metadataType: .movie)
         metadata.setString(item.title, forKey: kGCKMetadataKeyTitle)
 
@@ -189,6 +194,7 @@ final class CastManager: NSObject, ObservableObject {
         castingTitle = item.title
         session.remoteMediaClient?.add(self)
         if advertise { armCastAd() }
+        return true
     }
 }
 

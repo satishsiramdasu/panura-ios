@@ -263,7 +263,13 @@ final class CastFlow: ObservableObject {
                 // nil means there was nothing to change. See `CastAudioMaster`.
                 let prepared = await CastAudioMaster.prepare(media)
                 audio = prepared
-                CastManager.shared.cast(prepared?.send ?? media, advertise: !auto)
+                // A Cast session that has gone between the tap and here is
+                // the one case worth reporting: the old code said "playing"
+                // over a load that never left the phone.
+                guard CastManager.shared.cast(prepared?.send ?? media, advertise: !auto) else {
+                    stage = .failed("Lost the connection to \(deviceName ?? "the TV").")
+                    return
+                }
             }
             stage = .playing
         case let .photo(identifier):
