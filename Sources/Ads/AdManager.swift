@@ -44,7 +44,10 @@ final class AdManager: NSObject {
         /// more — `.player` is kept only so its unit id is not lost.
         var placement: AdPolicy.Placement? {
             switch self {
-            case .browser: return .browserPlayer
+            // Every engine's player, not only the browser's — the unit keeps
+            // its name because an AdMob unit id cannot be renamed and the
+            // reporting history is attached to it.
+            case .browser: return .player
             case .cast:    return .cast
             case .player:  return nil
             }
@@ -234,10 +237,6 @@ final class AdManager: NSObject {
             rewarded = ad
         }
     }
-
-    /// Whether the server unlock is currently being asked for. The screen uses
-    /// it to decide between offering the gate and simply opening the server.
-    var serverUnlockDue: Bool { AdPolicy.allows(.servers) }
 
     /// Plays the rewarded ad and grants the unlock.
     ///

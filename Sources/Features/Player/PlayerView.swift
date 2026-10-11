@@ -1062,8 +1062,8 @@ struct PlayerView<Model: PlayerEngine>: View {
         dismiss()
     }
 
-    /// Asks for an interstitial on the way back to the page, if this was a
-    /// page's video and enough of it was actually watched.
+    /// Asks for an interstitial on the way out, if enough was actually
+    /// watched.
     ///
     /// Queued rather than shown. The ad has to arrive *after* this screen has
     /// gone — it is a cover presented by the root view, and a second
@@ -1075,8 +1075,7 @@ struct PlayerView<Model: PlayerEngine>: View {
     /// after eight seconds counts as playback ending, and somebody who was
     /// waiting on a video gets an advert for the trouble.
     private func queueAdIfEarned() {
-        guard item.origin == .browser,
-              AdPolicy.watchedEnough(
+        guard AdPolicy.watchedEnough(
                   seconds: model.elapsedSeconds,
                   duration: model.totalSeconds > 0 ? model.totalSeconds : item.durationSeconds
               )

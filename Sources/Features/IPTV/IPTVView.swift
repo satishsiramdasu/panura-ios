@@ -33,6 +33,10 @@ struct IPTVView: View {
     /// Whether the search field has the whole row to itself.
     @State private var searching = false
     @State private var showGroups = false
+    /// True from the moment Refresh is pressed until the catalogue is back.
+    /// Covers the ad round trip as well as the fetch, so the button cannot be
+    /// pressed twice into two ads.
+    @State private var refreshing = false
     @FocusState private var searchFocused: Bool
 
     private static let reveal = Animation.easeInOut(duration: 0.2)
@@ -44,7 +48,9 @@ struct IPTVView: View {
     private static let menuLimit = 20
 
     var body: some View {
-        channelList
+        Group {
+            if store.expired { expiredWall } else { channelList }
+        }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(PanuraTheme.background)
             .safeAreaInset(edge: .top, spacing: 0) { bar }
@@ -93,10 +99,12 @@ struct IPTVView: View {
             }
             if store.isLoading {
                 ProgressView().controlSize(.small).frame(width: 34, height: 34)
-            } else if let open = store.open {
-                glyph("arrow.clockwise", label: "Reload channels") {
-                    Task { await store.load(open, force: true) }
-                }
+            } else if store.open != nil {
+                // The same gate as the wall's button. A reload inside the free
+                // hour is free; after it, it is the rewarded refresh — one
+                // door, so the clock cannot be walked round by using the bar
+                // instead of the wall.
+                glyph("arrow.clockwise", label: "Reload channels") { refresh() }
             }
         }
         .padding(.horizontal, 12)
@@ -135,6 +143,105 @@ struct IPTVView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+    }
+
+    // MARK: the wall
+
+    /// What an expired catalogue looks like: nothing, and a way to fix it.
+    ///
+    /// **There is genuinely nothing behind this.** A day after the last
+    /// refresh the cache files are deleted, not hidden — see
+    /// `IPTVStore.load`. So the screen is not withholding a list it is
+    /// quietly holding; there is no list.
+    ///
+    /// The ad is named on the button rather than sprung after it. A rewarded
+    /// ad has to describe its reward before it plays, and a screen whose only
+    /// control is "Refresh" would otherwise be an interstitial with a reward
+    /// unit's paperwork. Saying so also costs nothing: somebody at this screen
+    /// wants their channels back and a short ad is not the part they will
+    /// object to. Backing out of the server is the decline.
+    private var expiredWall: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "clock.badge.exclamationmark")
+                .font(.system(size: 40))
+                .foregroundStyle(PanuraTheme.accent)
+            Text("Catalogue expired").font(.headline)
+            Text(expiredMessage)
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+
+            Button { refresh() } label: {
+                HStack(spacing: 7) {
+                    if refreshing {
+                        ProgressView().controlSize(.small).tint(PanuraTheme.onAccent)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    Text(refreshing ? "Refreshing\u{2026}" : "Refresh")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .foregroundStyle(PanuraTheme.onAccent)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 11)
+                .background(PanuraTheme.accent, in: Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .disabled(refreshing)
+
+            if adDueForRefresh {
+                Text("A short ad plays first.")
+                    .font(.caption2)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PanuraTheme.background)
+    }
+
+    private var expiredMessage: String {
+        let age = store.open.flatMap { ServerRefresh.ageDescription($0.id) }
+        let when = age.map { "Last refreshed \($0). " } ?? ""
+        return when + """
+        Channel lists go out of date — providers add and drop channels, and \
+        old entries stop playing. Refresh to fetch the current one.
+        """
+    }
+
+    /// Whether pressing Refresh right now will play an ad.
+    private var adDueForRefresh: Bool {
+        guard let source = store.open else { return false }
+        return ServerRefresh.adDue(source.id) && AdPolicy.allows(.servers)
+    }
+
+    /// Refreshes, with the ad in front of it when one is due.
+    ///
+    /// `granted` comes back true when no ad could be shown at all — no fill,
+    /// offline, ads off, nothing configured. **That is what keeps a wall from
+    /// becoming a lock**: the refresh is the point and the ad is best effort,
+    /// so an ad network having a bad minute can never leave somebody staring
+    /// at a screen with one button that does not work.
+    ///
+    /// False means they opened the ad and closed it early. Nothing happens and
+    /// nothing is taken; the button is still there.
+    private func refresh() {
+        guard !refreshing else { return }
+        refreshing = true
+        AdManager.shared.showRewarded { granted in
+            guard granted else {
+                refreshing = false
+                return
+            }
+            Task {
+                await store.refresh()
+                refreshing = false
+            }
+        }
     }
 
     // MARK: channels

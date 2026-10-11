@@ -17,29 +17,56 @@ import Foundation
 enum AdPolicy {
     /// The three things that can show an ad. One clock each.
     enum Placement: String, CaseIterable {
-        /// End of playback in the browser's player, before returning to the
-        /// page. A natural break: the video finished, nobody is mid-gesture.
-        case browserPlayer
+        /// Leaving the player — any player, from any tab.
+        ///
+        /// **On exit, not on a video ending.** In-player next and previous
+        /// walk `PlayerPlaylist` without closing the screen, so a three-episode
+        /// run is one ad on the way out rather than one between every pair.
+        /// That was the whole difference between this and the most resented
+        /// pattern in media apps, and the gap length could not have fixed it:
+        /// episodes are 25 to 40 minutes, so any gap worth having is always
+        /// already satisfied when one ends.
+        ///
+        /// It was browser-only for a while. Extending it to every engine
+        /// sweeps in camera-roll videos too — somebody's own file, and still
+        /// our player, which is the thing that was built.
+        case player
         /// A cast that has been *confirmed* to be playing, before the cast
         /// controls appear. The best-placed ad in the app — the TV is
         /// handshaking anyway, so it costs no real time.
         case cast
-        /// Loading the contents of a server. Rewarded, so opt-in.
+        /// Refreshing a playlist server's catalogue. Rewarded.
+        ///
+        /// Not "opening a server", which is where this started and was the
+        /// highest-friction placement in the app: an unrequested ad in front
+        /// of hardware somebody owns. A refresh is a button they press, and
+        /// the reward is a real function — provider catalogues genuinely go
+        /// stale — rather than a toll with a reward's paperwork.
+        ///
+        /// The per-server clocks are `ServerRefresh`'s, not this one's: the
+        /// rules are per catalogue, and this placement has to answer for all
+        /// of them at once.
         case servers
 
         /// How long before this placement may fire again.
         ///
-        /// Ten minutes for the two interstitials, an hour for the rewarded
-        /// unlock. Neither number binds as often as it looks: the browser one
-        /// is gated behind a finished video, so somebody watching a 25-minute
-        /// episode has an effective gap of 25 minutes, and it only bites on
-        /// short clips watched back to back — which is exactly when it should.
-        /// The cast gap exists for channel zapping: casting IPTV and changing
-        /// channel fires a load each time, and five channels in two minutes
-        /// would otherwise be five interstitials.
+        /// Fifteen minutes for the two interstitials, an hour for the rewarded
+        /// refresh. Neither binds as often as it looks.
+        ///
+        /// The player's is behind a *minute of playback and an exit*, so
+        /// anybody watching something of normal length has an effective gap of
+        /// however long that thing was. It bites on short clips opened and
+        /// abandoned one after another, which is exactly when it should.
+        /// Fifteen rather than ten not because ten fires too often, but
+        /// because the cost of being wrong here is asymmetric: an ad too many
+        /// is remembered and an ad too few is not noticed.
+        ///
+        /// The cast gap exists for channel zapping. Casting IPTV and changing
+        /// channel sends a fresh load each time, and five channels in two
+        /// minutes would otherwise be five interstitials.
         var gap: TimeInterval {
             switch self {
-            case .browserPlayer, .cast: return 10 * 60
+            case .player, .cast: return 15 * 60
             case .servers: return 60 * 60
             }
         }

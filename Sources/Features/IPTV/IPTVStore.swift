@@ -150,6 +150,10 @@ final class IPTVStore: ObservableObject {
     @Published private(set) var failure: String?
     /// When the open playlist's channels were downloaded.
     @Published private(set) var fetchedAt: Date?
+    /// Open, but holding nothing: the catalogue is more than a day past its
+    /// last refresh, so it is not read from cache and not fetched. The screen
+    /// shows a refresh and nothing else. See `ServerRefresh`.
+    @Published private(set) var expired = false
     /// What the panel said about the subscription, when it was asked.
     @Published private(set) var account: XtreamClient.Account?
 
@@ -231,6 +235,9 @@ final class IPTVStore: ObservableObject {
             try? FileManager.default.removeItem(at: Self.cacheURL(source, section: section))
         }
         Keychain.remove(source.credentialKey)
+        // Otherwise re-adding the same provider inherits the wall the old
+        // entry had earned.
+        ServerRefresh.forget(source.id)
         if open?.id == source.id { close() }
         persist()
     }
@@ -242,6 +249,20 @@ final class IPTVStore: ObservableObject {
 
     // MARK: channels
 
+    /// A refresh the user asked for, which is the only kind that moves the
+    /// clock.
+    ///
+    /// Stamped *before* the load rather than after, so a provider that is
+    /// briefly down does not leave somebody walled with an ad already watched.
+    /// The ad was paid for the attempt; charging again for the retry would be
+    /// the one version of this nobody could defend.
+    func refresh() async {
+        guard let source = open else { return }
+        ServerRefresh.stamp(source.id)
+        expired = false
+        await load(source, force: true)
+    }
+
     func close() {
         open = nil
         channels = []
@@ -250,6 +271,7 @@ final class IPTVStore: ObservableObject {
         section = .live
         failure = nil
         fetchedAt = nil
+        expired = false
         account = nil
     }
 
@@ -320,6 +342,34 @@ final class IPTVStore: ObservableObject {
         open = source
         failure = nil
 
+        // A day past its last refresh: the catalogue is *deleted*, not
+        // hidden. Cache files and all.
+        //
+        // Hiding it would have been less code and a worse idea on three
+        // counts. The wall says there is nothing to show, and with a cache
+        // sitting on disk behind it that would be a lie. Somebody else's
+        // channel list is exactly the kind of thing not worth keeping in
+        // Caches for a week after it stopped being usable. And a wall with
+        // the data still there is a wall with a way round it.
+        //
+        // `force` is the way through, and `refresh()` is what sets it.
+        if !force, ServerRefresh.isExpired(source.id) {
+            expired = true
+            channels = []
+            movies = []
+            series = []
+            // No data, so no age to report. How long ago it was last
+            // refreshed survives in `ServerRefresh`, which is what the wall
+            // reads — that clock is the user's, not the catalogue's.
+            fetchedAt = nil
+            account = nil
+            for section in Section.allCases {
+                try? FileManager.default.removeItem(at: Self.cacheURL(source, section: section))
+            }
+            return
+        }
+        expired = false
+
         if !force, let cached = Self.readCache(source) {
             channels = StreamModel.parse(cached.text, base: cached.base)
             fetchedAt = cached.at
@@ -374,6 +424,10 @@ final class IPTVStore: ObservableObject {
 
         channels = parsed
         fetchedAt = Date()
+        // Starts the 24-hour clock on the first successful load and never
+        // touches it again — see `ServerRefresh.stampIfFirst`, and note that
+        // this method refreshes on its own every three hours.
+        ServerRefresh.stampIfFirst(source.id)
         Self.writeCache(source, text: text)
     }
 
@@ -392,6 +446,7 @@ final class IPTVStore: ObservableObject {
             channels = result.channels
             account = result.account
             fetchedAt = Date()
+            ServerRefresh.stampIfFirst(source.id)
             Self.writeCache(source, text: XtreamClient.m3u(result.channels))
         } catch {
             // Only when there is nothing on screen. A refresh that fails over a
