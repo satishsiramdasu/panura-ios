@@ -39,6 +39,22 @@ packages:
   GoogleMobileAds:
     url: https://github.com/googleads/swift-package-manager-google-mobile-ads
     from: "12.0.0"
+  # Google's consent SDK, and a package of its OWN — not a product of the ads
+  # package, which is what "Missing package product 'UserMessagingPlatform'"
+  # was saying. GoogleMobileAds depends on it, so its framework was already
+  # being embedded; declaring it here is what makes the module importable.
+  #
+  # 3.x, which is the current line (3.1.0 at time of writing) and sits inside
+  # GoogleMobileAds' own requirement on it, 1.1.0 ..< 4.0.0 — so the two
+  # cannot disagree and SPM resolves one copy. Not `from: "1.1.0"`: `from` in
+  # SPM means "up to the next major", so that would pin 1.x against whatever
+  # the ads SDK wants and fail to resolve.
+  #
+  # Product is `GoogleUserMessagingPlatform`; the module you import is
+  # `UserMessagingPlatform`, after the wrapper target inside it.
+  GoogleUserMessagingPlatform:
+    url: https://github.com/googleads/swift-package-manager-google-user-messaging-platform
+    from: "3.0.0"
   Swifter:
     url: https://github.com/httpswift/swifter
     from: "1.5.0"
@@ -217,16 +233,14 @@ targets:
       - package: GoogleCast
         product: GoogleCast
       - package: GoogleMobileAds
-      # The consent SDK, a second product of the same package. Declared
-      # explicitly because `import UserMessagingPlatform` needs the product
-      # linked, not merely present: its framework was already landing in the
-      # bundle as a transitive dependency of the ads binary, which is enough
-      # to ship it and not enough to import it.
+      # Linked explicitly so `import UserMessagingPlatform` resolves: the
+      # framework was already landing in the bundle as a transitive
+      # dependency, which is enough to ship it and not enough to import it.
       #
       # Required, not optional. Without a certified CMP, AdMob stops serving
       # EEA and UK traffic altogether — see `AdConsent`.
-      - package: GoogleMobileAds
-        product: UserMessagingPlatform
+      - package: GoogleUserMessagingPlatform
+        product: GoogleUserMessagingPlatform
       - package: Swifter
       - package: SafariConverterLib
         product: ContentBlockerConverter

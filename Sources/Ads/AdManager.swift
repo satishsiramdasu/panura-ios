@@ -188,14 +188,18 @@ final class AdManager: NSObject {
 
     // MARK: rewarded
 
+    /// Loaded with the `async` form rather than a completion handler — it is
+    /// the one Google documents for `RewardedAd`, and a documented signature
+    /// beats one inferred from `InterstitialAd`'s.
     private func preloadRewarded() {
         guard FeatureFlags.adsEnabled, ready, !Self.rewardedUnitID.isEmpty else { return }
-        RewardedAd.load(with: Self.rewardedUnitID, request: makeRequest()) { [weak self] ad, error in
-            guard let ad, error == nil else { return }
-            Task { @MainActor in
-                ad.fullScreenContentDelegate = self
-                self?.rewarded = ad
-            }
+        Task {
+            guard let ad = try? await RewardedAd.load(
+                with: Self.rewardedUnitID,
+                request: makeRequest()
+            ) else { return }
+            ad.fullScreenContentDelegate = self
+            rewarded = ad
         }
     }
 
@@ -266,7 +270,17 @@ final class AdManager: NSObject {
             banner.rootViewController = root ?? banner.rootViewController
             return banner
         }
-        let view = BannerView(adSize: currentOrientationAnchoredAdaptiveBanner(width: width))
+        let view = BannerView()
+        // `currentOrientationAnchoredAdaptiveBanner(width:)` is confirmed by
+        // the v12 migration guide as the rename of
+        // `GADCurrentOrientationAnchoredAdaptiveBannerAdSizeWithWidth`. Set as
+        // a property rather than through an initialiser, because that is what
+        // Google's own sample does and `BannerView(adSize:)` is not documented
+        // for v12.
+        //
+        // Not the `large` variant: it runs to about 100 points on a phone, and
+        // this banner pushes every screen's content up on every tab.
+        view.adSize = currentOrientationAnchoredAdaptiveBanner(width: width)
         view.adUnitID = Self.bannerUnitID
         view.rootViewController = root
         view.load(makeRequest())
