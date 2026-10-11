@@ -874,6 +874,11 @@ silent if it did.
 2. **The banner and rewarded unit ids are filled in** (`AdManager.bannerUnitID`,
    `AdManager.rewardedUnitID`). Empty means the banner draws nothing and the
    server unlock is granted free — safe, and earning nothing.
+   **The banner unit's auto-refresh is 30 seconds**, set in the AdMob console,
+   not in the app. Nothing in a build can reveal a wrong value here, so it is
+   worth checking when the unit is created: the default is 60, and 60 under-earns
+   for this app because the player hides the banner and the player is where the
+   time goes — see `AdManager.banner`.
 3. **`MARKETING_VERSION` is higher than the live version.** An approved version
    closes its train: 1.0 going live is what made every 1.0 upload fail with
    "Invalid Pre-Release Train". The workflow's `marketing_version` input
