@@ -178,6 +178,17 @@ rule: the reward has to be described before the ad. A screen whose only control
 is Refresh would otherwise be an interstitial with a reward unit's paperwork.
 Backing out of the server is the decline path.
 
+### Two clocks, and the trap in them
+
+The placement's own gap and the per-server free hour are **different clocks**,
+and the refresh path has to consult the right one. The placement clock runs
+from the last ad *shown*; the free hour runs from the last *refresh*. Gate the
+ad on the per-server clock first — asking the ad layer alone means a retry two
+minutes after a failed fetch plays an ad, because no ad has played all day.
+
+(iOS shipped that bug: `refresh()` called the rewarded path unconditionally
+and only `AdPolicy`'s hour stood in the way.)
+
 ### One door
 
 Any other reload affordance — a toolbar refresh glyph, pull-to-refresh — must
