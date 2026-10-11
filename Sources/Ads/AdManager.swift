@@ -29,8 +29,9 @@ final class AdManager: NSObject {
         /// of the same rule.
         var unitID: String {
             #if DEBUG
-            return "ca-app-pub-3940256099942544/4411468910" // Google test interstitial
+            return AdManager.testInterstitialUnitID
             #else
+            guard !FeatureFlags.adsUseTestUnits else { return AdManager.testInterstitialUnitID }
             switch self {
             case .player:  return "ca-app-pub-6998555111280991/4427286974"
             case .browser: return "ca-app-pub-6998555111280991/6832395366"
@@ -50,16 +51,22 @@ final class AdManager: NSObject {
         }
     }
 
+    // Google's own sample units. Safe to tap, pay nothing, always fill.
+    static let testInterstitialUnitID = "ca-app-pub-3940256099942544/4411468910"
+    static let testRewardedUnitID = "ca-app-pub-3940256099942544/1712485313"
+    static let testBannerUnitID = "ca-app-pub-3940256099942544/2435281174"
+
     /// The rewarded unit, which unlocks server content.
     ///
     /// ⚠️ **Needs creating in AdMob** — there is no rewarded unit on the iOS
-    /// app yet. Until the real id replaces this, release builds load nothing
-    /// and `showRewarded` grants the unlock for free, which is the same thing
-    /// it does when fill fails.
+    /// app yet. Until the real id replaces this, a build with
+    /// `adsUseTestUnits` false loads nothing and `showRewarded` grants the
+    /// unlock for free, which is the same thing it does when fill fails.
     static var rewardedUnitID: String {
         #if DEBUG
-        return "ca-app-pub-3940256099942544/1712485313" // Google test rewarded
+        return testRewardedUnitID
         #else
+        guard !FeatureFlags.adsUseTestUnits else { return testRewardedUnitID }
         return "" // TODO: paste the iOS rewarded unit id
         #endif
     }
@@ -254,11 +261,12 @@ final class AdManager: NSObject {
     private(set) var banner: BannerView?
 
     /// ⚠️ **Needs creating in AdMob** — no banner unit exists on the iOS app
-    /// yet. Empty means the banner draws nothing at all in release.
+    /// yet. Empty means the banner draws nothing at all.
     static var bannerUnitID: String {
         #if DEBUG
-        return "ca-app-pub-3940256099942544/2435281174" // Google test adaptive banner
+        return testBannerUnitID
         #else
+        guard !FeatureFlags.adsUseTestUnits else { return testBannerUnitID }
         return "" // TODO: paste the iOS banner unit id
         #endif
     }

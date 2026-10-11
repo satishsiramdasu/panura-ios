@@ -860,3 +860,28 @@ screenshot must not show panura.app's home page**, which carries a Google Play
 badge. App Review guideline 2.3.10 rejects metadata naming or showing another
 mobile platform, and screenshots are metadata. `panura.app/demo` names no
 platform — that is a requirement of the page, not an accident of it.
+
+## Before submitting a build
+
+Short list, because each of these has either already gone wrong or would be
+silent if it did.
+
+1. **`FeatureFlags.adsUseTestUnits` is `false`.** The one flag whose wrong value
+   shows no symptom: the ads look right, fill every time, and pay nothing,
+   because they are Google's sample units. It is `true` for TestFlight
+   verification — TestFlight runs the Release configuration, so `#if DEBUG`
+   cannot cover that, and tapping your own *live* ad is invalid activity.
+2. **The banner and rewarded unit ids are filled in** (`AdManager.bannerUnitID`,
+   `AdManager.rewardedUnitID`). Empty means the banner draws nothing and the
+   server unlock is granted free — safe, and earning nothing.
+3. **`MARKETING_VERSION` is higher than the live version.** An approved version
+   closes its train: 1.0 going live is what made every 1.0 upload fail with
+   "Invalid Pre-Release Train". The workflow's `marketing_version` input
+   overrides `project.yml` per run.
+4. **`NSUserTrackingUsageDescription` is still absent** — unless personalised
+   ads are being shipped, in which case all five items in that key's comment in
+   `project.yml` move together, this list included.
+5. **The `ios` block in panura's `.manifest-src/manifest.source.json` is bumped
+   and deployed *after* the release is live**, not before. It feeds the in-app
+   update check, so raising it early tells everyone an update exists that the
+   store cannot yet serve.

@@ -22,6 +22,16 @@ struct LibrarySheet: View {
             case .later: return "Later"
             }
         }
+
+        /// The same glyphs Home's tiles use for the same two lists, so a tile
+        /// and the tab it lands on are recognisably the same thing.
+        var icon: String {
+            switch self {
+            case .watching: return "play.circle"
+            case .history: return "checkmark.circle"
+            case .later: return "clock"
+            }
+        }
     }
 
     var onOpenBrowser: (String) -> Void
@@ -37,12 +47,9 @@ struct LibrarySheet: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                Picker("List", selection: $tab) {
-                    ForEach(Tab.allCases) { Text($0.label).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
+                tabBar
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
 
                 switch tab {
                 case .watching:
@@ -62,6 +69,48 @@ struct LibrarySheet: View {
                 }
             }
         }
+    }
+
+    /// Three tabs, drawn rather than picked.
+    ///
+    /// A `Picker` in `.segmented` style is a `UISegmentedControl`, and a
+    /// segment there takes a title **or** an image — never both — so a `Label`
+    /// handed to one renders as whichever of the two it feels like. Three
+    /// buttons in a rounded trough is a few more lines and does what was
+    /// asked, and it takes the app's own accent instead of the system tint.
+    private var tabBar: some View {
+        HStack(spacing: 4) {
+            ForEach(Tab.allCases) { item in
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { tab = item }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(item.label)
+                            .font(.caption.weight(.semibold))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(
+                        tab == item ? PanuraTheme.onAccentSoft : PanuraTheme.onSurfaceVariant
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 32)
+                    .background(
+                        tab == item ? PanuraTheme.accentSoft : .clear,
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    )
+                    .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(tab == item ? [.isSelected] : [])
+            }
+        }
+        .padding(3)
+        .background(
+            PanuraTheme.surfaceVariant,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
     }
 
     /// Every list hands a page to the browser the same way, and the browser is

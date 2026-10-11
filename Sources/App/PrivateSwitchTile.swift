@@ -58,13 +58,17 @@ struct PrivateSwitchTile: View {
 
     private var tile: some View {
         VStack(spacing: 4) {
+            // 8 rather than 9, and less tracking with it. The word is seven
+            // characters of heavy caps and it was setting the width of the
+            // whole tile, which comes straight off the address field beside
+            // it — the one control on the screen that wants every point.
             Text("PRIVATE")
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(0.4)
+                .font(.system(size: 8, weight: .heavy))
+                .tracking(0.3)
                 .foregroundStyle(on ? PanuraTheme.incognito : PanuraTheme.onSurfaceVariant)
             MiniSwitch(on: on, tint: PanuraTheme.incognito)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 9)
         .frame(height: height)
         .background(fill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))

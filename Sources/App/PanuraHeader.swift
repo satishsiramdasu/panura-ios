@@ -196,6 +196,10 @@ struct AddressPill<Leading: View, Trailing: View>: View {
         }
         .padding(.horizontal, 6)
         .frame(height: 44)
-        .background(background, in: Capsule())
+        // A squircle, not a capsule, so this and the private tile beside it
+        // read as one control split in two rather than a pill with a box
+        // parked next to it. Same radius and same corner curve as
+        // `PrivateSwitchTile`.
+        .background(background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

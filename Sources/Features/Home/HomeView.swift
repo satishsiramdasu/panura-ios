@@ -300,8 +300,10 @@ struct HomeView: View {
             .padding(.horizontal, 14)
             .frame(height: Self.barHeight)
             .frame(maxWidth: .infinity)
-            .background(barFill, in: Capsule())
-            .contentShape(Capsule())
+            // Matches the browser's address pill and the private tile beside
+            // it — see `AddressPill`.
+            .background(barFill, in: Self.pillShape)
+            .contentShape(Self.pillShape)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Search or enter website")
@@ -322,6 +324,8 @@ struct HomeView: View {
     /// makes them read as one control split in two rather than as a field with
     /// a button parked next to it.
     private static let barHeight: CGFloat = 46
+
+    private static let pillShape = RoundedRectangle(cornerRadius: 14, style: .continuous)
 
     private var barFill: Color {
         // Tinted for private browsing, as the browser's own bar is — the two

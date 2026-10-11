@@ -1,6 +1,7 @@
 import SwiftUI
 import Photos
 import AVFoundation
+import UniformTypeIdentifiers
 
 /// The Videos tab, with what Android's media picker offers, on what the Photos
 /// library can actually answer: albums in place of folders, search, a sort menu,
@@ -11,6 +12,10 @@ import AVFoundation
 /// show — an asset has an identifier, not a location.
 struct LocalVideosView: View {
     @StateObject private var model = LocalVideosModel()
+    /// Open while the file picker is up. Only reachable from the permission
+    /// screen, which is the one place somebody has said no and still wants to
+    /// watch something.
+    @State private var pickingFile = false
     /// Watched only to re-read the photo authorization on return from Settings.
     @Environment(\.scenePhase) private var scenePhase
     @State private var playIndex = 0
@@ -108,6 +113,12 @@ struct LocalVideosView: View {
         .onChange(of: scenePhase) { phase in
             guard phase == .active else { return }
             Task { await model.recheckAccess() }
+        }
+        .fileImporter(
+            isPresented: $pickingFile,
+            allowedContentTypes: Self.pickableTypes
+        ) { result in
+            play(pickedFile: result)
         }
         .sheet(item: $infoItem) { infoSheet($0) }
         .sheet(isPresented: $showShare) { ShareSheet(items: shareURLs) }
@@ -699,14 +710,63 @@ struct LocalVideosView: View {
         }
     }
 
+    /// The ask, with a reason and a way around it.
+    ///
+    /// A headline and a button and nothing else is a dialog, not a screen: it
+    /// asks for the photo library and never says why a *video player* wants
+    /// it, or what happens to what it finds. Both are the questions somebody
+    /// hesitating over this button actually has, and the second one — that
+    /// nothing leaves the phone — is the one worth answering before they
+    /// decide rather than in a privacy policy afterwards.
+    ///
+    /// **And there is a way past it.** `fileImporter` reads a single file the
+    /// user points at, with no library permission of any kind, so somebody who
+    /// does not want to hand over their camera roll is not left on a dead
+    /// screen. It is also the only route to video that is *not* in Photos —
+    /// iCloud Drive, a Files download, something AirDropped — which the Videos
+    /// tab otherwise cannot see at all.
     private var permissionPrompt: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "photo.on.rectangle.angled").font(.largeTitle)
+        VStack(spacing: 14) {
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.largeTitle)
+                .foregroundStyle(PanuraTheme.accent)
             Text("Allow access to your videos").font(.headline)
-            Button("Grant Access") { Task { await model.requestAccess() } }
-                .buttonStyle(.borderedProminent)
-                .tint(PanuraTheme.accent)
+            Text("""
+            Panura lists the videos already on this phone so you can play \
+            them with subtitles, gestures and the TV. They stay where they \
+            are — nothing is copied, uploaded or sent anywhere.
+            """)
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 300)
+
+            Button { Task { await model.requestAccess() } } label: {
+                Text("Allow Access")
+                    .font(.subheadline.weight(.semibold))
+                    // Not `.borderedProminent`, which paints its label white
+                    // and cannot be told otherwise. Every other filled button
+                    // in this app is dark-on-amber, and white on this accent
+                    // is both wrong and hard to read.
+                    .foregroundStyle(PanuraTheme.onAccent)
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 11)
+                    .background(PanuraTheme.accent, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            Button { pickingFile = true } label: {
+                Label("Open a file instead", systemImage: "folder")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PanuraTheme.accent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 9)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
+        .padding(.horizontal, 24)
     }
 
     /// The screen after a refusal, which is a different screen because the
@@ -740,6 +800,41 @@ struct LocalVideosView: View {
         }
         .padding(.horizontal, 24)
     }
+
+    /// Plays one file the user pointed at, without any library permission.
+    ///
+    /// `startAccessingSecurityScopedResource` is started and deliberately
+    /// never balanced. The player outlives this screen — it is a cover
+    /// presented by the root view, and it may hand the file to VLCKit, to
+    /// AVFoundation, or to the cast server — so stopping access at any point
+    /// this view can see would pull the file out from under whatever is
+    /// reading it. The scope is released when the process ends, which for a
+    /// one-shot pick is the right lifetime.
+    private func play(pickedFile result: Result<[URL], Error>) {
+        guard case let .success(urls) = result, let url = urls.first else { return }
+        _ = url.startAccessingSecurityScopedResource()
+        PlaybackSession.shared.play(
+            MediaItem(
+                title: url.deletingPathExtension().lastPathComponent,
+                url: url,
+                isLocal: true
+            )
+        )
+    }
+
+    /// What the file picker will show.
+    ///
+    /// `audiovisualContent` is the parent of every registered video type, but
+    /// Matroska, AVI and MPEG-TS are not registered on iOS at all — and those
+    /// are exactly the files somebody sideloads to a player that claims to
+    /// open anything. Derived from the extension instead, and anything that
+    /// does not resolve is simply dropped.
+    private static let pickableTypes: [UTType] = {
+        var types: [UTType] = [.audiovisualContent, .movie, .video, .mpeg4Movie]
+        types += ["mkv", "avi", "ts", "flv", "m2ts", "webm", "ogv", "wmv"]
+            .compactMap { UTType(filenameExtension: $0) }
+        return types
+    }()
 
     // MARK: actions
 
