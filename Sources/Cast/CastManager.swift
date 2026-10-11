@@ -42,6 +42,10 @@ final class CastManager: NSObject, ObservableObject {
     /// `armCastAd`.
     fileprivate var castAdPending = false
     fileprivate var castAdTimeout: Task<Void, Never>?
+    /// When the receiver first reported frames. The exit ad's qualifier reads
+    /// it — stopping a cast that never really started is not an exit, it is a
+    /// failure, and failures do not carry ads.
+    fileprivate var castPlayingSince: Date?
 
     /// True when a video is loaded on the receiver, not merely connected to it.
     var isCasting: Bool { isConnected && castingTitle != nil }
@@ -125,7 +129,12 @@ final class CastManager: NSObject, ObservableObject {
     /// does nothing whatsoever to a Google Cast session — on a Chromecast the
     /// button left the device connected. Only the session manager can end one.
     func endSession() {
+        noteCastExit()
         GCKCastContext.sharedInstance().sessionManager.endSessionAndStopCasting(true)
+        // Disconnect is pressed in the television dialog, which is a plain
+        // overlay rather than a sheet — nothing is being dismissed by UIKit,
+        // so a turn of the run loop is all the wait this needs.
+        Task { @MainActor in AdManager.shared.flushQueued() }
     }
 
     /// Load a media item onto the connected receiver.
@@ -228,6 +237,16 @@ extension CastManager: GCKSessionManagerListener {
             castingTitle = nil
             isRemotePlaying = false
             remoteTimeLeft = ""
+            // Deliberately no exit ad here. This fires for a television
+            // switched off, a network dropped and a session errored as well
+            // as for Disconnect — and the two paths that ARE deliberate have
+            // already asked by the time it runs. An ad after an unplanned
+            // disconnection is an ad for a failure.
+            //
+            // Both clocks are cleared, so a cast that ends while an entry ad
+            // is still armed cannot have it fire against the next one.
+            self.castPlayingSince = nil
+            self.disarmCastAd()
         }
     }
     /// Without this a failed connection leaves the row spinning for ever.
@@ -286,6 +305,35 @@ extension CastManager {
         castAdTimeout = nil
     }
 
+    /// Asks for an ad on the way out of a cast.
+    ///
+    /// **Queued, not shown.** The Stop button on the cast screen calls
+    /// `stopRemote()` and then `dismiss()`, so presenting here would put a
+    /// modal up into a sheet that is already going down — the trap that made
+    /// Library rows open a player only after the sheet was closed by hand.
+    /// `RootTabView` flushes it from that sheet's `onDismiss`.
+    ///
+    /// **Only a deliberate stop.** `sessionManager(_:didEnd:)` is not a way in
+    /// here: that fires when the television is switched off, the network drops
+    /// or the session errors, and an ad after an unplanned disconnection is an
+    /// ad for a failure. The same rule the player's interstitial keeps.
+    ///
+    /// **And only a cast that ran.** A minute of confirmed playback, matching
+    /// the player's qualifier, so casting something that is refused or
+    /// abandoned after ten seconds costs nothing.
+    ///
+    /// It shares `.cast`'s own clock with the entry ad rather than taking one
+    /// of its own, which is what keeps a short cast down to a single ad:
+    /// fifteen minutes after arriving, leaving is free. A long film earns
+    /// both; a two-minute test earns one.
+    fileprivate func noteCastExit() {
+        defer { castPlayingSince = nil }
+        guard let since = castPlayingSince,
+              Date().timeIntervalSince(since) >= 60
+        else { return }
+        AdManager.shared.queue(.cast)
+    }
+
     /// The receiver is playing: show the ad.
     ///
     /// Presented over the cast screen, which is already open — it is raised on
@@ -334,7 +382,10 @@ extension CastManager: GCKRemoteMediaClientListener {
             }
             // The receiver is showing frames: this is the only moment a cast
             // is known to have worked, and so the only moment an ad is owed.
-            if playing { self.castConfirmed() }
+            if playing {
+                if self.castPlayingSince == nil { self.castPlayingSince = Date() }
+                self.castConfirmed()
+            }
             // Nothing played, so nothing is owed. `ended` covers a normal
             // finish, which also means the armed ad has missed its moment.
             if failed || ended { self.disarmCastAd() }
@@ -350,6 +401,7 @@ extension CastManager: GCKRemoteMediaClientListener {
     }
 
     func stopRemote() {
+        noteCastExit()
         GCKCastContext.sharedInstance()
             .sessionManager.currentCastSession?.remoteMediaClient?.stop()
         castingTitle = nil

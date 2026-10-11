@@ -118,7 +118,13 @@ struct RootTabView: View {
         // conversion some TVs need, the hand-over, and then the controls. It
         // used to open `PanuraCastControlView` whichever path was in use, so a
         // Chromecast showed a screen wired to a receiver it was not talking to.
-        .sheet(isPresented: $showCastControls) { CastSessionView() }
+        // `onDismiss` is where the cast exit ad lands. Stop calls
+        // `stopRemote()` and then dismisses this, so the ad is queued and
+        // shown once the sheet has gone — see `CastManager.noteCastExit`.
+        .sheet(
+            isPresented: $showCastControls,
+            onDismiss: { AdManager.shared.flushQueued() }
+        ) { CastSessionView() }
         .sheet(isPresented: $showReport) {
             ReportIssueSheet(pageURL: nil, source: "menu")
         }
