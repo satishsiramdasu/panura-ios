@@ -27,4 +27,26 @@ enum FeatureFlags {
     /// is zero — so it is checked at the top of
     /// `store/app-store-listing.md`'s release list.
     static let adsUseTestUnits = true
+
+    /// Ask for tracking permission and serve personalised ads.
+    ///
+    /// **False, and turning it on without `NSUserTrackingUsageDescription`
+    /// kills the app on launch.** iOS terminates a process that calls
+    /// `ATTrackingManager.requestTrackingAuthorization` with no usage string
+    /// in `Info.plist` — immediately, with no alert, exactly as a missing
+    /// `NSCameraUsageDescription` does. That is what "the app opens and
+    /// closes" was: ads were switched on, the prompt was reached half a second
+    /// into launch, and the string had been deliberately removed from
+    /// `project.yml` because App Store Connect refuses a build that carries it
+    /// unless the privacy answers declare tracking.
+    ///
+    /// So it is a flag of its own rather than something `adsEnabled` implies,
+    /// and it stays false. Non-personalised ads are the plan: `npa=1` on every
+    /// request, no prompt, `NSPrivacyTracking` false, no ATT key, and the
+    /// description's "No ad tracking" line stays true. The cost is eCPM.
+    ///
+    /// Turning it on is five changes in one release, listed in that key's
+    /// comment in `project.yml`. Four of them are metadata; this is the one
+    /// that crashes.
+    static let adsPersonalised = false
 }

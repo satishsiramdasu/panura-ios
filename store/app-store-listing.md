@@ -878,9 +878,13 @@ silent if it did.
    closes its train: 1.0 going live is what made every 1.0 upload fail with
    "Invalid Pre-Release Train". The workflow's `marketing_version` input
    overrides `project.yml` per run.
-4. **`NSUserTrackingUsageDescription` is still absent** — unless personalised
-   ads are being shipped, in which case all five items in that key's comment in
-   `project.yml` move together, this list included.
+4. **`NSUserTrackingUsageDescription` is still absent and
+   `FeatureFlags.adsPersonalised` is still `false`** — those two move together
+   or the app dies on launch. iOS terminates a process that calls
+   `ATTrackingManager.requestTrackingAuthorization` with no usage string, with
+   no alert, the way a missing camera string does; it shipped once, the moment
+   ads were first switched on. Turning personalised ads on means all five items
+   in that key's comment in `project.yml`, this list included.
 5. **The `ios` block in panura's `.manifest-src/manifest.source.json` is bumped
    and deployed *after* the release is live**, not before. It feeds the in-app
    update check, so raising it early tells everyone an update exists that the

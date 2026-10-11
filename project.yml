@@ -175,8 +175,17 @@ targets:
         # HTTPS and the system's own crypto only — no encryption of our own — so
         # the app is exempt. Without this key every single upload stops and asks.
         ITSAppUsesNonExemptEncryption: false
-        # NSUserTrackingUsageDescription is deliberately ABSENT, and putting it
-        # back without turning ads on will block submission again.
+        # NSUserTrackingUsageDescription is deliberately ABSENT. Two rules,
+        # pulling opposite ways, and both have already been broken once:
+        #
+        #   * Putting it back without declaring tracking blocks submission.
+        #   * Calling ATTrackingManager WITHOUT it kills the app on launch —
+        #     iOS terminates the process instantly, no alert, exactly as a
+        #     missing NSCameraUsageDescription does. That is what happened the
+        #     moment ads were switched on: the app opened and closed.
+        #
+        # So the ATT call now sits behind `FeatureFlags.adsPersonalised`, which
+        # is false, and the two move together or not at all.
         #
         # App Store Connect refuses "Add for Review" for any build carrying this
         # key unless the App Privacy answers say data IS used for tracking. This
@@ -194,10 +203,10 @@ targets:
         #   Panura asks so ads can be kept relevant. Say no and you still get
         #   the same app, with generic ads instead.
         #
-        # Restoring it is one of the five things ads require — the others are in
-        # PrivacyInfo.xcprivacy and store/app-store-listing.md. Apple rejects an
-        # app that calls ATTrackingManager with no string, so it goes back the
-        # same release the flag flips, not later.
+        # Restoring it is one of the five things PERSONALISED ads require — the
+        # others are in PrivacyInfo.xcprivacy and store/app-store-listing.md.
+        # It goes back in the same release `adsPersonalised` becomes true, not
+        # later, because that flag is what reaches the fatal call.
     # Firebase config, copied into the bundle only if it exists.
     #
     # Not a source entry, even an `optional: true` one: that flag only stops

@@ -30,10 +30,22 @@ struct BannerStrip: View {
                         // Only grow. A banner that reports zero mid-refresh
                         // would otherwise collapse the strip and shove every
                         // screen's content down and back up again.
-                        if measured > height { height = measured }
+                        guard measured > height else { return }
+                        // On the next turn of the run loop, not now: this is
+                        // called from `makeUIView`/`updateUIView`, and writing
+                        // `@State` while SwiftUI is updating the view that owns
+                        // it is undefined — at best a purple warning, at worst
+                        // a layout loop between the height and the geometry
+                        // that produced it.
+                        DispatchQueue.main.async { height = measured }
                     }
                 }
                 .frame(height: height)
+                // The banner is pinned to the top of a container that is zero
+                // points tall for the first frame, before a height is known.
+                // Clipped so it cannot draw over the screen above it in the
+                // meantime.
+                .clipped()
             }
         }
     }

@@ -108,10 +108,22 @@ final class AdManager: NSObject {
         preloadAll()
     }
 
-    /// Raised once, ever. A refusal is not an error and not a reason to ask
-    /// again: the answer lives in Settings from then on, and re-prompting is
-    /// both futile and a rejection reason.
+    /// Raised once, ever — and only when personalised ads are actually wanted.
+    ///
+    /// **The guard is not an optimisation, it is what keeps the app alive.**
+    /// iOS terminates a process that calls this with no
+    /// `NSUserTrackingUsageDescription` in `Info.plist`, instantly and with no
+    /// alert, the same way a missing `NSCameraUsageDescription` does. That key
+    /// is deliberately absent — App Store Connect refuses a build carrying it
+    /// unless the privacy answers declare tracking, which this app does not do
+    /// — so asking without it is a launch crash half a second in. It shipped
+    /// exactly once, the moment ads were switched on.
+    ///
+    /// A refusal is not an error and not a reason to ask again: the answer
+    /// lives in Settings from then on, and re-prompting is both futile and a
+    /// rejection reason.
     private func requestTrackingPermission() async {
+        guard FeatureFlags.adsPersonalised else { return }
         guard ATTrackingManager.trackingAuthorizationStatus == .notDetermined else { return }
         // A beat after launch, or the prompt races the first frame and is
         // dismissed by the window coming up underneath it.
@@ -119,12 +131,20 @@ final class AdManager: NSObject {
         _ = await ATTrackingManager.requestTrackingAuthorization()
     }
 
-    /// Personalised only with explicit permission. Anything else — refused,
-    /// not yet asked, or restricted by policy — gets `npa=1`, which is what
-    /// keeps the privacy manifest's `NSPrivacyTracking` false.
+    /// Personalised only when asked for *and* explicitly permitted. Anything
+    /// else — not wanted, refused, never asked, or restricted by policy — gets
+    /// `npa=1`, which is what keeps the privacy manifest's `NSPrivacyTracking`
+    /// false.
+    ///
+    /// Reading `trackingAuthorizationStatus` is safe without the usage string;
+    /// only *requesting* is fatal. But it is skipped anyway when personalised
+    /// ads are off, because then the answer cannot change what is sent.
     func makeRequest() -> Request {
         let request = Request()
-        guard ATTrackingManager.trackingAuthorizationStatus != .authorized else { return request }
+        if FeatureFlags.adsPersonalised,
+           ATTrackingManager.trackingAuthorizationStatus == .authorized {
+            return request
+        }
         let extras = Extras()
         extras.additionalParameters = ["npa": "1"]
         request.register(extras)
