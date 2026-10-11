@@ -210,6 +210,8 @@ struct ChromecastControlView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(cast.isRemotePlaying ? "Pause" : "Play")
 
+                    castError
+
                     audioPicker
 
                     Text("This television is a Chromecast, so play and pause are all it reports back.")
@@ -234,6 +236,33 @@ struct ChromecastControlView: View {
             .padding(.bottom, 8)
         }
         .background(PanuraTheme.background)
+    }
+
+    /// What the receiver said when it refused.
+    ///
+    /// On screen rather than in a log, because the television is the only part
+    /// of this that knows anything and a phone with no console attached is
+    /// where these get reported from. The Cast error code is the useful half —
+    /// 3116403 is a manifest the server refused, 3115xxx is media that could
+    /// not be played — so it is printed as given rather than softened into
+    /// "something went wrong".
+    @ViewBuilder
+    private var castError: some View {
+        if let message = cast.lastCastError {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 13))
+                    .foregroundStyle(PanuraTheme.error)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
+            .textSelection(.enabled)
+        }
     }
 
     /// Which audio is on the television, and how to change it.

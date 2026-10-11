@@ -41,6 +41,20 @@ final class CastManager: NSObject, ObservableObject {
     /// cast has to be re-sent — changing the audio track is a fresh load, and
     /// starting it from zero would be a new viewing of the same film.
     @Published private(set) var remotePosition: TimeInterval = 0
+    /// Why the last cast failed, in the receiver's own words.
+    ///
+    /// **Everything about a failed cast happens on the television.** The phone
+    /// hands over a URL and a content type and is told nothing; the receiver
+    /// fetches, parses, demuxes and decodes, and when any of that goes wrong
+    /// the only symptom here was a title that quietly cleared itself. Three
+    /// completely different faults — a manifest the receiver was refused, a
+    /// codec it cannot decode, a playlist it cannot parse — looked identical
+    /// from the sofa, which is how a week went by on guesses.
+    ///
+    /// Cast's error codes are specific enough to end that: 3116403 is a
+    /// manifest the server refused (CORS or auth), the 3115xxx range is
+    /// media that could not be played. Both are worth reading out loud.
+    @Published private(set) var lastCastError: String?
 
     /// A cast interstitial waiting on the receiver's confirmation. See
     /// `armCastAd`.
@@ -190,7 +204,12 @@ final class CastManager: NSObject, ObservableObject {
         // Non-zero only when this load is replacing one already playing — an
         // audio change. `startTime` is in seconds from the beginning.
         if startAt > 0 { request.startTime = startAt }
-        session.remoteMediaClient?.loadMedia(with: request.build())
+        lastCastError = nil
+        // The returned request is the only thing that ever reports why a load
+        // was rejected. Discarding it, which is what this did, threw away the
+        // one error message in the whole path.
+        let load = session.remoteMediaClient?.loadMedia(with: request.build())
+        load?.delegate = self
         castingTitle = item.title
         session.remoteMediaClient?.add(self)
         if advertise { armCastAd() }
@@ -360,6 +379,19 @@ extension CastManager {
     }
 }
 
+// MARK: - Why a load was refused
+
+extension CastManager: GCKRequestDelegate {
+    nonisolated func request(_ request: GCKRequest, didFailWithError error: GCKError) {
+        // `error.code` is the Cast error code, which is the part worth having:
+        // 3116403 is "the server refused the manifest", the 3115xxx range is
+        // media that could not be played. Carried through verbatim rather than
+        // translated, because the number is what a search engine answers.
+        let message = "Cast error \(error.code): \(error.localizedDescription)"
+        Task { @MainActor in self.lastCastError = message }
+    }
+}
+
 // MARK: - What is on the TV
 
 extension CastManager: GCKRemoteMediaClientListener {
@@ -405,6 +437,14 @@ extension CastManager: GCKRemoteMediaClientListener {
             // Nothing played, so nothing is owed. `ended` covers a normal
             // finish, which also means the armed ad has missed its moment.
             if failed || ended { self.disarmCastAd() }
+            // A receiver that started and then stopped — the splash, a moment
+            // of nothing, and back to the home screen. It reports no code of
+            // its own here, so say which of the two it was.
+            if failed {
+                self.lastCastError = reason == .interrupted
+                    ? "The television stopped the video."
+                    : "The television could not play this video."
+            }
         }
     }
 
