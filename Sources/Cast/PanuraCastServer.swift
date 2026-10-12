@@ -502,6 +502,18 @@ final class PanuraCastServer: NSObject {
 
     /// Points every URI in a playlist back at this server: sub-playlists to
     /// `/pl/`, everything else (segments, keys, init sections) to `/seg/`.
+    ///
+    /// **What something is comes from where it sits, not from its name.** A URI
+    /// on its own line after `#EXT-X-STREAM-INF` is a variant playlist and a
+    /// `TYPE=AUDIO` rendition's URI is a media playlist — the specification
+    /// allows nothing else in either position — and both are routinely served
+    /// with an extension that says otherwise. `.txt` is common; so is none at
+    /// all. Deciding by `.m3u8` in the URI sent those to `/seg/`, where they
+    /// were handed to the television unrewritten, and every segment inside them
+    /// then resolved against this server and 404'd.
+    ///
+    /// `.m3u8` in the name is still believed where position cannot say — a
+    /// subtitle rendition, which may be a playlist or may be a WebVTT file.
     private func rewritePlaylist(_ text: String, base: URL) -> String {
         guard let ip = Self.localIPv4() else { return text }
         let root = "http://\(ip):\(Self.httpPort)"
@@ -514,24 +526,44 @@ final class PanuraCastServer: NSObject {
             return "\(root)/\(playlist ? "pl" : "seg")/\(id)\(suffix)"
         }
 
-        return text.components(separatedBy: .newlines).map { line -> String in
+        var out: [String] = []
+        /// Set by `#EXT-X-STREAM-INF`, consumed by the URI line under it.
+        var expectingVariant = false
+
+        for line in text.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.isEmpty { return line }
+            if trimmed.isEmpty {
+                out.append(line)
+                continue
+            }
             if trimmed.hasPrefix("#") {
+                if trimmed.hasPrefix("#EXT-X-STREAM-INF") { expectingVariant = true }
+                let upper = trimmed.uppercased()
+                let isAudioRendition = upper.hasPrefix("#EXT-X-MEDIA:") && upper.contains("TYPE=AUDIO")
                 // URI="…" carries renditions and keys — absolutise those too, or
                 // the TV resolves them against this server and 404s.
-                guard let range = trimmed.range(of: "URI=\"") else { return line }
+                guard let range = trimmed.range(of: "URI=\"") else {
+                    out.append(line)
+                    continue
+                }
                 let rest = trimmed[range.upperBound...]
-                guard let end = rest.firstIndex(of: "\"") else { return line }
+                guard let end = rest.firstIndex(of: "\"") else {
+                    out.append(line)
+                    continue
+                }
                 let uri = String(rest[..<end])
-                let isPlaylist = uri.lowercased().contains(".m3u8")
-                return trimmed.replacingOccurrences(
+                let isPlaylist = isAudioRendition || uri.lowercased().contains(".m3u8")
+                out.append(trimmed.replacingOccurrences(
                     of: "URI=\"\(uri)\"",
                     with: "URI=\"\(proxied(uri, playlist: isPlaylist))\""
-                )
+                ))
+                continue
             }
-            return proxied(trimmed, playlist: trimmed.lowercased().contains(".m3u8"))
-        }.joined(separator: "\n")
+            let isPlaylist = expectingVariant || trimmed.lowercased().contains(".m3u8")
+            expectingVariant = false
+            out.append(proxied(trimmed, playlist: isPlaylist))
+        }
+        return out.joined(separator: "\n")
     }
 
     private func register(_ url: URL) -> String {

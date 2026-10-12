@@ -62,9 +62,12 @@ struct AboutView: View {
             } header: {
                 Text("Ad state")
             } footer: {
-                Text("""
-                Test units only — this section is not in a released build. An                 ad needs every line above it to be in order: the SDK ready,                 an ad loaded, a gap that has run out, and a session that is                 not the first.
-                """)
+                Text(
+                    "Test units only — this section is not in a released "
+                    + "build. An ad needs every line above it to be in order: "
+                    + "the SDK ready, an ad loaded, a gap that has run out, "
+                    + "and a session that is not the first."
+                )
             }
         }
     }

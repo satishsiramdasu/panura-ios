@@ -47,8 +47,22 @@ struct CastSessionView: View {
                 failure(message)
             }
         }
-        .presentationDragIndicator(.visible)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(PanuraTheme.background)
+        // The app's banner, along the bottom of this page.
+        //
+        // This screen is the one somebody leaves up: a film runs for two hours
+        // on the television and they come back to these controls repeatedly,
+        // which is exactly the shape a banner suits and an interstitial does
+        // not. It is the *same* banner the shell draws — claimed from it on the
+        // way in and handed back on the way out — because there is only ever
+        // one of them. See `BannerSlot`.
+        .safeAreaInset(edge: .bottom, spacing: 0) { BannerStrip(owner: Self.bannerOwner) }
+        .onAppear { BannerSlot.shared.claim(Self.bannerOwner) }
+        .onDisappear { BannerSlot.shared.release(Self.bannerOwner) }
     }
+
+    private static let bannerOwner = "cast"
 
     /// Whichever receiver has the video. Nothing playing anywhere falls through
     /// to the picker, since the screen was opened to reach a TV.
@@ -78,11 +92,16 @@ struct CastSessionView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(PanuraTheme.accent)
+                // Needed now the screen is a page. As a sheet this state could
+                // be swiped away, so the only button it had to offer was the
+                // one that goes forward.
+                Button("Close") { dismiss() }
+                    .font(.subheadline)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
             }
             .padding(28)
-            .frame(maxWidth: .infinity)
-            .background(PanuraTheme.surface)
-            .presentationDetents([.height(240)])
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(PanuraTheme.background)
         }
     }
 
@@ -270,15 +289,18 @@ struct ChromecastControlView: View {
     /// The switch for a television whose Chromecast cannot play audio and
     /// video as two separate streams.
     ///
-    /// **It is offered rather than decided because nothing here can decide
-    /// it.** A set that lacks the second pipeline does not say so: it loads
-    /// the stream, shows one frame and stops — which is also what a slow
-    /// network, a refused manifest and an undecodable codec look like from the
-    /// sofa. So the person in front of the television is the detector, and
-    /// once they have answered, the answer is kept against that set's name and
-    /// not asked again. See `CastPreferences.needsMuxing`.
+    /// **On by default, and here to be turned off.** A master that declares
+    /// its audio separately is unplayable on this hardware, so the switch
+    /// starts on and the first attempt works; what it exists for is the
+    /// television that turns out to manage the original perfectly well, which
+    /// should not be made to pay for the bytes. That answer cannot be
+    /// detected either — a set that lacks the second pipeline shows one frame
+    /// and stops, which is also what a slow network, a refused manifest and an
+    /// undecodable codec look like from the sofa — so the person in front of
+    /// it is the only judge, and their answer is kept against that set's name.
+    /// See `CastPreferences.muxingChoice`.
     ///
-    /// Shown only where it could help: an HLS stream whose audio is declared
+    /// Shown only where it could matter: an HLS stream whose audio is declared
     /// separately. Anywhere else the audio is already inside the video, and a
     /// switch that changes nothing would send somebody chasing the wrong
     /// fault.
@@ -286,7 +308,7 @@ struct ChromecastControlView: View {
     private var muxToggle: some View {
         if flow.canMux {
             VStack(alignment: .leading, spacing: 8) {
-                Toggle(isOn: Binding(get: { flow.isMuxing }, set: { flow.setMuxing($0) })) {
+                Toggle(isOn: Binding(get: { flow.muxWanted }, set: { flow.setMuxing($0) })) {
                     Text("Combine sound into the picture")
                         .font(.subheadline.weight(.semibold))
                 }
@@ -303,19 +325,23 @@ struct ChromecastControlView: View {
         }
     }
 
-    /// Three states, and the middle one is the reason this is not one string:
-    /// switched on and working, switched on and impossible for this particular
-    /// film, and off.
+    /// Four states, and the two in the middle are why this is not one string:
+    /// the switch says what is wanted, this says what is actually happening.
     private var muxCaption: String {
         if flow.reloading { return "Preparing the stream…" }
         if flow.muxUnavailable {
-            return """
-            This video cannot be combined on the phone — a live channel,             encrypted segments or a format this cannot open. It has been sent             the ordinary way instead.
-            """
+            return "This video cannot be combined on the phone — a live "
+                + "channel, encrypted segments, or a format this cannot open. "
+                + "It has been sent the ordinary way instead."
         }
-        return """
-        For older televisions that start a video and stop a few seconds in.         The phone joins the picture and sound together before sending them, so         it has to stay on this network while the film plays.
-        """
+        if flow.isMuxing {
+            return "The phone is joining the picture and sound for this "
+                + "video, so keep it on this network and awake while the film "
+                + "plays."
+        }
+        return "On for televisions that start a video and stop a few seconds "
+            + "in. Only used where a video needs it — this one did not, and "
+            + "is streaming straight from the source."
     }
 
     /// Which audio is on the television, and how to change it.

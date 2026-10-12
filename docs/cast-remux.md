@@ -142,17 +142,74 @@ screen*. A switch that is on and doing nothing is the worst of the three states.
 part of this problem. Carry those lines into the served master with their URIs
 made absolute.
 
-## Why it is off by default, and per television
+## The decision: four answers, in order
+
+The question is not "should this be proxied" but **"is there anything wrong with
+handing the television the address"**. Only a yes puts the phone in the path.
+
+1. **Mux**, when the master declares its audio separately — *on by default*.
+   That shape is unplayable on this hardware, so waiting to be asked only means
+   the first attempt fails.
+2. **Proxy**, when the stream is gated by a header no television can send.
+   Everything goes through the phone but nothing is rebuilt; it is forwarded,
+   with the playlist rewritten so segment requests come back through us.
+3. **Filter the master** to one rendition, when muxing was declined or is
+   impossible but the master still declares several renditions, several groups,
+   or an undecodable codec. A kilobyte, once.
+4. **Send it untouched** — most streams, and much the cheapest: the television
+   streams from the CDN and the phone may leave the network.
+
+### Why muxing is on by default but still a switch
 
 There is nothing to detect. A set lacking the second pipeline does not say so —
 it shows a frame and stops, which is also what a slow network, a refused
-manifest and an undecodable codec look like from the sofa. So the person in
-front of the television is the detector, and once they have answered, the answer
-is kept against that set's name.
+manifest and an undecodable codec look like from the sofa. But the *stream* can
+be read, and a master with separately-declared audio is one this hardware cannot
+play, so the default follows the stream rather than waiting on the person.
 
-Muxing also routes every byte of the film through the phone, which most Cast
-hardware needs nothing of the sort for. Defaulting it on would make every good
-television pay for the one old one.
+The switch is then there to be turned **off**: for the television that turns out
+to manage the original perfectly well and should not pay for the bytes. Stored
+per set, as three states — unanswered, yes, no — because "nobody has said" has
+to be distinguishable from "no".
+
+### Gated streams: the phone, not the television
+
+`castHeaders` is deliberately narrower than `headers`: a session cookie is bound
+to the address and user agent that obtained it, so replaying it from a second
+device is worse than sending none — proven by a TV getting HTTP 200 with a body
+reading `security error`. So a stream that *needs* one is a stream no television
+can open, and forwarding from the phone is the only route. The phone is the
+device that holds the cookie.
+
+For the same reason **the muxer fetches with `headers`, not `castHeaders`** —
+the phone is doing the fetching now, and the television only ever talks to us.
+Using the TV's narrowed set there failed gated streams for no reason.
+
+### Surround is never offered
+
+Choosing a 5.1 track closes the player on these televisions: it is either a
+codec they cannot decode at all (`ac-3`, `ec-3`) or more channels than the audio
+pipeline accepts. Downmixing would mean decoding and re-encoding the sound,
+which is the one thing this deliberately never does — so surround renditions are
+left out of the picker and never chosen by default.
+
+Detected from `CHANNELS` > 2, then from the name (`5.1`, `7.1`, `atmos`,
+`dd+`, `dts`…), because providers label it inconsistently. **Ids are not
+renumbered** when the list is narrowed — a rendition's id is its position in the
+unfiltered master, which is what both the playlist filter and the muxer count
+to. If filtering would leave nothing, the whole list comes back: a playlist whose
+every track is a 5.1 mix is one where a track that may fail beats silence.
+
+### A sub-playlist is a sub-playlist whatever it is called
+
+In the proxy path, what a URI *is* comes from where it sits, not from its name. A
+URI on its own line after `#EXT-X-STREAM-INF` is a variant playlist and a
+`TYPE=AUDIO` rendition's URI is a media playlist — the spec allows nothing else
+in either position — and both are routinely served as `.txt`, or with no
+extension. Deciding by `.m3u8` sent those to the segment route, where they went
+to the television unrewritten and every segment inside them then resolved
+against the phone and 404'd. Believe the extension only where position cannot
+say: a subtitle rendition, which may be a playlist or may be a WebVTT file.
 
 ## Cost, stated plainly
 

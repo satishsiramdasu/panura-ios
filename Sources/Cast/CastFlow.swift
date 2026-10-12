@@ -272,15 +272,26 @@ final class CastFlow: ObservableObject {
     /// use — so the picker needs to know about neither.
     var tracks: [HLSAudioRendition] { muxed?.tracks ?? audio?.tracks ?? [] }
     var chosenTrack: Int? { muxed?.chosen ?? audio?.chosen }
-    /// Whether this phone is in the path of the film.
+    /// Whether this phone is in the path of the film *right now*.
     var isMuxing: Bool { muxed != nil }
+
+    /// What the switch shows: the answer for this television, which is yes
+    /// until somebody says otherwise.
+    ///
+    /// **The setting, not the live state.** They differ on a film muxing
+    /// cannot be done to — live, encrypted, already muxed — and showing the
+    /// live state there makes the switch look as though it flipped itself off.
+    /// The caption carries what is actually happening.
+    var muxWanted: Bool {
+        CastPreferences.muxingChoice(on: deviceName ?? "") ?? true
+    }
 
     /// Turns phone-side muxing on or off for this television, and starts the
     /// film again the new way.
     ///
     /// The answer is remembered against the TV's name, so somebody with one
     /// old set in the bedroom neither re-answers it per film nor makes their
-    /// good television pay for it. See `CastPreferences.needsMuxing`.
+    /// good television pay for it. See `CastPreferences.muxingChoice`.
     func setMuxing(_ on: Bool) {
         guard let device = deviceName, let media = sent else { return }
         CastPreferences.setMuxing(on, on: device)
@@ -317,13 +328,23 @@ final class CastFlow: ObservableObject {
     ///
     /// Three outcomes, in the order they are tried:
     ///
-    /// - **Muxed on the phone**, when this television has been marked as
-    ///   needing it. The only thing that helps a set whose Chromecast cannot
-    ///   run audio and video as two streams, and by far the most expensive —
+    /// - **Muxed on the phone**, for a master that declares its audio
+    ///   separately. Tried first and tried *by default*, because that shape is
+    ///   precisely what a Chromecast of this vintage cannot play — so waiting
+    ///   to be asked means the first attempt always fails. Costs the most:
     ///   every byte of the film passes through here.
+    /// - **Proxied through the phone**, for a stream gated by a header no
+    ///   television can send. Also everything through the phone, but nothing
+    ///   rebuilt — it is forwarded.
     /// - **One audio rendition**, when the master declares several, several
-    ///   groups, or a codec the hardware cannot decode. A kilobyte, once.
-    /// - **Untouched**, which is most streams.
+    ///   groups, or a codec the hardware cannot decode, and muxing was
+    ///   declined or impossible. A kilobyte, once.
+    /// - **Untouched**, which is most streams and the cheapest by far: the
+    ///   television streams from the CDN and the phone can leave the network.
+    ///
+    /// So the question is not "should this be proxied" but "is there anything
+    /// wrong with handing the television the address" — and only the answers
+    /// to that put the phone in the path.
     ///
     /// Falling through is deliberate at every step: a stream that cannot be
     /// read here may still play on the television, and refusing to cast it
@@ -335,7 +356,9 @@ final class CastFlow: ObservableObject {
         muxUnavailable = false
         PanuraCastManager.shared.clearRemux()
 
-        let wanted = CastPreferences.needsMuxing(on: deviceName ?? "")
+        // nil means nobody has said, and the default is yes — see
+        // `CastPreferences.muxingChoice`.
+        let wanted = CastPreferences.muxingChoice(on: deviceName ?? "") ?? true
         if wanted,
            let session = await CastRemux.prepare(media, track: track),
            PanuraCastManager.shared.startServerForRemux(session),
@@ -355,21 +378,48 @@ final class CastFlow: ObservableObject {
             return copy
         }
 
+        // Not muxing. Whether it was even *possible* is a different
+        // question, and the switch needs the answer to both: offer it where it
+        // could help, and say so where it was asked for and could not be done.
+        canMux = await CastRemux.looksMuxable(media)
+        muxUnavailable = wanted && canMux
+
+        // **A stream the television cannot fetch at all.**
+        //
+        // `castHeaders` is deliberately narrower than `headers`: a session
+        // cookie is bound to the address and user agent that obtained it, so
+        // replaying it from a second device is worse than sending none — proven
+        // by a TV getting HTTP 200 with a body reading "security error". Which
+        // means a stream that *needs* one is a stream no television can open,
+        // and forwarding it from here is the only way it reaches a Chromecast.
+        // The phone is the device that holds the cookie.
+        if needsPhoneHeaders(media),
+           PanuraCastManager.shared.startServerForProxy(media),
+           let address = PanuraCastServer.proxyURL(for: media.url),
+           let local = URL(string: address) {
+            var copy = media
+            copy.url = local
+            if CastAudioMaster.looksLikeHLS(media) { copy.contentType = "hls" }
+            return copy
+        }
+
         var prepared = await CastAudioMaster.prepare(media)
         if let track, let current = prepared, current.chosen != track {
             prepared = CastAudioMaster.reselect(current, to: track) ?? prepared
         }
         audio = prepared
-        // A master worth filtering is a master with audio declared separately,
-        // so it is also one worth offering to mux; only when there was nothing
-        // to filter is it worth a look of its own.
-        canMux = prepared != nil ? true : await CastRemux.looksMuxable(media)
-        // Reaching here with muxing switched on means it was tried and could
-        // not be done. The switch stays where the person put it — it is right
-        // about their television — and the screen says why this film is an
-        // exception.
-        muxUnavailable = wanted && canMux
         return prepared?.send ?? media
+    }
+
+    /// Whether this stream is gated by something a television cannot send.
+    ///
+    /// Any header the app would use itself but keeps off a second device —
+    /// `Origin`, a `Cookie`. When the two sets are equal, which is the ordinary
+    /// case, nothing is being withheld and the television can fetch for itself.
+    private func needsPhoneHeaders(_ media: MediaItem) -> Bool {
+        guard !media.headers.isEmpty else { return false }
+        let forTV = Set(media.castHeaders.keys.map { $0.lowercased() })
+        return media.headers.keys.contains { !forTV.contains($0.lowercased()) }
     }
 
     private func play(_ item: CastQueueItem, auto: Bool) async {

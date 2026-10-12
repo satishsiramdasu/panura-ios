@@ -191,7 +191,7 @@ struct CastToolbarButton: View {
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
         }
         .accessibilityLabel(connected ? "Playing on TV — open controls" : "Play on TV")
-        .sheet(isPresented: $showControls) {
+        .fullScreenCover(isPresented: $showControls) {
             CastSessionView()
         }
     }
@@ -779,7 +779,7 @@ struct CastHomeCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(connected ? "Casting to \(title)" : "Cast to TV")
-        .sheet(isPresented: $showControls) {
+        .fullScreenCover(isPresented: $showControls) {
             CastSessionView()
         }
     }

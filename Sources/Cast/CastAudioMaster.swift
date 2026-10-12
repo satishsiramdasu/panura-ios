@@ -14,6 +14,8 @@ struct HLSAudioRendition: Identifiable, Hashable {
     /// The `LANGUAGE` attribute, an ISO code — `tel`, `tam`, `en`.
     let language: String?
     let isDefault: Bool
+    /// The `CHANNELS` attribute: a count, as a string — "2", "6".
+    let channels: String?
     /// Its `URI`, as written in the master — relative or absolute.
     ///
     /// Unused by `singleAudio`, which only ever moves the whole line around.
@@ -24,6 +26,29 @@ struct HLSAudioRendition: Identifiable, Hashable {
     var label: String {
         guard !name.isEmpty else { return language ?? "Audio \(id + 1)" }
         return name
+    }
+
+    /// Whether this is a surround mix.
+    ///
+    /// **Not offered on a Chromecast, because choosing one closes the player
+    /// on the television.** These devices decode stereo AAC and little else;
+    /// a 5.1 track is either a codec they cannot handle at all (`ac-3`,
+    /// `ec-3`) or more channels than the audio pipeline will take. Downmixing
+    /// it on the phone would mean decoding and re-encoding the sound, which
+    /// is the one thing the muxer deliberately never does — so the honest
+    /// answer is to leave it out of the list rather than offer a choice that
+    /// ends the film.
+    ///
+    /// Read three ways because providers label this inconsistently:
+    /// `CHANNELS` when they set it, then the name, which is where "5.1"
+    /// usually lives when they do not.
+    var isSurround: Bool {
+        if let channels, let count = Int(channels.prefix(while: \.isNumber)), count > 2 {
+            return true
+        }
+        let haystack = (name + " " + (language ?? "")).lowercased()
+        return ["5.1", "7.1", "2.1", "atmos", "surround", "dd+", "ddp", "eac3", "ac3", "dts"]
+            .contains { haystack.contains($0) }
     }
 }
 
@@ -111,7 +136,7 @@ enum CastAudioMaster {
         guard !all.isEmpty else { return nil }
 
         let group = chooseGroup(in: master, among: all)
-        let offered = all.filter { $0.group == group }
+        let offered = castable(all.filter { $0.group == group })
         guard let keep = preferred(among: offered) else { return nil }
 
         return build(item: item, master: master, tracks: offered, choosing: keep.id)
@@ -219,11 +244,27 @@ enum CastAudioMaster {
                     name: attribute("NAME", in: line) ?? "",
                     language: attribute("LANGUAGE", in: line),
                     isDefault: attribute("DEFAULT", in: line) == "YES",
+                    channels: attribute("CHANNELS", in: line),
                     uri: attribute("URI", in: line) ?? ""
                 )
             )
         }
         return found
+    }
+
+    /// The renditions worth putting in front of somebody, surround dropped.
+    ///
+    /// **Ids are left alone.** A rendition's `id` is its position in the
+    /// *unfiltered* master, which is what `singleAudio(keeping:)` and
+    /// `CastRemux` both count to — so this narrows the list and renumbers
+    /// nothing.
+    ///
+    /// If that leaves nothing at all, the whole list comes back. A playlist
+    /// whose every track is a 5.1 mix is one where offering a track that may
+    /// fail beats offering silence.
+    static func castable(_ offered: [HLSAudioRendition]) -> [HLSAudioRendition] {
+        let stereo = offered.filter { !$0.isSurround }
+        return stereo.isEmpty ? offered : stereo
     }
 
     /// Every `EXT-X-STREAM-INF`, reduced to the two attributes that matter

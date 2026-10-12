@@ -87,7 +87,7 @@ struct RootTabView: View {
     @ObservedObject private var tabSet = TabSet.shared
 
     var body: some View {
-        shell
+        castable
         .background(deepChrome.ignoresSafeArea())
         // The header hides the moment you leave Home, and comes back when you
         // return to it. Driven from the selection rather than from inside
@@ -121,10 +121,6 @@ struct RootTabView: View {
         // `onDismiss` is where the cast exit ad lands. Stop calls
         // `stopRemote()` and then dismisses this, so the ad is queued and
         // shown once the sheet has gone — see `CastManager.noteCastExit`.
-        .sheet(
-            isPresented: $showCastControls,
-            onDismiss: { AdManager.shared.flushQueued() }
-        ) { CastSessionView() }
         .sheet(isPresented: $showReport) {
             ReportIssueSheet(pageURL: nil, source: "menu")
         }
@@ -187,6 +183,32 @@ struct RootTabView: View {
     /// above all — but that bar is about the screen now, not about the app,
     /// which is why the mark, the cast control and the menu moved up here and
     /// stopped being repeated on four screens.
+    /// The shell with the cast screen over it.
+    ///
+    /// **A separate view from `body` on purpose, and the reason is SwiftUI's
+    /// and not ours.** Two `fullScreenCover` modifiers chained on the *same*
+    /// view is the one arrangement that misbehaves — the second is liable to be
+    /// ignored outright — and the player already owns one up there. Attaching
+    /// this one a layer down gives each its own presenter, which is also what
+    /// the comment on the player's cover is about: one presenter cannot hold
+    /// two presentations.
+    ///
+    /// A page rather than a sheet because of how long it is kept open. The
+    /// controls are where somebody sits while a film plays on the television,
+    /// coming back to it repeatedly, and a half-dismissed sheet with a drag
+    /// indicator is not that. It also gives the screen a real bottom edge for
+    /// the banner to sit on.
+    ///
+    /// `onDismiss` is where the cast exit ad lands. Stop calls `stopRemote()`
+    /// and then dismisses this, so the ad is queued and shown once the page has
+    /// actually gone — see `CastManager.noteCastExit`.
+    private var castable: some View {
+        shell.fullScreenCover(
+            isPresented: $showCastControls,
+            onDismiss: { AdManager.shared.flushQueued() }
+        ) { CastSessionView() }
+    }
+
     private var shell: some View {
         ZStack {
             VStack(spacing: 0) {

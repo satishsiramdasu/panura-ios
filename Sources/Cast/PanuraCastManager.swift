@@ -225,6 +225,26 @@ final class PanuraCastManager: ObservableObject {
         return true
     }
 
+    /// Starts the HTTP server as a plain forwarder for `item`, with the
+    /// phone's own headers.
+    ///
+    /// For a stream gated by something a television cannot send. Nothing is
+    /// rebuilt — the playlist is rewritten so segment requests come back
+    /// through here, and each is fetched with the full header set, which is the
+    /// one this device used to obtain whatever the gate wants.
+    ///
+    /// `item.headers`, not `castHeaders`: the narrowing exists to keep a
+    /// cookie off a *second* device, and this is the first one.
+    func startServerForProxy(_ item: MediaItem) -> Bool {
+        start()
+        guard isServerRunning else { return false }
+        server.streamURL = item.url
+        server.headers = item.headers.isEmpty ? item.castHeaders : item.headers
+        server.masterOverride = nil
+        server.remux = nil
+        return true
+    }
+
     /// Drops a muxing session, and with it the segments it is holding.
     ///
     /// Called when a cast ends as well as when one begins: the cache is a few

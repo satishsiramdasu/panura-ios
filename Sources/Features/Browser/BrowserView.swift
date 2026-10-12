@@ -117,7 +117,7 @@ struct BrowserView: View {
                 onDismiss: { withoutSheetAnimation { showAddress = false } }
             )
         }
-        .sheet(isPresented: $showPanuraControls) {
+        .fullScreenCover(isPresented: $showPanuraControls) {
             CastSessionView()
         }
         // The video that asked for a TV goes as soon as one answers.

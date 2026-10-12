@@ -17,7 +17,7 @@ Settled 2026-10-11. iOS code lives in `Sources/Ads/`.
 | Cast entry | Interstitial | Receiver *confirmed* playing, before cast controls appear | — | 15 min (shared) |
 | Cast exit | Interstitial | Deliberate stop/disconnect | 60 s of confirmed playback | 15 min (shared) |
 | Server refresh | **Rewarded** | Refresh pressed on a playlist server | — | 1 h free window, then due |
-| Banner | Banner | Every screen except the player | — | 30 s refresh, set on the unit |
+| Banner | Banner | Every screen except the player, cast controls included | — | 30 s refresh, set on the unit |
 
 Plus two global rules that override all of the above:
 
@@ -251,6 +251,24 @@ territory — the same number, for the same reason.
 Size: anchored adaptive for the current orientation. **Not** the large variant:
 it runs to about 100 pt on a phone, and this banner pushes every screen's
 content up.
+
+### The cast screen is the one page that claims it
+
+The cast controls are presented *over* the shell, so the shell's banner is
+behind them and the screen would otherwise be the one ad-free surface in the
+app that people leave open longest — a film runs two hours on the television
+and they come back to these controls repeatedly. So that page carries the
+banner along its own bottom edge.
+
+It is the **same** view, not a second one. A second banner would mean a second
+request per appearance on the same unit, which is the 30-second-floor problem
+above. So ownership is explicit: the shell draws the banner while nothing has
+claimed it, and a page over the shell claims it on appear and releases it on
+disappear (`BannerSlot` on iOS). One state change hands it over, which avoids
+two strips racing to adopt the same view and one of them showing an empty gap.
+
+Claims do not stack, deliberately — one page over the shell is the whole of the
+need, and the cast page is never presented from another page that has a banner.
 
 ---
 

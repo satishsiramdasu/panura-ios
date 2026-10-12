@@ -26,8 +26,16 @@ import Foundation
 /// provider never cut it at.
 ///
 /// **The cost, stated plainly:** every byte of the film now travels CDN →
-/// phone → television instead of CDN → television. It is the price of the
-/// television being too old, which is why this is an option and not a default.
+/// phone → television instead of CDN → television, and the phone has to stay
+/// awake and on the network for the length of it. That is the price of the
+/// television being too old.
+///
+/// Which is why it is not done to every stream — only to one whose audio is
+/// declared separately, where it is the difference between a film and a frozen
+/// frame. For those it *is* the default: the shape is unplayable on this
+/// hardware, so waiting to be asked only means the first attempt fails. A set
+/// that turns out to manage the original is told so once and then left alone.
+/// See `CastPreferences.muxingChoice`.
 enum CastRemux {
 
     // MARK: - what a prepared stream knows
@@ -286,9 +294,26 @@ enum CastRemux {
     /// offering it there would send somebody chasing the wrong fault.
     static func looksMuxable(_ item: MediaItem) async -> Bool {
         guard CastAudioMaster.looksLikeHLS(item),
-              let master = await text(item.url, headers: item.castHeaders)
+              let master = await text(item.url, headers: fetchHeaders(item))
         else { return false }
         return isCandidate(master)
+    }
+
+    /// The headers to fetch this stream with — the full set, not the
+    /// television's.
+    ///
+    /// **Because the phone is doing the fetching now.** `castHeaders` exists
+    /// to keep `Origin` and a session cookie off a *second device*: a cookie
+    /// is bound to the address and user agent that obtained it, so replaying
+    /// it from a television is worse than sending none. None of that applies
+    /// here — this is the same device, the same address and the same agent
+    /// that got the cookie in the first place, and it is the set the in-app
+    /// player already uses against these very streams.
+    ///
+    /// It also means a gated stream becomes castable rather than 403: the
+    /// television never talks to the origin at all, only to us.
+    static func fetchHeaders(_ item: MediaItem) -> [String: String] {
+        item.headers.isEmpty ? item.castHeaders : item.headers
     }
 
     /// Reads the master and both halves of the stream. nil if anything rules
@@ -296,21 +321,21 @@ enum CastRemux {
     /// playlist that will not parse.
     static func prepare(_ item: MediaItem, track: Int? = nil) async -> Session? {
         guard CastAudioMaster.looksLikeHLS(item),
-              let master = await text(item.url, headers: item.castHeaders),
+              let master = await text(item.url, headers: fetchHeaders(item)),
               isCandidate(master)
         else { return nil }
 
-        let offered = CastAudioMaster.renditions(in: master)
+        let offered = CastAudioMaster.castable(CastAudioMaster.renditions(in: master))
         guard let chosen = pick(offered, track: track),
               let audioURL = URL(string: chosen.uri, relativeTo: item.url)?.absoluteURL,
-              let audioText = await text(audioURL, headers: item.castHeaders),
+              let audioText = await text(audioURL, headers: fetchHeaders(item)),
               let audioList = parsePlaylist(audioText, base: audioURL),
               !audioList.segments.isEmpty
         else { return nil }
 
         var variants: [Variant] = []
         for (attributes, url) in streamInfo(master, base: item.url) {
-            guard let body = await text(url, headers: item.castHeaders),
+            guard let body = await text(url, headers: fetchHeaders(item)),
                   let list = parsePlaylist(body, base: url),
                   !list.segments.isEmpty
             else { continue }
@@ -321,7 +346,7 @@ enum CastRemux {
         // One measurement, once: where the audio clock starts. Every window is
         // then arithmetic on the playlist, with nothing more to probe.
         guard let head = await ProbeHTTP.get(
-                audioList.segments[0].url, headers: item.castHeaders, limit: 4_000_000
+                audioList.segments[0].url, headers: fetchHeaders(item), limit: 4_000_000
               ),
               let offset = TS.firstPTS(in: [UInt8](StreamProxy.stripDecoyHeader(head.data)))
         else { return nil }
@@ -332,7 +357,7 @@ enum CastRemux {
             audioTotal: audioList.total,
             audioOffset: offset,
             subtitles: subtitleLines(master, base: item.url),
-            headers: item.castHeaders,
+            headers: fetchHeaders(item),
             original: item,
             tracks: offered,
             chosen: chosen.id
