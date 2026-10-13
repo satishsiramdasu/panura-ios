@@ -19,6 +19,12 @@ struct BrowserView: View {
     @ObservedObject private var playback = PlaybackSession.shared
     @EnvironmentObject private var cast: CastManager
     @State private var showFoundSheet = false
+    /// Whether this page's list has already been opened for the user.
+    ///
+    /// Once per page: a list that came back every time another stream turned
+    /// up would be a sheet that cannot be closed.
+    @State private var offeredFoundSheet = false
+    @Environment(\.destinationIsActive) private var isActive
     /// Which sheet row has its buttons out. The best stream starts open,
     /// because opening the sheet and tapping again to reach Play was two taps
     /// for the thing almost everyone wanted.
@@ -142,8 +148,18 @@ struct BrowserView: View {
         // The best stream is open on arrival, and re-chosen each time rather
         // than remembered: the page may have found something better since.
         .onChange(of: showFoundSheet) { shown in
-            if shown { expandedVideo = model.orderedVideos.first?.id }
+            if shown {
+                expandedVideo = model.orderedVideos.first?.id
+                offeredFoundSheet = true
+            }
         }
+        .onChange(of: model.foundVideos.count) { count in
+            // Empty means a new page: its list is a new offer.
+            if count == 0 { offeredFoundSheet = false }
+            offerFoundSheet()
+        }
+        // Streams found while another tab was in front are offered on return.
+        .onChange(of: isActive) { _ in offerFoundSheet() }
         .sheet(isPresented: $showReport) {
             ReportIssueSheet(
                 pageURL: model.currentURL?.absoluteString,
@@ -169,6 +185,25 @@ struct BrowserView: View {
         }
         .onChange(of: pendingAddress) { _ in consumePending() }
         .onAppear { consumePending() }
+    }
+
+    /// Opens the list by itself the first time a page has a choice to make.
+    ///
+    /// Several streams means choosing is the task, and the bar's only job was
+    /// to be tapped to get here. The bar stays underneath for reopening.
+    ///
+    /// Never over something else: this layer stays alive behind other tabs,
+    /// and a sheet raised from a hidden one lands on whatever is in front.
+    private func offerFoundSheet() {
+        #if DEBUG
+        if ScreenshotMode.isActive { return }
+        #endif
+        guard model.foundVideos.count > 1, !offeredFoundSheet, isActive,
+              !showFoundSheet, !showAddress, !showReport, !showMenu,
+              !showPanuraControls, !castPicker.isShowing,
+              !playback.isPlayingSomething
+        else { return }
+        showFoundSheet = true
     }
 
     /// Hands a detected video to the session, which owns presentation now —
