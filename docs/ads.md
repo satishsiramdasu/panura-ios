@@ -13,9 +13,9 @@ Settled 2026-10-11. iOS code lives in `Sources/Ads/`.
 
 | Placement | Format | Trigger | Qualifier | Gap |
 |---|---|---|---|---|
-| Player exit | Interstitial | Leaving any player, any engine | 60 s watched **or** 25 % of duration | 15 min |
-| Cast entry | Interstitial | Receiver *confirmed* playing, before cast controls appear | — | 15 min (shared) |
-| Cast exit | Interstitial | Deliberate stop/disconnect | 60 s of confirmed playback | 15 min (shared) |
+| Player exit | Interstitial | Leaving any player, any engine | country-tiered watch time **or** 25 % of duration | country-tiered |
+| Cast entry | Interstitial | Receiver *confirmed* playing, before cast controls appear | — | country-tiered (shared) |
+| Cast exit | Interstitial | Deliberate stop/disconnect | country-tiered watch time | country-tiered (shared) |
 | Server refresh | **Rewarded** | Refresh pressed on a playlist server | — | 1 h free window, then due |
 | Banner | Banner | Every screen except the player, cast controls included | — | 30 s refresh, set on the unit |
 
@@ -56,8 +56,9 @@ somebody's own file but still our player, and the player is the thing that was
 built.
 
 **Qualifier:** `watchedEnough(seconds, duration)` → `true` if
-`seconds >= 60`, else `true` if `duration` is known and
-`seconds >= duration * 0.25`.
+`seconds >= AdCountryPolicy.minWatchSeconds` (60 s by default, 0 in the
+low-CPM tier — which drops the qualifier entirely), else `true` if `duration`
+is known and `seconds >= duration * 0.25`.
 
 Without the qualifier, a stream that dies after eight seconds still counts as
 playback ending, and the user gets an ad immediately after the app failed
@@ -68,12 +69,12 @@ link expired.
 The 25 % branch exists so a 90-second clip can qualify while a 40-minute
 episode does not need ten minutes of credit.
 
-**Gap: 15 min.** Barely binds — the real gap for anyone watching something of
-normal length is however long that thing was. It bites on short clips opened
-and abandoned one after another, which is exactly when it should. Fifteen
-rather than ten not because ten fires too often, but because the cost of being
-wrong is asymmetric: an ad too many is remembered, an ad too few is not
-noticed.
+**Gap: country-tiered, 15 min by default.** Barely binds — the real gap for
+anyone watching something of normal length is however long that thing was. It
+bites on short clips opened and abandoned one after another, which is exactly
+when it should. Fifteen rather than ten not because ten fires too often, but
+because the cost of being wrong is asymmetric: an ad too many is remembered,
+an ad too few is not noticed. See §12 for how the gap varies by country.
 
 **Presentation order matters.** On iOS the player is a full-screen cover owned
 by the root view, and presenting a second modal from a controller that is
@@ -106,8 +107,8 @@ the clock on the same signal the entry ad waits for (first frames reported).
 Something the receiver refuses, or that is abandoned after ten seconds, costs
 nothing.
 
-**The shared clock is the point.** Both triggers read one 15-minute `cast`
-clock, so:
+**The shared clock is the point.** Both triggers read one `cast` clock
+(country-tiered, 15 min by default — see §12), so:
 
 | Cast length | Ads |
 |---|---|
@@ -376,6 +377,7 @@ without waiting an hour.
 | File | Holds |
 |---|---|
 | `Sources/Ads/AdPolicy.swift` | *May we* — gaps, first session, the watch qualifier. No ad SDK at all. |
+| `Sources/Ads/AdCountryPolicy.swift` | Country tier lookup — reads the manifest's `ads` block and the Store's storefront country, caches gap/qualifier for `AdPolicy` to read synchronously. |
 | `Sources/Ads/AdManager.swift` | Loading and presenting. Slots, queue/flush, the banner view. |
 | `Sources/Ads/AdConsent.swift` | UMP consent gathering and the privacy-options form. |
 | `Sources/Ads/BannerStrip.swift` | The bottom inset and the long-lived banner host. |
@@ -400,3 +402,86 @@ only the manager half is platform code.
   settled.
 - Separate AdMob app and separate units throughout: an iOS unit id cannot serve
   Android.
+- Same manifest `ads` block, same tier logic (§12) — read the viewer's Play
+  Store country (`BillingClient`'s `getBillingConfigAsync` → `countryCode`,
+  not a `Locale`), resolve the tier, cache it, and feed it into the same
+  gap/qualifier fields Android's `AdPolicy` port already needs.
+
+---
+
+## 12. Country-tiered pacing
+
+**What varies:** the player/cast interstitial gap, and the player/cast watch
+qualifier (§3, §4). **What never varies:** the rewarded-refresh gap (§5) — that
+lever answers "how much do we trust this feature", not "what is this
+impression worth", so it stays fixed everywhere.
+
+### Where the tiers live
+
+The table is server-side, in the `panura` CDN repo's manifest source
+(`.manifest-src/manifest.source.json`, `ads` key), built into the deployed
+`manifest.json` **unhashed** — country codes aren't hosts, there is nothing to
+hide, and a human should be able to read the tiers straight off the served
+file. Shape:
+
+```json
+"ads": {
+  "defaultGapSeconds": 900,
+  "defaultMinWatchSeconds": 60,
+  "tiers": [
+    { "id": "high-cpm", "gapSeconds": 900, "minWatchSeconds": 60, "countries": ["US", "GB", "..."] },
+    { "id": "low-cpm",  "gapSeconds": 300, "minWatchSeconds": 0,  "countries": ["IN", "PK", "..."] }
+  ]
+}
+```
+
+First matching tier wins; a country in none of them gets the default — which
+today equals the high-CPM tier, i.e. unchanged behaviour for most of the
+world. Editing the table is a CDN commit, not an app release, same as a site
+rule.
+
+### Why a static table, not a live per-user response
+
+Cloudflare Pages serves `public/` as static files; a response that varies per
+visitor needs a Worker or Pages Function instead, and that function would only
+know the request's **IP country** — a VPN changes that in one tap, which is
+exactly the thing being asked to resist. A static table plus a client-side
+country lookup is simpler, cacheable, and no weaker against VPNs than the
+dynamic version would have been.
+
+### Country source: the Store, not the IP, not the device locale
+
+`Storefront.current.countryCode` (StoreKit 2) — the country the Apple ID's
+App Store account is registered to. Changing it means changing the Apple
+account, not flipping a toggle. `Locale.current.region` is the fallback for
+the rare nil, and is a device setting anyone can edit freely — treated as
+strictly weaker.
+
+### VPN users: detect and log, never block
+
+A VPN user's IP country and Store country can disagree. That mismatch is a
+*weak* signal — plenty of people genuinely travel, or bought their phone
+elsewhere — and the thing it would protect against barely matters:
+
+- Looking poorer than you are (real country low-CPM, Store/VPN says
+  high-CPM) costs the user nothing but a slightly longer wait between ads.
+- Looking richer than you are gets *more* ads, not fewer, which is not a
+  thing anyone exploits for their own benefit.
+- AdMob is paid on measured impressions regardless; frequency doesn't create
+  revenue that wasn't going to be served anyway, it just paces it.
+
+So there's no case for blocking on mismatch, and a real one: false positives
+(travellers, corporate VPNs, misconfigured carriers) would be punished for
+nothing. If a signal is ever wanted, Cloudflare's `request.cf.country` vs. the
+client-declared country, with `request.cf.asOrganization` flagging obvious
+datacenter ASNs, is the available pair — but that requires a Worker in the
+request path and a decision about what "log" means for privacy-policy
+purposes. Not built, because the stakes don't justify it yet.
+
+### Privacy
+
+No country value — Store, locale, or IP — is sent to any Panura server or
+logged anywhere. The lookup is entirely client-side (manifest fetch + local
+`Storefront` read); the only persistence is the in-memory cached tier. If that
+ever changes — a Worker reading `request.cf.country` for VPN-mismatch
+logging, say — the privacy policy needs updating first, not after.

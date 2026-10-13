@@ -50,8 +50,10 @@ enum AdPolicy {
 
         /// How long before this placement may fire again.
         ///
-        /// Fifteen minutes for the two interstitials, an hour for the rewarded
-        /// refresh. Neither binds as often as it looks.
+        /// Fifteen minutes for the two interstitials (US/UK-tier default), an
+        /// hour for the rewarded refresh regardless of country — that lever is
+        /// about trust in a feature, not CPM. Neither binds as often as it
+        /// looks.
         ///
         /// The player's is behind a *minute of playback and an exit*, so
         /// anybody watching something of normal length has an effective gap of
@@ -64,9 +66,14 @@ enum AdPolicy {
         /// The cast gap exists for channel zapping. Casting IPTV and changing
         /// channel sends a fresh load each time, and five channels in two
         /// minutes would otherwise be five interstitials.
+        ///
+        /// **Country-tiered**, via `AdCountryPolicy` — low-CPM markets get a
+        /// shorter gap, because the fixed 15-minute floor was sized for
+        /// countries where impressions are expensive enough that annoyance
+        /// outweighs volume, and that trade is backwards everywhere else.
         var gap: TimeInterval {
             switch self {
-            case .player, .cast: return 15 * 60
+            case .player, .cast: return AdCountryPolicy.gapSeconds
             case .servers: return 60 * 60
             }
         }
@@ -153,12 +160,16 @@ enum AdPolicy {
     /// is the worst ad moment it is possible to build, and it would ship to
     /// everybody whose link expired.
     ///
-    /// Sixty seconds **or** a quarter of the duration, whichever comes first,
-    /// so a ninety-second clip can still qualify while a forty-minute episode
-    /// does not need ten minutes of credit.
+    /// `AdCountryPolicy.minWatchSeconds` **or** a quarter of the duration,
+    /// whichever comes first, so a ninety-second clip can still qualify while
+    /// a forty-minute episode does not need ten minutes of credit. Sixty
+    /// seconds in the default/high-CPM tier; a low-CPM tier can set this to
+    /// zero, which drops the qualifier entirely — any playback at all counts.
     static func watchedEnough(seconds: Double, duration: Double?) -> Bool {
         guard seconds.isFinite, seconds > 0 else { return false }
-        if seconds >= 60 { return true }
+        let minWatch = AdCountryPolicy.minWatchSeconds
+        if minWatch <= 0 { return true }
+        if seconds >= minWatch { return true }
         guard let duration, duration.isFinite, duration > 0 else { return false }
         return seconds >= duration * 0.25
     }

@@ -48,6 +48,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // Detection rules can change server-side any day; refetch once per launch
         // (then the 6h TTL applies) so a fix lands without waiting the app out.
         ManifestStore.refreshOnLaunch()
+        // Resolves this viewer's ad-pacing tier from the manifest's `ads`
+        // block. Runs after the cache clear above so it sees the fresh fetch,
+        // not yesterday's. AdPolicy's hardcoded defaults cover every ad check
+        // made before this completes.
+        Task { @MainActor in await AdCountryPolicy.refresh() }
         return true
     }
 

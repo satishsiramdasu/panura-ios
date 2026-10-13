@@ -32,6 +32,16 @@ enum ManifestStore {
         return sites
     }
 
+    /// The `ads` block — country-tiered pacing config — or nil if the manifest
+    /// hasn't been fetched yet or carries none. Unlike `sites`, nothing here is
+    /// hashed: country codes aren't hosts, so there is nothing to hide.
+    static func adsConfig() async -> [String: Any]? {
+        guard let data = await load(),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return root["ads"] as? [String: Any]
+    }
+
     /// The rule for `host`, or nil — the first entry whose hashed host list
     /// contains the HMAC of the host or any of its parent domains. Returned
     /// verbatim (still carrying `id`); the caller strips it before use.

@@ -446,6 +446,11 @@ final class AdManager: NSObject {
             Diagnostic(id: "Player gap", value: clock(.player)),
             Diagnostic(id: "Cast gap", value: clock(.cast)),
             Diagnostic(id: "Refresh gap", value: clock(.servers)),
+            Diagnostic(
+                id: "Country tier",
+                value: "\(Int(AdCountryPolicy.gapSeconds / 60))min gap, "
+                    + "\(Int(AdCountryPolicy.minWatchSeconds))s qualifier"
+            ),
         ]
     }
 
