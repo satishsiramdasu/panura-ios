@@ -62,6 +62,7 @@ final class AdManager: NSObject {
     nonisolated static let testInterstitialUnitID = "ca-app-pub-3940256099942544/4411468910"
     nonisolated static let testRewardedUnitID = "ca-app-pub-3940256099942544/1712485313"
     nonisolated static let testBannerUnitID = "ca-app-pub-3940256099942544/2435281174"
+    nonisolated static let testAppOpenUnitID = "ca-app-pub-3940256099942544/5575463023"
 
     /// The rewarded unit, which unlocks server content.
     ///
@@ -74,6 +75,24 @@ final class AdManager: NSObject {
         return "ca-app-pub-6998555111280991/3135868525"
         #endif
     }
+
+    /// "App Open" in AdMob.
+    static var appOpenUnitID: String {
+        #if DEBUG
+        return testAppOpenUnitID
+        #else
+        guard !FeatureFlags.adsUseTestUnits else { return testAppOpenUnitID }
+        return "ca-app-pub-6998555111280991/6221286156"
+        #endif
+    }
+
+    private var appOpen: AppOpenAd?
+    /// An app-open ad is good for four hours; one held longer earns nothing.
+    private var appOpenLoadedAt: Date?
+    /// When the app last left the foreground, or nil if it has not since the
+    /// last return.
+    private var backgroundedAt: Date?
+    private var watchingForeground = false
 
     private var ads: [Slot: InterstitialAd] = [:]
     private var rewarded: RewardedAd?
@@ -179,6 +198,8 @@ final class AdManager: NSObject {
     func preloadAll() {
         Slot.allCases.filter { $0.placement != nil }.forEach(preload)
         preloadRewarded()
+        preloadAppOpen()
+        watchForeground()
     }
 
     /// How many times a slot's load has failed in a row, so a retry can back
@@ -330,6 +351,86 @@ final class AdManager: NSObject {
         preloadRewarded()
     }
 
+    // MARK: app open
+
+    private func preloadAppOpen(attempt: Int = 1) {
+        guard FeatureFlags.adsEnabled, ready, appOpen == nil else { return }
+        Task {
+            do {
+                let ad = try await AppOpenAd.load(
+                    with: Self.appOpenUnitID,
+                    request: makeRequest()
+                )
+                ad.fullScreenContentDelegate = self
+                appOpen = ad
+                appOpenLoadedAt = Date()
+            } catch {
+                log("app-open load failed (\(attempt)): \(error.localizedDescription)")
+                guard attempt <= 4 else { return }
+                try? await Task.sleep(nanoseconds: UInt64(min(120, 15 << (attempt - 1))) * 1_000_000_000)
+                preloadAppOpen(attempt: attempt + 1)
+            }
+        }
+    }
+
+    private func watchForeground() {
+        guard !watchingForeground else { return }
+        watchingForeground = true
+        let center = NotificationCenter.default
+        center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.backgroundedAt = Date() }
+        }
+        center.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.showAppOpenIfDue() }
+        }
+    }
+
+    /// Shows the app-open ad on a return to the app, if every hedge allows.
+    ///
+    /// **Never on a cold start.** Nothing is loaded that early, and holding
+    /// the first screen back for an ad is the version of this format people
+    /// uninstall over. It only ever greets a return.
+    ///
+    /// **Not after a glance away.** Half a minute out, at least: replying to a
+    /// message and coming back is not opening the app. That also keeps it off
+    /// the return from a tapped ad, which leaves the app the same way.
+    ///
+    /// **Not over a video or a cast.** Coming back to something playing — in
+    /// the player, in Picture in Picture, on the television — is coming back
+    /// to use a control, and an ad in front of the pause button is the worst
+    /// place there is for one.
+    private func showAppOpenIfDue() {
+        guard let left = backgroundedAt else { return }
+        backgroundedAt = nil
+        guard Date().timeIntervalSince(left) >= 30 else { return }
+
+        // Four hours is the format's shelf life. A stale one is dropped and
+        // replaced rather than shown for nothing.
+        if let loaded = appOpenLoadedAt, Date().timeIntervalSince(loaded) > 4 * 60 * 60 {
+            appOpen = nil
+            appOpenLoadedAt = nil
+        }
+        guard FeatureFlags.adsEnabled, AdPolicy.allows(.appOpen), !presenting, queued == nil,
+              !PlaybackSession.shared.isPlayingSomething,
+              !CastManager.shared.isCasting, !PanuraCastManager.shared.isCasting,
+              let ad = appOpen, let root = Self.topViewController()
+        else {
+            preloadAppOpen()
+            return
+        }
+        presenting = true
+        onDismiss = nil
+        AdPolicy.record(.appOpen)
+        ad.present(from: root)
+        appOpen = nil
+        appOpenLoadedAt = nil
+        preloadAppOpen()
+    }
+
     // MARK: banner
 
     /// The app's one banner, kept here for the life of the process.
@@ -434,9 +535,11 @@ final class AdManager: NSObject {
             Diagnostic(id: "Player ad", value: ads[.player] != nil ? "loaded" : "empty"),
             Diagnostic(id: "Cast ad", value: ads[.cast] != nil ? "loaded" : "empty"),
             Diagnostic(id: "Rewarded", value: rewardedState),
+            Diagnostic(id: "App-open ad", value: appOpen != nil ? "loaded" : "empty"),
             Diagnostic(id: "Player gap", value: clock(.player)),
             Diagnostic(id: "Cast gap", value: clock(.cast)),
             Diagnostic(id: "Refresh gap", value: clock(.servers)),
+            Diagnostic(id: "App-open gap", value: clock(.appOpen)),
             Diagnostic(
                 id: "Country tier",
                 value: "\(Int(AdCountryPolicy.gapSeconds / 60))min gap, "

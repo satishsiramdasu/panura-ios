@@ -18,6 +18,7 @@ Settled 2026-10-11. iOS code lives in `Sources/Ads/`.
 | Cast exit | Interstitial | Deliberate stop/disconnect | country-tiered watch time | country-tiered (shared) |
 | Server refresh | **Rewarded** | Refresh pressed on a playlist server | — | 1 h free window, then due |
 | Banner | Banner | Every screen except the player, cast controls included | — | 30 s refresh, set on the unit |
+| App open | App open | Returning to the app after ≥ 30 s away. Never a cold start, never over a video or a cast | — | 1 h, fixed |
 
 Plus two global rules that override all of the above:
 
@@ -37,7 +38,7 @@ exact state each rule needs.
 
 | Not built | Why |
 |---|---|
-| App-open ad | The highest-complaint format there is; it taxes launching the app, which is not a thing we built. |
+| App-open ad **on launch** | The highest-complaint format there is; it taxes launching the app, which is not a thing we built. An app-open ad on *returning* was added later on request, hedged — see §13. |
 | Interstitial per video | In-player next/previous walks the playlist without closing the screen, so an exit-triggered ad gives one ad per *session* rather than one between every pair of episodes. The gap length could never have fixed this: episodes run 25–40 min, so any gap worth having is already satisfied when one ends. |
 | Interstitial on opening a server | Where this started, and the highest-friction idea in the app: an unrequested ad in front of hardware the user owns. Replaced by refresh-as-reward. |
 | Mid-playback / mid-task interstitials | Accidental clicks, invalid-traffic flags, uninstalls. |
@@ -485,3 +486,29 @@ logged anywhere. The lookup is entirely client-side (manifest fetch + local
 `Storefront` read); the only persistence is the in-memory cached tier. If that
 ever changes — a Worker reading `request.cf.country` for VPN-mismatch
 logging, say — the privacy policy needs updating first, not after.
+
+---
+
+## 13. App open — added 2026-10-14
+
+Left out of the first design and added on request, so it is the most hedged
+placement here. Unit "App Open", `…/6221286156`.
+
+**Shown only on a return to the app**, and only when all of these hold:
+
+- the app was away for **at least 30 seconds** — a glance at a message is not
+  opening the app, and the return from a tapped ad leaves the same way;
+- **nothing is playing**: no player, no Picture in Picture, no cast. Coming
+  back to something playing is coming back for a control;
+- no other full-screen ad is up or queued;
+- it is not the first session;
+- **an hour** since the last one. Fixed, not country-tiered: this is the one ad
+  nobody did anything to bring on.
+
+**Never on a cold start.** Nothing is loaded that early, and holding the first
+screen back for an ad is the version of this format people uninstall over.
+
+An app-open ad expires four hours after it loads; a stale one is dropped and
+reloaded rather than shown. State: `ads.last.appOpen`.
+
+Android: the old app-open code fires on launch. Port these rules instead.

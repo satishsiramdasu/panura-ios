@@ -47,6 +47,14 @@ enum AdPolicy {
         /// rules are per catalogue, and this placement has to answer for all
         /// of them at once.
         case servers
+        /// Coming back to the app after time away. An app-open ad.
+        ///
+        /// Left out of the first design as the most resented format there
+        /// is, and added later on request — so it is hedged on every side
+        /// rather than fired on every launch. Never on a cold start, never
+        /// after a glance at another app, never over a video or a cast. See
+        /// `AdManager.showAppOpenIfDue`.
+        case appOpen
 
         /// How long before this placement may fire again.
         ///
@@ -75,6 +83,9 @@ enum AdPolicy {
             switch self {
             case .player, .cast: return AdCountryPolicy.gapSeconds
             case .servers: return 60 * 60
+            // An hour, fixed. Not country-tiered: this is the one ad nobody
+            // did anything to bring on, so it is the one to be mean with.
+            case .appOpen: return 60 * 60
             }
         }
 
