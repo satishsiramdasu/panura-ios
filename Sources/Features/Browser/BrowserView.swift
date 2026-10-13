@@ -29,6 +29,14 @@ struct BrowserView: View {
     /// because opening the sheet and tapping again to reach Play was two taps
     /// for the thing almost everyone wanted.
     @State private var expandedVideo: ExtractedVideo.ID?
+    /// Whether the open row is the user's choice rather than ours.
+    ///
+    /// Until they touch a row, the open one is whichever stream is best *now*,
+    /// not whichever was best when the sheet rose. The sheet opens the moment a
+    /// second stream is sighted, while both are still being probed; a probe
+    /// that then drops or outranks the row picked at that instant left the
+    /// sheet with no row open, and so no buttons at all.
+    @State private var rowChosenByUser = false
     @State private var showPanuraControls = false
     /// The cast picker, opened by a Cast tap with no TV connected. The video
     /// that asked for it waits here and goes as soon as one is.
@@ -149,7 +157,8 @@ struct BrowserView: View {
         // than remembered: the page may have found something better since.
         .onChange(of: showFoundSheet) { shown in
             if shown {
-                expandedVideo = model.orderedVideos.first?.id
+                expandedVideo = nil
+                rowChosenByUser = false
                 offeredFoundSheet = true
             }
         }
@@ -950,14 +959,26 @@ struct BrowserView: View {
     ///
     /// Buttons belong to the open row only, as on Android. All of them at once
     /// turned a list of four into a wall of eight buttons.
+    /// The row with its buttons out: the user's pick while it still exists,
+    /// otherwise the best stream there is.
+    private var openRow: ExtractedVideo.ID? {
+        let videos = model.orderedVideos
+        if rowChosenByUser {
+            guard let expandedVideo else { return nil }
+            if videos.contains(where: { $0.id == expandedVideo }) { return expandedVideo }
+        }
+        return videos.first?.id
+    }
+
     @ViewBuilder
     private func foundSheetRow(_ video: ExtractedVideo) -> some View {
-        let open = expandedVideo == video.id
+        let open = openRow == video.id
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 var transaction = Transaction()
                 transaction.animation = .easeOut(duration: 0.18)
                 withTransaction(transaction) {
+                    rowChosenByUser = true
                     expandedVideo = open ? nil : video.id
                 }
             } label: {
