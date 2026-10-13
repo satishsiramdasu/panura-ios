@@ -124,19 +124,15 @@ final class AdManager: NSObject {
             group.cancelAll()
         }
         await requestTrackingPermission()
-        // **Ads are loaded from the completion handler, not after the call.**
-        // `start` is asynchronous: the mediation configuration arrives over the
-        // network, and an `InterstitialAd.load` issued in the same turn of the
-        // run loop goes out before the SDK has it. Those loads fail silently,
-        // which is why a first player-exit showed no ad while the banner —
-        // built later, when a screen first needed it — always had one.
-        MobileAds.shared.start { [weak self] _ in
-            Task { @MainActor in
-                guard let self else { return }
-                self.ready = true
-                self.preloadAll()
-            }
-        }
+        // **Ads are loaded after `start` returns, not after the call is made.**
+        // The mediation configuration arrives over the network, and an
+        // `InterstitialAd.load` issued before it lands goes out before the SDK
+        // has it and fails silently — which is why a first player-exit showed
+        // no ad while the banner, built later when a screen first needed it,
+        // always had one. `await` is what makes that ordering automatic.
+        _ = await MobileAds.shared.start()
+        ready = true
+        preloadAll()
     }
 
     /// Raised once, ever — and only when personalised ads are actually wanted.
