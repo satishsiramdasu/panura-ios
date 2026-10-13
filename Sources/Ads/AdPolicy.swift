@@ -71,7 +71,7 @@ enum AdPolicy {
         /// shorter gap, because the fixed 15-minute floor was sized for
         /// countries where impressions are expensive enough that annoyance
         /// outweighs volume, and that trade is backwards everywhere else.
-        var gap: TimeInterval {
+        @MainActor var gap: TimeInterval {
             switch self {
             case .player, .cast: return AdCountryPolicy.gapSeconds
             case .servers: return 60 * 60
