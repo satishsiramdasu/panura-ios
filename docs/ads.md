@@ -369,7 +369,7 @@ without waiting an hour.
 | Interstitial units | `player` `…/4427286974` (player exit), `cast` `…/6201839976` (cast entry and exit). A third, `browser` `…/6832395366`, exists in AdMob and is deliberately unused |
 | Banner unit | `…/5744975130` |
 | Rewarded unit | "Server Ads" `…/3135868525` |
-| Still to do in the console | Banner refresh set to 30 s. App ID `ca-app-pub-6998555111280991~2675221601` matches `GADApplicationIdentifier` |
+| Console | Banner refresh is set to 30 s (done 2026-10-13). App ID `ca-app-pub-6998555111280991~2675221601` matches `GADApplicationIdentifier` |
 | ⚠️ Testing a Release build | TestFlight now loads live ads. Do not tap them: register the phone as a test device in AdMob, or set `adsUseTestUnits` back to true for a test build |
 
 ### iOS file map
