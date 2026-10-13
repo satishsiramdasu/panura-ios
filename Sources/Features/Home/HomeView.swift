@@ -17,9 +17,13 @@ struct HomeView: View {
     @State private var editingBookmark: SiteEntry?
 
     @State private var showClearData = false
-    @State private var showLibrary = false
-    /// Which of the Library's three tabs the next opening lands on.
-    @State private var libraryTab: LibrarySheet.Tab = .watching
+    /// The Library, and which tab it opens on — one value, not two.
+    ///
+    /// It was a flag plus a separate tab, and the sheet's content read the tab
+    /// as it stood when the sheet was built, which could be the previous one:
+    /// Later opened on Continue until a tab was touched. Presenting *by* the
+    /// tab hands the sheet the value it was opened with.
+    @State private var library: LibrarySheet.Tab?
     /// URL of the resume card being checked, so it can show it is working.
     @State private var checkingResume: String?
     /// The card a Remove was asked for — held until it is confirmed.
@@ -98,10 +102,10 @@ struct HomeView: View {
         // than presenting a player underneath this sheet; this is where it
         // starts. See `PlaybackSession.playWhenDismissed`.
         .sheet(
-            isPresented: $showLibrary,
+            item: $library,
             onDismiss: { PlaybackSession.shared.flushPending() }
-        ) {
-            LibrarySheet(tab: libraryTab, onOpenBrowser: onOpenBrowser)
+        ) { tab in
+            LibrarySheet(tab: tab, onOpenBrowser: onOpenBrowser)
         }
         // An overlay, not a sheet: it has to arrive centred, where the eye
         // already is, rather than sliding up from the far end of the screen.
@@ -225,8 +229,7 @@ struct HomeView: View {
     }
 
     private func openLibrary(_ tab: LibrarySheet.Tab) {
-        libraryTab = tab
-        showLibrary = true
+        library = tab
     }
 
     /// One of the squares at the foot of the screen.

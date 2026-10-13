@@ -54,9 +54,13 @@ struct RootTabView: View {
     /// you go from wherever you are and come straight back out of. As a
     /// destination it would be a place with no tab, and nothing in the strip
     /// would look selected while you were in it.
-    @State private var showLibrary = false
-    /// Which of the Library's three tabs the next opening lands on.
-    @State private var libraryTab: LibrarySheet.Tab = .watching
+    /// The Library, and which tab it opens on — one value, not two.
+    ///
+    /// It was a flag plus a separate tab, and the sheet's content read the tab
+    /// as it stood when the sheet was built, which could be the previous one:
+    /// Later opened on Continue until a tab was touched. Presenting *by* the
+    /// tab hands the sheet the value it was opened with.
+    @State private var library: LibrarySheet.Tab?
     /// Address typed on Home, waiting for the Browser to pick it up. The browser
     /// owns its WebView across switches, so the hand-off has to be state here
     /// rather than a fresh `BrowserView(url:)`.
@@ -138,9 +142,9 @@ struct RootTabView: View {
         .sheet(isPresented: $showStream, onDismiss: { playback.flushPending() }) {
             StreamView()
         }
-        .sheet(isPresented: $showLibrary, onDismiss: { playback.flushPending() }) {
-            LibrarySheet(tab: libraryTab) { address in
-                showLibrary = false
+        .sheet(item: $library, onDismiss: { playback.flushPending() }) { tab in
+            LibrarySheet(tab: tab) { address in
+                library = nil
                 openInBrowser(address)
             }
         }
@@ -516,8 +520,7 @@ struct RootTabView: View {
             showSettings = true
             return
         case .watchLater:
-            libraryTab = .later
-            showLibrary = true
+            library = .later
             return
         case .stream:
             showStream = true
