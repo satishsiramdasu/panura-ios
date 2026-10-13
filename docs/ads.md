@@ -365,7 +365,7 @@ without waiting an hour.
 | | |
 |---|---|
 | Build | All placements implemented, behind `FeatureFlags.adsEnabled` |
-| Units served | **Live units** (`adsUseTestUnits = false`). Debug builds still serve Google's test units |
+| Units served | **Google test units** (`adsUseTestUnits = true`) while 1.1 is tested. ⚠️ Set it false in the build that is submitted; the live ids are all in place |
 | Interstitial units | `player` `…/4427286974` (player exit), `cast` `…/6201839976` (cast entry and exit). A third, `browser` `…/6832395366`, exists in AdMob and is deliberately unused |
 | Banner unit | `…/5744975130` |
 | Rewarded unit | "Server Ads" `…/3135868525` |
