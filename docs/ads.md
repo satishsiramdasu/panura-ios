@@ -56,8 +56,8 @@ somebody's own file but still our player, and the player is the thing that was
 built.
 
 **Qualifier:** `watchedEnough(seconds, duration)` → `true` if
-`seconds >= AdCountryPolicy.minWatchSeconds` (60 s by default, 0 in the
-low-CPM tier — which drops the qualifier entirely), else `true` if `duration`
+`seconds >= AdCountryPolicy.minWatchSeconds` (60 s by default, 30 s in the
+low-CPM tier — never zero, or a stream that dies in seconds earns an ad), else `true` if `duration`
 is known and `seconds >= duration * 0.25`.
 
 Without the qualifier, a stream that dies after eight seconds still counts as
@@ -430,7 +430,7 @@ file. Shape:
   "defaultMinWatchSeconds": 60,
   "tiers": [
     { "id": "high-cpm", "gapSeconds": 900, "minWatchSeconds": 60, "countries": ["US", "GB", "..."] },
-    { "id": "low-cpm",  "gapSeconds": 300, "minWatchSeconds": 0,  "countries": ["IN", "PK", "..."] }
+    { "id": "low-cpm",  "gapSeconds": 300, "minWatchSeconds": 30, "countries": ["IN", "PK", "..."] }
   ]
 }
 ```

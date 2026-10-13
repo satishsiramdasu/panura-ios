@@ -163,8 +163,9 @@ enum AdPolicy {
     /// `AdCountryPolicy.minWatchSeconds` **or** a quarter of the duration,
     /// whichever comes first, so a ninety-second clip can still qualify while
     /// a forty-minute episode does not need ten minutes of credit. Sixty
-    /// seconds in the default/high-CPM tier; a low-CPM tier can set this to
-    /// zero, which drops the qualifier entirely — any playback at all counts.
+    /// seconds in the default/high-CPM tier, thirty in the low-CPM one. Zero
+    /// would drop the qualifier entirely, and is not used: a stream that
+    /// dies after a few seconds would then earn an ad.
     static func watchedEnough(seconds: Double, duration: Double?) -> Bool {
         guard seconds.isFinite, seconds > 0 else { return false }
         let minWatch = AdCountryPolicy.minWatchSeconds
