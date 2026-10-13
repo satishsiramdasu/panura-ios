@@ -1080,7 +1080,7 @@ struct PlayerView<Model: PlayerEngine>: View {
                   duration: model.totalSeconds > 0 ? model.totalSeconds : item.durationSeconds
               )
         else { return }
-        AdManager.shared.queue(.browser)
+        AdManager.shared.queue(.player)
     }
 
     private var engineName: String { Model.self == VLCPlayerModel.self ? "vlc" : "av" }

@@ -365,11 +365,12 @@ without waiting an hour.
 | | |
 |---|---|
 | Build | All placements implemented, behind `FeatureFlags.adsEnabled` |
-| Units served | **Google test units everywhere** (`adsUseTestUnits = true`) |
-| Interstitial units | Three live units exist in AdMob |
-| Banner unit | ⚠️ not created yet — real id is empty, so the banner draws nothing |
-| Rewarded unit | ⚠️ not created yet — real id is empty, so refresh is granted free |
-| Before submitting | `adsUseTestUnits = false`; both missing units created; banner refresh set to 30 s in the console; `GADApplicationIdentifier` verified against the AdMob app |
+| Units served | **Live units** (`adsUseTestUnits = false`). Debug builds still serve Google's test units |
+| Interstitial units | `player` `…/4427286974` (player exit), `cast` `…/6201839976` (cast entry and exit). A third, `browser` `…/6832395366`, exists in AdMob and is deliberately unused |
+| Banner unit | `…/5744975130` |
+| Rewarded unit | "Server Ads" `…/3135868525` |
+| Still to do in the console | Banner refresh set to 30 s. App ID `ca-app-pub-6998555111280991~2675221601` matches `GADApplicationIdentifier` |
+| ⚠️ Testing a Release build | TestFlight now loads live ads. Do not tap them: register the phone as a test device in AdMob, or set `adsUseTestUnits` back to true for a test build |
 
 ### iOS file map
 

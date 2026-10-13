@@ -21,7 +21,7 @@ final class AdManager: NSObject {
     static let shared = AdManager()
 
     enum Slot: CaseIterable {
-        case player, browser, cast
+        case player, cast
 
         /// Live units, from the iOS app in AdMob. Debug builds never touch
         /// them — shipping Google's test unit in a release is an AdMob policy
@@ -34,22 +34,21 @@ final class AdManager: NSObject {
             guard !FeatureFlags.adsUseTestUnits else { return AdManager.testInterstitialUnitID }
             switch self {
             case .player:  return "ca-app-pub-6998555111280991/4427286974"
-            case .browser: return "ca-app-pub-6998555111280991/6832395366"
             case .cast:    return "ca-app-pub-6998555111280991/6201839976"
             }
             #endif
         }
 
-        /// Which clock this slot answers to. `nil` means nothing fires it any
-        /// more — `.player` is kept only so its unit id is not lost.
+        /// Which clock this slot answers to.
+        ///
+        /// AdMob also holds a third interstitial unit, "browser"
+        /// (`…/6832395366`), which the player exit ran on for a while. It is
+        /// deliberately unused: the exit ad belongs to every engine's player,
+        /// and it is reported under the unit that says so.
         var placement: AdPolicy.Placement? {
             switch self {
-            // Every engine's player, not only the browser's — the unit keeps
-            // its name because an AdMob unit id cannot be renamed and the
-            // reporting history is attached to it.
-            case .browser: return .player
-            case .cast:    return .cast
-            case .player:  return nil
+            case .player: return .player
+            case .cast:   return .cast
             }
         }
     }
@@ -66,16 +65,13 @@ final class AdManager: NSObject {
 
     /// The rewarded unit, which unlocks server content.
     ///
-    /// ⚠️ **Needs creating in AdMob** — there is no rewarded unit on the iOS
-    /// app yet. Until the real id replaces this, a build with
-    /// `adsUseTestUnits` false loads nothing and `showRewarded` grants the
-    /// unlock for free, which is the same thing it does when fill fails.
+    /// "Server Ads" in AdMob.
     static var rewardedUnitID: String {
         #if DEBUG
         return testRewardedUnitID
         #else
         guard !FeatureFlags.adsUseTestUnits else { return testRewardedUnitID }
-        return "" // TODO: paste the iOS rewarded unit id
+        return "ca-app-pub-6998555111280991/3135868525"
         #endif
     }
 
@@ -362,14 +358,13 @@ final class AdManager: NSObject {
     /// reason.
     private(set) var banner: BannerView?
 
-    /// ⚠️ **Needs creating in AdMob** — no banner unit exists on the iOS app
-    /// yet. Empty means the banner draws nothing at all.
+    /// "Banner" in AdMob. Its 30-second refresh is set there, not here.
     static var bannerUnitID: String {
         #if DEBUG
         return testBannerUnitID
         #else
         guard !FeatureFlags.adsUseTestUnits else { return testBannerUnitID }
-        return "" // TODO: paste the iOS banner unit id
+        return "ca-app-pub-6998555111280991/5744975130"
         #endif
     }
 
@@ -436,7 +431,7 @@ final class AdManager: NSObject {
             Diagnostic(id: "Session", value: AdPolicy.isFirstSession ? "first — all ads off" : "ads on"),
             Diagnostic(id: "Consent", value: AdConsent.canRequestAds ? "may request" : "not yet"),
             Diagnostic(id: "SDK ready", value: ready ? "yes" : "no — nothing can preload"),
-            Diagnostic(id: "Player ad", value: ads[.browser] != nil ? "loaded" : "empty"),
+            Diagnostic(id: "Player ad", value: ads[.player] != nil ? "loaded" : "empty"),
             Diagnostic(id: "Cast ad", value: ads[.cast] != nil ? "loaded" : "empty"),
             Diagnostic(id: "Rewarded", value: rewardedState),
             Diagnostic(id: "Player gap", value: clock(.player)),

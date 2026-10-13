@@ -26,7 +26,7 @@ enum FeatureFlags {
     /// here whose wrong value is silent — the ads look right and the revenue
     /// is zero — so it is checked at the top of
     /// `store/app-store-listing.md`'s release list.
-    static let adsUseTestUnits = true
+    static let adsUseTestUnits = false
 
     /// Ask for tracking permission and serve personalised ads.
     ///
