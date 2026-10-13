@@ -66,7 +66,13 @@ struct RootTabView: View {
     @ObservedObject private var panuraCast = PanuraCastManager.shared
     @ObservedObject private var chromecast = CastManager.shared
     /// The cast remote, opened from the bar.
-    @State private var showCastControls = false
+    ///
+    /// Not state of its own: the flag lives on `CastPicker` so any screen can
+    /// raise the page, and this is the one place that draws it.
+    private var showCastControls: Bool {
+        get { castPicker.controlsOpen }
+        nonmutating set { castPicker.controlsOpen = newValue }
+    }
     /// The report sheet, reachable from the menu rather than only the browser.
     @State private var showReport = false
     @State private var showFAQ = false
@@ -87,7 +93,7 @@ struct RootTabView: View {
     @ObservedObject private var tabSet = TabSet.shared
 
     var body: some View {
-        castable
+        shell
         .background(deepChrome.ignoresSafeArea())
         // The header hides the moment you leave Home, and comes back when you
         // return to it. Driven from the selection rather than from inside
@@ -159,17 +165,16 @@ struct RootTabView: View {
         .onChange(of: castFlow.showing) { showing in
             if showing { showCastControls = true }
         }
-        // The cast panel cannot present the remote itself — it is closing as it
-        // asks — so it asks here, where the sheet outlives it.
-        .onChange(of: castPicker.showControls) { wants in
-            guard wants else { return }
-            castPicker.showControls = false
-            showCastControls = true
-        }
         .onChange(of: showCastControls) { showing in
             // Dismissing the screen clears a finished attempt, but never stops
             // a conversion — Cancel is what does that, and it is on the screen.
-            if !showing { castFlow.settle() }
+            //
+            // And it is where the cast exit ad lands: Stop queues it and
+            // closes the page, and it is shown once the page has gone.
+            if !showing {
+                castFlow.settle()
+                AdManager.shared.flushQueued()
+            }
         }
         // Nothing in release builds — see the modifier below.
         .screenshotPlayer()
@@ -183,32 +188,6 @@ struct RootTabView: View {
     /// above all — but that bar is about the screen now, not about the app,
     /// which is why the mark, the cast control and the menu moved up here and
     /// stopped being repeated on four screens.
-    /// The shell with the cast screen over it.
-    ///
-    /// **A separate view from `body` on purpose, and the reason is SwiftUI's
-    /// and not ours.** Two `fullScreenCover` modifiers chained on the *same*
-    /// view is the one arrangement that misbehaves — the second is liable to be
-    /// ignored outright — and the player already owns one up there. Attaching
-    /// this one a layer down gives each its own presenter, which is also what
-    /// the comment on the player's cover is about: one presenter cannot hold
-    /// two presentations.
-    ///
-    /// A page rather than a sheet because of how long it is kept open. The
-    /// controls are where somebody sits while a film plays on the television,
-    /// coming back to it repeatedly, and a half-dismissed sheet with a drag
-    /// indicator is not that. It also gives the screen a real bottom edge for
-    /// the banner to sit on.
-    ///
-    /// `onDismiss` is where the cast exit ad lands. Stop calls `stopRemote()`
-    /// and then dismisses this, so the ad is queued and shown once the page has
-    /// actually gone — see `CastManager.noteCastExit`.
-    private var castable: some View {
-        shell.fullScreenCover(
-            isPresented: $showCastControls,
-            onDismiss: { AdManager.shared.flushQueued() }
-        ) { CastSessionView() }
-    }
-
     private var shell: some View {
         ZStack {
             VStack(spacing: 0) {
@@ -241,10 +220,25 @@ struct RootTabView: View {
 
                 content
             }
+            // The cast page: a layer in here rather than a cover over the
+            // app, so it sits above every screen and still above the banner
+            // inset below. As a cover it hid the shell's banner and had to
+            // borrow the one banner view for itself; now that view never moves.
+            if showCastControls {
+                CastSessionView()
+                    .environment(\.castPageClose, { showCastControls = false })
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        Color.clear.frame(height: AppChrome.bottomInset)
+                    }
+                    .transition(.move(edge: .bottom))
+                    .zIndex(2)
+            }
             // Above every screen, because the mark that opens it is in the
             // header and the panel has to cover what it is about.
             CastPanelOverlay()
+                .zIndex(3)
         }
+        .animation(.easeOut(duration: 0.25), value: showCastControls)
         // The app's bottom edge, outermost on purpose: `safeAreaInset`
         // composes, so this sits lowest and every inset applied inside a
         // screen — the browser's found-video bar, the cast bar — stacks above

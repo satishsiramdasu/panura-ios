@@ -173,7 +173,6 @@ struct ChromecastMark: View {
 struct CastToolbarButton: View {
     @EnvironmentObject private var cast: CastManager
     @ObservedObject private var panura = PanuraCastManager.shared
-    @State private var showControls = false
 
     private var connected: Bool { cast.isConnected || panura.isTVConnected }
     /// Something is on the TV right now, so the remote is the useful screen.
@@ -181,7 +180,7 @@ struct CastToolbarButton: View {
 
     var body: some View {
         Button {
-            if playing { showControls = true } else { CastPicker.shared.open() }
+            if playing { CastPicker.shared.openControls() } else { CastPicker.shared.open() }
         } label: {
             CastMark(connected: connected)
                 .frame(width: 23, height: 23)
@@ -191,9 +190,6 @@ struct CastToolbarButton: View {
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)
         }
         .accessibilityLabel(connected ? "Playing on TV — open controls" : "Play on TV")
-        .fullScreenCover(isPresented: $showControls) {
-            CastSessionView()
-        }
     }
 }
 
@@ -638,10 +634,9 @@ private struct ScanPulse: View {
 final class CastPicker: ObservableObject {
     static let shared = CastPicker()
     @Published var isShowing = false
-    /// Asks whoever owns the sheet to open the remote. The panel cannot present
-    /// it: the panel is going away in the same breath, and a sheet presented by
-    /// a view that is being torn down never appears.
-    @Published var showControls = false
+    /// Whether the cast page is up. The shell draws it, as a layer above every
+    /// screen and above nothing else, so anything anywhere opens it from here.
+    @Published var controlsOpen = false
     private init() {}
 
     func open() { withAnimation(PanelMetrics.motion) { isShowing = true } }
@@ -649,7 +644,7 @@ final class CastPicker: ObservableObject {
 
     func openControls() {
         isShowing = false
-        showControls = true
+        controlsOpen = true
     }
 }
 
@@ -713,7 +708,6 @@ struct CastPanelOverlay: View {
 struct CastHomeCard: View {
     @ObservedObject private var cast = CastManager.shared
     @ObservedObject private var panura = PanuraCastManager.shared
-    @State private var showControls = false
 
     private var connected: Bool { cast.isConnected || panura.isTVConnected }
     private var casting: Bool { cast.isCasting || panura.isCasting }
@@ -745,7 +739,7 @@ struct CastHomeCard: View {
 
     var body: some View {
         Button {
-            if casting { showControls = true } else { CastPicker.shared.open() }
+            if casting { CastPicker.shared.openControls() } else { CastPicker.shared.open() }
         } label: {
             HStack(spacing: 12) {
                 CastMark(connected: connected)
@@ -779,8 +773,5 @@ struct CastHomeCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(connected ? "Casting to \(title)" : "Cast to TV")
-        .fullScreenCover(isPresented: $showControls) {
-            CastSessionView()
-        }
     }
 }

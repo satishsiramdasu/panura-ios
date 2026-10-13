@@ -17,7 +17,14 @@ struct CastSessionView: View {
     @ObservedObject private var flow = CastFlow.shared
     @ObservedObject private var panura = PanuraCastManager.shared
     @ObservedObject private var chromecast = CastManager.shared
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.castPageClose) private var pageClose
+
+    /// Closes the cast page. It is a layer in the shell rather than a
+    /// presentation, so the system's dismiss has nothing to act on there.
+    private func dismiss() {
+        if let pageClose { pageClose() } else { systemDismiss() }
+    }
 
     var body: some View {
         Group {
@@ -49,20 +56,11 @@ struct CastSessionView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(PanuraTheme.background)
-        // The app's banner, along the bottom of this page.
-        //
-        // This screen is the one somebody leaves up: a film runs for two hours
-        // on the television and they come back to these controls repeatedly,
-        // which is exactly the shape a banner suits and an interstitial does
-        // not. It is the *same* banner the shell draws — claimed from it on the
-        // way in and handed back on the way out — because there is only ever
-        // one of them. See `BannerSlot`.
-        .safeAreaInset(edge: .bottom, spacing: 0) { BannerStrip(owner: Self.bannerOwner) }
-        .onAppear { BannerSlot.shared.claim(Self.bannerOwner) }
-        .onDisappear { BannerSlot.shared.release(Self.bannerOwner) }
+        // No banner of its own: this page is a layer inside the shell, above
+        // everything but the shell's bottom edge, so the app's one banner stays
+        // where it is underneath. See `RootTabView.shell`.
+        .accessibilityAddTraits(.isModal)
     }
-
-    private static let bannerOwner = "cast"
 
     /// Whichever receiver has the video. Nothing playing anywhere falls through
     /// to the picker, since the screen was opened to reach a TV.
@@ -198,7 +196,14 @@ struct CastSessionView: View {
 struct ChromecastControlView: View {
     @ObservedObject private var cast = CastManager.shared
     @ObservedObject private var flow = CastFlow.shared
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.castPageClose) private var pageClose
+
+    /// Closes the cast page. It is a layer in the shell rather than a
+    /// presentation, so the system's dismiss has nothing to act on there.
+    private func dismiss() {
+        if let pageClose { pageClose() } else { systemDismiss() }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -406,7 +411,14 @@ struct ChromecastControlView: View {
 /// commonest correction is wanting one of them immediately rather than fourth.
 struct CastQueueView: View {
     @ObservedObject private var flow = CastFlow.shared
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.castPageClose) private var pageClose
+
+    /// Closes the cast page. It is a layer in the shell rather than a
+    /// presentation, so the system's dismiss has nothing to act on there.
+    private func dismiss() {
+        if let pageClose { pageClose() } else { systemDismiss() }
+    }
 
     var body: some View {
         List {
@@ -464,5 +476,17 @@ struct CastQueueView: View {
                 Button("Done") { dismiss() }
             }
         }
+    }
+}
+
+private struct CastPageCloseKey: EnvironmentKey {
+    static let defaultValue: (() -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    /// Set by the shell on the cast page it draws as a layer.
+    var castPageClose: (() -> Void)? {
+        get { self[CastPageCloseKey.self] }
+        set { self[CastPageCloseKey.self] = newValue }
     }
 }

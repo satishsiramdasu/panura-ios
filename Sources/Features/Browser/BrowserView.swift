@@ -37,7 +37,6 @@ struct BrowserView: View {
     /// that then drops or outranks the row picked at that instant left the
     /// sheet with no row open, and so no buttons at all.
     @State private var rowChosenByUser = false
-    @State private var showPanuraControls = false
     /// The cast picker, opened by a Cast tap with no TV connected. The video
     /// that asked for it waits here and goes as soon as one is.
     @ObservedObject private var castPicker = CastPicker.shared
@@ -131,9 +130,6 @@ struct BrowserView: View {
                 onDismiss: { withoutSheetAnimation { showAddress = false } }
             )
         }
-        .fullScreenCover(isPresented: $showPanuraControls) {
-            CastSessionView()
-        }
         // The video that asked for a TV goes as soon as one answers.
         //
         // **Both triggers, and the connection is the important one.** Only the
@@ -209,7 +205,7 @@ struct BrowserView: View {
         #endif
         guard model.foundVideos.count > 1, !offeredFoundSheet, isActive,
               !showFoundSheet, !showAddress, !showReport, !showMenu,
-              !showPanuraControls, !castPicker.isShowing,
+              !castPicker.controlsOpen, !castPicker.isShowing,
               !playback.isPlayingSomething
         else { return }
         showFoundSheet = true
@@ -241,7 +237,7 @@ struct BrowserView: View {
         guard panuraCast.isTVConnected || cast.isConnected else { return }
         CastPicker.shared.close()
         CastFlow.shared.replace(with: [CastFlow.item(for: item)])
-        showPanuraControls = true
+        castPicker.controlsOpen = true
     }
 
     /// Load whatever Home handed over, then clear it.
@@ -1330,7 +1326,7 @@ struct BrowserView: View {
             CastFlow.shared.pendingQueue = CastFlow.item(for: item)
         } else {
             CastFlow.shared.replace(with: [CastFlow.item(for: item)])
-            showPanuraControls = true
+            castPicker.controlsOpen = true
         }
     }
 

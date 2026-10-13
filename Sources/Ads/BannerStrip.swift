@@ -20,21 +20,11 @@ import GoogleMobileAds
 /// full-screen video is both a policy problem and the fastest route to an
 /// uninstall.
 struct BannerStrip: View {
-    /// Which screen this strip belongs to; nil is the app shell. It draws only
-    /// while `BannerSlot` says this owner holds the banner, because there is
-    /// exactly one banner view to go round. See `BannerSlot`.
-    let owner: String?
-
     @State private var height: CGFloat = 0
-    @ObservedObject private var slot = BannerSlot.shared
-
-    init(owner: String? = nil) {
-        self.owner = owner
-    }
 
     var body: some View {
         Group {
-            if AdPolicy.allowsBanner, slot.holder == owner {
+            if AdPolicy.allowsBanner {
                 GeometryReader { geo in
                     BannerHost(width: geo.size.width) { measured in
                         // Only grow. A banner that reports zero mid-refresh

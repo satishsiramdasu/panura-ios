@@ -253,23 +253,22 @@ Size: anchored adaptive for the current orientation. **Not** the large variant:
 it runs to about 100 pt on a phone, and this banner pushes every screen's
 content up.
 
-### The cast screen is the one page that claims it
+### The cast screen sits above the app, and above the banner's inset
 
-The cast controls are presented *over* the shell, so the shell's banner is
-behind them and the screen would otherwise be the one ad-free surface in the
-app that people leave open longest — a film runs two hours on the television
-and they come back to these controls repeatedly. So that page carries the
-banner along its own bottom edge.
+The cast controls are the screen people leave open longest — a film runs two
+hours on the television and they come back to these controls repeatedly — so
+the banner has to be there too.
 
-It is the **same** view, not a second one. A second banner would mean a second
-request per appearance on the same unit, which is the 30-second-floor problem
-above. So ownership is explicit: the shell draws the banner while nothing has
-claimed it, and a page over the shell claims it on appear and releases it on
-disappear (`BannerSlot` on iOS). One state change hands it over, which avoids
-two strips racing to adopt the same view and one of them showing an empty gap.
+It is a **layer inside the shell**, not a presentation over it. The shell's
+banner inset is outermost, so the cast page covers every screen and stops at
+the banner, which never moves, is never re-parented and never re-requested.
 
-Claims do not stack, deliberately — one page over the shell is the whole of the
-need, and the cast page is never presented from another page that has a banner.
+It was a full-screen cover for a while. That hid the shell's banner, so the
+page borrowed the one banner view and handed it back on the way out
+(`BannerSlot`). Still one banner and one request — never two stacked — but a
+hand-over is state to get wrong, and a layer needs none. Android: draw the cast
+controls inside the host that owns the banner, not as a second Activity with a
+banner of its own.
 
 ---
 

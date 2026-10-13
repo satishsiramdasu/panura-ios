@@ -16,7 +16,14 @@ import SwiftUI
 struct PanuraCastControlView: View {
     @ObservedObject private var cast = PanuraCastManager.shared
     @ObservedObject private var flow = CastFlow.shared
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.castPageClose) private var pageClose
+
+    /// Closes the cast page. It is a layer in the shell rather than a
+    /// presentation, so the system's dismiss has nothing to act on there.
+    private func dismiss() {
+        if let pageClose { pageClose() } else { systemDismiss() }
+    }
 
     /// Position being dragged. While non-nil the slider shows this instead of the
     /// TV's reported position, so incoming status updates don't fight the thumb.
