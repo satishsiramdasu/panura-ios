@@ -348,9 +348,17 @@ struct CastDevicesView: View {
                         // the one printed on the box.
                         icon: { ChromecastMark() }
                     ) {
-                        cast.connect(device)
+                        // Tapping the row that is trying gives up on it.
+                        if cast.connecting == device.id { cast.cancelConnect() } else { cast.connect(device) }
                     }
-                    .disabled(cast.connecting != nil)
+                    .disabled(cast.connecting != nil && cast.connecting != device.id)
+                }
+                if let failure = cast.connectFailure {
+                    Text(failure)
+                        .font(.caption)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 wideButton("Scan again", icon: "arrow.clockwise") { cast.startDiscovery() }
             }

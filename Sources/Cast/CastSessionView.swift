@@ -30,10 +30,7 @@ struct CastSessionView: View {
         Group {
             switch flow.stage {
             case .idle, .playing:
-                VStack(spacing: 0) {
-                    PhoneRelayNotice()
-                    controls
-                }
+                controls
             case let .reading(title):
                 busy(
                     title: title,
@@ -243,6 +240,10 @@ struct ChromecastControlView: View {
 
                     audioPicker
 
+                    subtitlePicker
+
+                    PhoneRelayNotice()
+
                     Text("This television is a Chromecast, so play and pause are all it reports back.")
                         .font(.caption)
                         .foregroundStyle(PanuraTheme.onSurfaceVariant)
@@ -277,7 +278,9 @@ struct ChromecastControlView: View {
     /// "something went wrong".
     @ViewBuilder
     private var castError: some View {
-        if let message = cast.lastCastError {
+        if let message = cast.lastCastError ?? (cast.slowToStart
+            ? "The TV is taking a long time to start this. Chromecast TVs sometimes get stuck; if nothing happens, stop casting, restart the TV and try again."
+            : nil) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 13))
@@ -364,6 +367,42 @@ struct ChromecastControlView: View {
     /// Absent entirely for a single-audio stream, which is most of them. A row
     /// reading "Audio: Default" with one option under it teaches people to
     /// stop reading this part of the screen.
+    @ViewBuilder
+    private var subtitlePicker: some View {
+        if !cast.remoteSubtitles.isEmpty {
+            Menu {
+                Button {
+                    cast.selectSubtitle(nil)
+                } label: {
+                    Label("Off", systemImage: cast.activeSubtitle == nil ? "checkmark" : "")
+                }
+                ForEach(cast.remoteSubtitles) { sub in
+                    Button {
+                        cast.selectSubtitle(sub.id)
+                    } label: {
+                        Label(sub.name, systemImage: cast.activeSubtitle == sub.id ? "checkmark" : "")
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "captions.bubble")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(cast.remoteSubtitles.first { $0.id == cast.activeSubtitle }?.name ?? "Subtitles off")
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(PanuraTheme.accent)
+                .padding(.horizontal, 16)
+                .frame(height: 38)
+                .background(PanuraTheme.accentSoft, in: Capsule())
+                .contentShape(Capsule())
+            }
+            .accessibilityLabel("Subtitles")
+        }
+    }
+
     @ViewBuilder
     private var audioPicker: some View {
         if flow.tracks.count > 1 {
@@ -537,8 +576,6 @@ struct PhoneRelayNotice: View {
             }
             .padding(12)
             .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
         }
     }
 }

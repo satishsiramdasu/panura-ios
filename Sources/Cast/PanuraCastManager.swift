@@ -260,6 +260,61 @@ final class PanuraCastManager: ObservableObject {
     /// Called when a cast ends as well as when one begins: the cache is a few
     /// megabytes of somebody else's film, and there is no reason for it to
     /// outlive the viewing.
+    /// Fetches each subtitle on this phone, converts it to WebVTT and serves
+    /// it, returning the address a Chromecast can load it from.
+    ///
+    /// Read once, at the start of the cast, so a subtitle needs the phone only
+    /// for a moment — unlike a muxed film, this survives the phone locking.
+    func serveSubtitles(
+        _ tracks: [SubtitleTrack], headers: [String: String]
+    ) async -> [(track: SubtitleTrack, url: URL)] {
+        server.subtitleFiles = []
+        guard !tracks.isEmpty else { return [] }
+        start()
+        guard isServerRunning, let ip = PanuraCastServer.localIPv4() else { return [] }
+        let encoding = UserDefaults.standard.string(forKey: "subtitle_encoding") ?? ""
+        var files: [Data] = []
+        var served: [(track: SubtitleTrack, url: URL)] = []
+        for track in tracks.prefix(8) {
+            guard let data = await Self.subtitleData(track.url, headers: headers) else { continue }
+            let cues = await Task.detached { SubtitleParser.cues(from: data, encoding: encoding) }.value
+            guard !cues.isEmpty,
+                  let url = URL(string: "http://\(ip):\(PanuraCastServer.httpPort)/sub/\(files.count).vtt")
+            else { continue }
+            files.append(Data(Self.webVTT(cues).utf8))
+            served.append((track, url))
+        }
+        server.subtitleFiles = files
+        return served
+    }
+
+    private static func subtitleData(_ url: URL, headers: [String: String]) async -> Data? {
+        if url.isFileURL { return try? Data(contentsOf: url) }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              ((response as? HTTPURLResponse)?.statusCode ?? 200) < 400
+        else { return nil }
+        return data
+    }
+
+    static func webVTT(_ cues: [SubtitleCue]) -> String {
+        func stamp(_ seconds: Double) -> String {
+            let ms = Int((max(0, seconds) * 1000).rounded())
+            return String(format: "%02d:%02d:%02d.%03d", ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000)
+        }
+        var out = "WEBVTT\n\n"
+        for cue in cues.sorted(by: { $0.start < $1.start }) where cue.end > cue.start {
+            let text = cue.text
+                .replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+            out += "\(stamp(cue.start)) --> \(stamp(cue.end))\n\(text)\n\n"
+        }
+        return out
+    }
+
     func clearRemux() {
         chromecastRelay = nil
         guard isServerRunning else { return }

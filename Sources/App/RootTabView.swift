@@ -386,6 +386,14 @@ struct RootTabView: View {
     /// cut the strip in half.
     private var castBarInset: CGFloat { AppChrome.bottomInset }
 
+    /// Stop on the bar is as deliberate as Stop on the cast page, so it owes
+    /// the same exit ad. The page shows it on its way out; nothing is going
+    /// away here, so it is shown at once.
+    private func stopFromBar() {
+        CastFlow.shared.stopCasting()
+        if !showCastControls { AdManager.shared.flushQueued() }
+    }
+
     @ViewBuilder
     private var castBar: some View {
         if panuraCast.isCasting {
@@ -411,7 +419,7 @@ struct RootTabView: View {
                 // PanuraCast's full teardown -- server, advertising and the
                 // link -- while the Chromecast branch beside it stopped only
                 // the media, so the same button meant two different things.
-                onStop: { CastFlow.shared.stopCasting() },
+                onStop: stopFromBar,
                 bottomInset: castBarInset
             )
         } else if chromecast.isCasting {
@@ -423,7 +431,7 @@ struct RootTabView: View {
                 isPlaying: chromecast.isRemotePlaying,
                 onTap: { showCastControls = true },
                 onPlayPause: { chromecast.toggleRemotePlay() },
-                onStop: { CastFlow.shared.stopCasting() },
+                onStop: stopFromBar,
                 bottomInset: castBarInset
             )
         }

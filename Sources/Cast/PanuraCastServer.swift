@@ -65,6 +65,10 @@ final class PanuraCastServer: NSObject {
     /// for the same reason and with more at stake: a stale session would serve
     /// the previous film's pictures under this film's playlist.
     var remux: CastRemux.Session?
+    /// Subtitles for a Chromecast, already turned into WebVTT on this phone.
+    /// Served from memory: a receiver only reads text tracks it can fetch
+    /// across origins, in WebVTT, and most subtitle hosts offer neither.
+    var subtitleFiles: [Data] = []
 
     var onMessage: ((CastMessage) -> Void)?
     var onClientCountChanged: ((Int) -> Void)?
@@ -300,6 +304,19 @@ final class PanuraCastServer: NSObject {
         // Its own route because nothing here is a proxy: `/pl/` and `/seg/`
         // hand on what upstream said, while these are assembled from two
         // upstream objects and exist at no address but this one.
+        http["/sub/:name"] = { [weak self] request in
+            if request.method.uppercased() == "OPTIONS" { return Self.preflight }
+            guard let self, let name = request.params[":name"],
+                  let index = Int(name.replacingOccurrences(of: ".vtt", with: "")),
+                  self.subtitleFiles.indices.contains(index)
+            else { return .notFound }
+            let data = self.subtitleFiles[index]
+            var headers = Self.cors
+            headers["Content-Type"] = "text/vtt; charset=utf-8"
+            headers["Content-Length"] = "\(data.count)"
+            return .raw(200, "OK", headers) { try $0.write(data) }
+        }
+
         http["/mux/:name"] = { [weak self] request in
             if request.method.uppercased() == "OPTIONS" { return Self.preflight }
             guard let self, let name = request.params[":name"],

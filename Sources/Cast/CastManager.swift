@@ -56,6 +56,22 @@ final class CastManager: NSObject, ObservableObject {
     /// media that could not be played. Both are worth reading out loud.
     @Published private(set) var lastCastError: String?
 
+    /// Subtitles handed to the receiver with the current video, and which one
+    /// is showing (nil is off). Ids are the Cast track ids.
+    @Published private(set) var remoteSubtitles: [RemoteSubtitle] = []
+    @Published private(set) var activeSubtitle: Int?
+    /// A connection that got no answer. Said out loud, because the alternative
+    /// was a spinner that never stopped and an app that had to be killed.
+    @Published private(set) var connectFailure: String?
+    /// The receiver has been loading for more than half a minute.
+    @Published private(set) var slowToStart = false
+    fileprivate var loadingSince: Date?
+
+    struct RemoteSubtitle: Identifiable, Hashable {
+        let id: Int
+        let name: String
+    }
+
     /// A cast interstitial waiting on the receiver's confirmation. See
     /// `armCastAd`.
     fileprivate var castAdPending = false
@@ -120,9 +136,26 @@ final class CastManager: NSObject, ObservableObject {
         let manager = GCKCastContext.sharedInstance().discoveryManager
         for index in 0..<manager.deviceCount where manager.device(at: index).uniqueID == device.id {
             connecting = device.id
+            connectFailure = nil
             GCKCastContext.sharedInstance().sessionManager.startSession(with: manager.device(at: index))
+            // Some televisions' Cast service stops answering until restarted,
+            // and the SDK then reports neither success nor failure.
+            let name = device.name
+            let id = device.id
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard let self, self.connecting == id else { return }
+                self.cancelConnect()
+                self.connectFailure = "\(name) didn't answer. Its Cast service sometimes gets stuck; restarting the TV usually fixes it."
+            }
             return
         }
+    }
+
+    /// Gives up on a connection that has not come back.
+    func cancelConnect() {
+        connecting = nil
+        GCKCastContext.sharedInstance().sessionManager.endSessionAndStopCasting(true)
     }
 
     fileprivate func refreshDevices() {
@@ -168,7 +201,12 @@ final class CastManager: NSObject, ObservableObject {
     /// "playing" over a load that never happened is the shape of bug that
     /// makes a television look broken.
     @discardableResult
-    func cast(_ item: MediaItem, advertise: Bool = true, startAt: TimeInterval = 0) -> Bool {
+    func cast(
+        _ item: MediaItem,
+        advertise: Bool = true,
+        startAt: TimeInterval = 0,
+        subtitles: [(track: SubtitleTrack, url: URL)] = []
+    ) -> Bool {
         guard let session = GCKCastContext.sharedInstance()
             .sessionManager.currentCastSession else { return false }
         let metadata = GCKMediaMetadata(metadataType: .movie)
@@ -199,8 +237,32 @@ final class CastManager: NSObject, ObservableObject {
             builder.customData = ["headers": item.castHeaders]
         }
 
+        // Side-loaded text tracks, served as WebVTT by this phone — see
+        // `PanuraCastManager.serveSubtitles`. The first is on, as it would be
+        // in the player.
+        var tracks: [GCKMediaTrack] = []
+        for (index, sub) in subtitles.enumerated() {
+            let language = sub.track.language
+            tracks.append(GCKMediaTrack(
+                identifier: index + 1,
+                contentIdentifier: sub.url.absoluteString,
+                contentType: "text/vtt",
+                type: .text,
+                textSubtype: .subtitles,
+                name: sub.track.displayName,
+                languageCode: (2...3).contains(language.count) ? language : nil,
+                customData: nil
+            ))
+        }
+        if !tracks.isEmpty { builder.mediaTracks = tracks }
+        remoteSubtitles = subtitles.enumerated().map {
+            RemoteSubtitle(id: $0.offset + 1, name: $0.element.track.displayName)
+        }
+        activeSubtitle = tracks.isEmpty ? nil : 1
+
         let request = GCKMediaLoadRequestDataBuilder()
         request.mediaInformation = builder.build()
+        if !tracks.isEmpty { request.activeTrackIDs = [NSNumber(value: 1)] }
         // Non-zero only when this load is replacing one already playing — an
         // audio change. `startTime` is in seconds from the beginning.
         if startAt > 0 { request.startTime = startAt }
@@ -416,8 +478,10 @@ extension CastManager: GCKRemoteMediaClientListener {
         let reason = mediaStatus?.idleReason
         let failed = idle && (reason == .error || reason == .interrupted)
         let ended = idle && !failed
+        let loading = mediaStatus?.playerState == .loading || mediaStatus?.playerState == .buffering
 
         Task { @MainActor in
+            self.trackLoading(loading)
             self.isRemotePlaying = playing
             self.remoteTimeLeft = left > 0 ? PlayerClock.format(left) + " left" : ""
             // Kept even while idle: an audio change reloads, and the position
@@ -467,6 +531,14 @@ extension CastManager: GCKRemoteMediaClientListener {
         client.play()
     }
 
+    /// Shows one subtitle on the television, or none.
+    func selectSubtitle(_ id: Int?) {
+        guard let client = GCKCastContext.sharedInstance()
+            .sessionManager.currentCastSession?.remoteMediaClient else { return }
+        client.setActiveTrackIDs(id.map { [NSNumber(value: $0)] } ?? [])
+        activeSubtitle = id
+    }
+
     func stopRemote() {
         noteCastExit()
         GCKCastContext.sharedInstance()
@@ -474,5 +546,28 @@ extension CastManager: GCKRemoteMediaClientListener {
         castingTitle = nil
         isRemotePlaying = false
         remoteTimeLeft = ""
+    }
+}
+
+extension CastManager {
+    /// Starts or clears the half-minute watch on a receiver that is loading.
+    ///
+    /// Some televisions' Cast service gets stuck taking a request — seen on
+    /// Android senders too — and then sits on its spinner indefinitely. Nothing
+    /// here can unstick it; saying so, and what does, is the useful part.
+    fileprivate func trackLoading(_ loading: Bool) {
+        guard loading else {
+            loadingSince = nil
+            slowToStart = false
+            return
+        }
+        guard loadingSince == nil else { return }
+        let started = Date()
+        loadingSince = started
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            guard let self, self.loadingSince == started else { return }
+            self.slowToStart = true
+        }
     }
 }

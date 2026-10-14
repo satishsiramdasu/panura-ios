@@ -55,6 +55,7 @@ struct PanuraCastControlView: View {
                     // that each change one thing about the sound or the words,
                     // and none of which needs a row of its own.
                     secondaryControls
+                    PhoneRelayNotice()
                 }
                 .padding(.horizontal, 22)
                 .padding(.top, 8)
@@ -329,16 +330,9 @@ struct CastControlBar: View {
 
     var body: some View {
         HStack {
-            Button(action: onDone) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .frame(width: 38, height: 38)
-                    .background(Circle().fill(PanuraTheme.surfaceVariant))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Done")
-
+            // Balances Close, so the title sits in the middle of the bar rather
+            // than in the middle of what is left of it.
+            Color.clear.frame(width: 38, height: 38)
             Spacer(minLength: 6)
             HStack(spacing: 5) {
                 Text("Playing on")
@@ -359,9 +353,15 @@ struct CastControlBar: View {
             }
             .lineLimit(1)
             Spacer(minLength: 6)
-            // Balances Done, so the title sits in the middle of the bar rather
-            // than in the middle of what is left of it.
-            Color.clear.frame(width: 38, height: 38)
+            Button(action: onDone) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .frame(width: 38, height: 38)
+                    .background(Circle().fill(PanuraTheme.surfaceVariant))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
         }
         .padding(.horizontal, 18)
         .padding(.top, 10)

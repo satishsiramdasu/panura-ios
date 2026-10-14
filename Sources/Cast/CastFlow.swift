@@ -332,8 +332,16 @@ final class CastFlow: ObservableObject {
         reloading = true
         let at = CastManager.shared.remotePosition
         let payload = await chromecastPayload(media, track: track)
+        let subtitles = await Self.subtitles(for: media)
         reloading = false
-        CastManager.shared.cast(payload, advertise: false, startAt: at)
+        CastManager.shared.cast(payload, advertise: false, startAt: at, subtitles: subtitles)
+    }
+
+    private static func subtitles(for media: MediaItem) async -> [(track: SubtitleTrack, url: URL)] {
+        await PanuraCastManager.shared.serveSubtitles(
+            media.subtitles,
+            headers: media.headers.isEmpty ? media.castHeaders : media.headers
+        )
     }
 
     /// What a Chromecast should actually be sent.
@@ -449,10 +457,11 @@ final class CastFlow: ObservableObject {
                 // nil means there was nothing to change. See `CastAudioMaster`.
                 sent = media
                 let payload = await chromecastPayload(media, track: nil)
+                let subtitles = await Self.subtitles(for: media)
                 // A Cast session that has gone between the tap and here is
                 // the one case worth reporting: the old code said "playing"
                 // over a load that never left the phone.
-                guard CastManager.shared.cast(payload, advertise: !auto) else {
+                guard CastManager.shared.cast(payload, advertise: !auto, subtitles: subtitles) else {
                     stage = .failed("Lost the connection to \(deviceName ?? "the TV").")
                     return
                 }
