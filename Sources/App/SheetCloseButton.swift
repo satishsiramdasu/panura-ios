@@ -52,13 +52,19 @@ struct GlassCircleButton: View {
 
     var body: some View {
         if #available(iOS 26.0, *) {
-            // The glass hugs its label, so the label carries the size: the
-            // 44-point bubble iOS draws for a bar button, which is what the
-            // Library and Help sheets show.
-            Button(action: action) { glyph.frame(width: 44, height: 44) }
-                .buttonStyle(.glass)
-                .buttonBorderShape(.circle)
-                .accessibilityLabel(label)
+            // Drawn to the exact 44-point bubble iOS gives a bar button, which
+            // is what the Library and Help sheets show. Not `.glass`: that
+            // style pads around its label, so a 44-point label became a
+            // bubble far bigger than the bar's. Not interactive glass either,
+            // which flashes a white square on press; the press is a dip.
+            Button(action: action) {
+                glyph
+                    .frame(width: 44, height: 44)
+                    .glassEffect(.regular, in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PressDip())
+            .accessibilityLabel(label)
         } else {
             Button(action: action) {
                 glyph
@@ -73,7 +79,17 @@ struct GlassCircleButton: View {
 
     private var glyph: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 17, weight: .semibold))
+            .font(.system(size: 17, weight: .medium))
             .foregroundStyle(PanuraTheme.accent)
+    }
+}
+
+/// A slight shrink and fade while held — the feedback a bar button gives.
+private struct PressDip: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
