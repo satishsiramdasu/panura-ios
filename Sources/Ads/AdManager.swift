@@ -330,8 +330,11 @@ final class AdManager: NSObject {
     /// False only when somebody opened the ad and closed it early. They
     /// declined a bargain they were offered; nothing is taken away, and they
     /// can press again.
-    func showRewarded(then granted: @escaping (Bool) -> Void) {
-        guard FeatureFlags.adsEnabled, AdPolicy.allows(.servers), !presenting,
+    func showRewarded(
+        for placement: AdPolicy.Placement = .servers,
+        then granted: @escaping (Bool) -> Void
+    ) {
+        guard FeatureFlags.adsEnabled, AdPolicy.allows(placement), !presenting,
               let ad = rewarded, let root = Self.topViewController()
         else {
             granted(true)
@@ -344,7 +347,7 @@ final class AdManager: NSObject {
             granted(earned)
             // Only a watched ad spends the hour. Closing it early leaves the
             // clock alone so the next attempt still has something to offer.
-            if earned { AdPolicy.record(.servers) }
+            if earned { AdPolicy.record(placement) }
         }
         ad.present(from: root) { earned = true }
         rewarded = nil

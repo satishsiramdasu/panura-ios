@@ -212,6 +212,11 @@ enum CastTranscoder {
 
     /// Everything converted so far, so Settings can say what it is holding and
     /// offer to let it go.
+    static func isCached(_ id: String) -> Bool {
+        let size = (try? FileManager.default.attributesOfItem(atPath: cacheURL(for: id).path))?[.size] as? NSNumber
+        return (size?.int64Value ?? 0) > 0
+    }
+
     static func cacheSize() -> Int64 {
         guard let files = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.fileSizeKey]
@@ -233,8 +238,11 @@ enum CastTranscoder {
         return url
     }
 
+    /// The whole id, not a prefix of it: a photo-library id is 36 characters
+    /// before its suffix, and cutting there filed every variant of one video —
+    /// each audio track, the video conversion — under the same name.
     static func cacheURL(for id: String) -> URL {
-        let key = String(id.prefix(36)).replacingOccurrences(of: "/", with: "_")
+        let key = id.replacingOccurrences(of: "/", with: "_")
         return directory.appendingPathComponent(key).appendingPathExtension("mp4")
     }
 

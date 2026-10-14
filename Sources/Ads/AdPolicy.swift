@@ -55,6 +55,12 @@ enum AdPolicy {
         /// after a glance at another app, never over a video or a cast. See
         /// `AdManager.showAppOpenIfDue`.
         case appOpen
+        /// Converting a video from this phone for a Chromecast. Rewarded:
+        /// the conversion is the reward, and it runs while the ad plays.
+        ///
+        /// No gap. Every conversion is real work done on request, and a copy
+        /// already converted plays without asking again.
+        case conversion
 
         /// How long before this placement may fire again.
         ///
@@ -86,6 +92,7 @@ enum AdPolicy {
             // An hour, fixed. Not country-tiered: this is the one ad nobody
             // did anything to bring on, so it is the one to be mean with.
             case .appOpen: return 60 * 60
+            case .conversion: return 0
             }
         }
 

@@ -43,6 +43,8 @@ struct CastSessionView: View {
                     title: title, caption: "Preparing for the TV",
                     detail: explanation, progress: progress, overridable: overridable
                 )
+            case let .offerConversion(title, explanation, overridable):
+                conversionOffer(title: title, explanation: explanation, overridable: overridable)
             case let .choosingAudio(title, options):
                 audioQuestion(title: title, options: options)
             case let .sending(title, device):
@@ -165,6 +167,58 @@ struct CastSessionView: View {
         // The work carries on behind a dismissed sheet, and there would be no
         // way back to the Cancel that stops it.
         .interactiveDismissDisabled()
+    }
+
+    /// The conversion, offered. Says what it is and, when one is due, that an
+    /// ad comes with it — a rewarded ad's reward has to be named before the ad.
+    private func conversionOffer(title: String, explanation: String, overridable: Bool) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "wand.and.stars")
+                .font(.title2)
+                .foregroundStyle(PanuraTheme.accent)
+            VStack(spacing: 6) {
+                Text("This video needs converting for the TV").font(.headline)
+                    .multilineTextAlignment(.center)
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            Text(explanation)
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button { flow.answerConversion(.convert) } label: {
+                Label("Convert and play on TV", systemImage: "play.tv")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 46)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(PanuraTheme.accent)
+
+            if FeatureFlags.adsEnabled, AdPolicy.allows(.conversion) {
+                Text("A short ad plays while it converts.")
+                    .font(.caption)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+            }
+
+            HStack(spacing: 12) {
+                Button("Cancel", role: .cancel) { flow.answerConversion(.cancel) }
+                    .buttonStyle(.bordered)
+                if overridable {
+                    Button("Send original") { flow.answerConversion(.original) }
+                        .buttonStyle(.bordered)
+                }
+            }
+            .font(.subheadline)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity)
+        .background(PanuraTheme.surface)
     }
 
     /// Which language to send. Asked once, before anything is prepared.
