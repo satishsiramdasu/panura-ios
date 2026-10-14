@@ -1,12 +1,11 @@
 import SwiftUI
-import UIKit
 
-/// The system's own close button, for every sheet and page that closes.
+/// The one close control for every sheet and page that closes: a plain cross
+/// in the accent colour, as Help, Report and Settings have always worn it.
 ///
-/// One control everywhere: sheets had grown a "Done" here, a bare cross there
-/// and a cross in a circle on the cast page. iOS 26 draws its close role in
-/// the toolbar style of the release; before that, UIKit's close button is the
-/// grey cross in a circle the system's own sheets use.
+/// Tried as the system's own close button — iOS 26's glass circle, UIKit's
+/// grey one before it — and it read as foreign next to the app's other bar
+/// glyphs, so it is back to this.
 struct SheetCloseButton: View {
     let action: () -> Void
 
@@ -15,34 +14,14 @@ struct SheetCloseButton: View {
     }
 
     var body: some View {
-        if #available(iOS 26.0, *) {
-            Button(role: .close, action: action)
-        } else {
-            SystemCloseButton(action: action)
-                .frame(width: 30, height: 30)
-                .accessibilityLabel("Close")
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(PanuraTheme.accent)
+                .frame(width: 38, height: 38)
+                .contentShape(Rectangle())
         }
-    }
-}
-
-private struct SystemCloseButton: UIViewRepresentable {
-    let action: () -> Void
-
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .close)
-        let coordinator = context.coordinator
-        button.addAction(UIAction { _ in coordinator.action() }, for: .primaryActionTriggered)
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        context.coordinator.action = action
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
-
-    final class Coordinator {
-        var action: () -> Void
-        init(action: @escaping () -> Void) { self.action = action }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
     }
 }
