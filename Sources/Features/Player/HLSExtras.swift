@@ -441,21 +441,25 @@ struct ThumbnailTrack {
         cues.last { $0.start <= seconds } ?? cues.first
     }
 
-    /// Reads the head of `url` and says whether it is thumbnails. Asked once
-    /// per track the page reports; a fetch that fails counts as a subtitle, so
-    /// nothing is lost by guessing wrong.
-    static func isThumbnails(_ url: URL, page: URL?) async -> Bool {
+    enum Kind { case subtitles, thumbnails, empty }
+
+    /// Reads the head of `url` and says what it is: words, thumbnails, or
+    /// nothing at all — a placeholder a player lists as a track. Asked once per
+    /// track the page reports; a fetch that fails counts as subtitles, so a
+    /// slow host loses nothing.
+    static func classify(_ url: URL, page: URL?) async -> Kind {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
         request.setValue("bytes=0-4095", forHTTPHeaderField: "Range")
         if let page { request.setValue(page.absoluteString, forHTTPHeaderField: "Referer") }
         guard let (data, _) = try? await URLSession.shared.data(for: request),
               var text = String(data: data, encoding: .utf8)?.replacingOccurrences(of: "\r\n", with: "\n")
-        else { return false }
+        else { return .subtitles }
         // A ranged read can stop mid-cue; drop the last, partial one.
         if data.count >= 4096, let cut = text.range(of: "\n\n", options: .backwards) {
             text = String(text[..<cut.lowerBound])
         }
-        return ThumbnailTrack(text, base: url) != nil
+        if ThumbnailTrack(text, base: url) != nil { return .thumbnails }
+        return SubtitleParser.parse(text).isEmpty ? .empty : .subtitles
     }
 }

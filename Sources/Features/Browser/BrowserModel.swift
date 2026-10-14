@@ -278,12 +278,16 @@ final class BrowserModel: ObservableObject {
         // with nothing to say; read once, it goes to the scrub preview instead.
         let page = currentURL
         Task { [weak self] in
-            let thumbnails = await ThumbnailTrack.isThumbnails(url, page: page)
+            let kind = await ThumbnailTrack.classify(url, page: page)
             guard let self, self.currentURL == page else { return }
-            if thumbnails {
+            switch kind {
+            case .thumbnails:
                 self.previewTrack = url
-            } else {
+            case .subtitles:
                 self.foundSubtitles.append(SubtitleTrack(url: url, label: label, language: language))
+            case .empty:
+                // Listed by the player, holding no captions.
+                break
             }
         }
     }
