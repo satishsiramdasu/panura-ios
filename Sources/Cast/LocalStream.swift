@@ -375,12 +375,17 @@ private enum SoundSource {
         var bytes = [UInt8](repeating: 0, count: size)
         guard CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: size, destination: &bytes) == noErr
         else { return [] }
+        // Sizes in bytes, not entries.
         var needed = 0
-        CMSampleBufferGetAudioStreamPacketDescriptions(sample, entryCount: 0, arrayToFill: nil, entriesNeededOut: &needed)
-        guard needed > 0 else { return [bytes] }
-        var descriptions = [AudioStreamPacketDescription](repeating: AudioStreamPacketDescription(), count: needed)
         CMSampleBufferGetAudioStreamPacketDescriptions(
-            sample, entryCount: needed, arrayToFill: &descriptions, entriesNeededOut: nil
+            sample, allocatedSize: 0, packetDescriptionsOut: nil, packetDescriptionsSizeNeededOut: &needed
+        )
+        let count = needed / MemoryLayout<AudioStreamPacketDescription>.stride
+        guard count > 0 else { return [bytes] }
+        var descriptions = [AudioStreamPacketDescription](repeating: AudioStreamPacketDescription(), count: count)
+        CMSampleBufferGetAudioStreamPacketDescriptions(
+            sample, allocatedSize: count * MemoryLayout<AudioStreamPacketDescription>.stride,
+            packetDescriptionsOut: &descriptions, packetDescriptionsSizeNeededOut: nil
         )
         return descriptions.compactMap { d in
             let start = Int(d.mStartOffset), end = start + Int(d.mDataByteSize)

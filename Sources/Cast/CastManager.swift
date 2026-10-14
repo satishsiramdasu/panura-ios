@@ -281,7 +281,7 @@ extension CastManager {
         var tracks: [GCKMediaTrack] = []
         for (index, sub) in subtitles.enumerated() {
             let language = sub.track.language
-            tracks.append(GCKMediaTrack(
+            guard let track = GCKMediaTrack(
                 identifier: index + 1,
                 contentIdentifier: sub.url.absoluteString,
                 contentType: "text/vtt",
@@ -290,7 +290,8 @@ extension CastManager {
                 name: sub.track.displayName,
                 languageCode: (2...3).contains(language.count) ? language : nil,
                 customData: nil
-            ))
+            ) else { continue }
+            tracks.append(track)
         }
         remoteSubtitles = subtitles.enumerated().map {
             RemoteSubtitle(id: $0.offset + 1, name: $0.element.track.displayName)
