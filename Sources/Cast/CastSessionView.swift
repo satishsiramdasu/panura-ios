@@ -30,7 +30,10 @@ struct CastSessionView: View {
         Group {
             switch flow.stage {
             case .idle, .playing:
-                controls
+                VStack(spacing: 0) {
+                    PhoneRelayNotice()
+                    controls
+                }
             case let .reading(title):
                 busy(
                     title: title,
@@ -488,5 +491,54 @@ extension EnvironmentValues {
     var castPageClose: (() -> Void)? {
         get { self[CastPageCloseKey.self] }
         set { self[CastPageCloseKey.self] = newValue }
+    }
+}
+
+/// Says so when the television is getting the video through this phone.
+///
+/// In that case the cast lasts exactly as long as the phone keeps serving it.
+/// Leave the app and iOS suspends it within seconds, the TV's next request goes
+/// unanswered, and the film stops with nothing on either screen to say why.
+/// Auto-lock is held off for as long as this applies — see `RootTabView`.
+struct PhoneRelayNotice: View {
+    @ObservedObject private var panura = PanuraCastManager.shared
+    @ObservedObject private var chromecast = CastManager.shared
+
+    private var reason: String? { Self.reason(panura: panura, chromecast: chromecast) }
+
+    @MainActor
+    static func reason(panura: PanuraCastManager, chromecast: CastManager) -> String? {
+        if panura.isCasting, panura.mode == "proxy" {
+            return panura.castID.hasPrefix("file:")
+                ? PhoneRelay.file.reason
+                : "This video can't be opened by the TV directly, so it is passing through your phone."
+        }
+        if chromecast.isCasting, let relay = panura.chromecastRelay {
+            return relay.reason
+        }
+        return nil
+    }
+
+    var body: some View {
+        if let reason {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "iphone.radiowaves.left.and.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(PanuraTheme.accent)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Playing through this phone")
+                        .font(.subheadline.weight(.semibold))
+                    Text(reason + " Keep Panura open and on the same Wi-Fi until it finishes.")
+                        .font(.caption)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
     }
 }

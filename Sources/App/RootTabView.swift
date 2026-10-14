@@ -169,6 +169,12 @@ struct RootTabView: View {
         .onChange(of: castFlow.showing) { showing in
             if showing { showCastControls = true }
         }
+        // A cast served from this phone dies when the phone locks: iOS
+        // suspends the app and its server with it. So auto-lock is held off
+        // for exactly as long as one is running, and given back after.
+        .onChange(of: PhoneRelayNotice.reason(panura: panuraCast, chromecast: chromecast) != nil) { relaying in
+            UIApplication.shared.isIdleTimerDisabled = relaying
+        }
         .onChange(of: showCastControls) { showing in
             // Dismissing the screen clears a finished attempt, but never stops
             // a conversion — Cancel is what does that, and it is on the screen.

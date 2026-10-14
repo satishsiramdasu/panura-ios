@@ -25,6 +25,11 @@ final class PanuraCastManager: ObservableObject {
     /// "proxy" (every byte goes through this device).
     @Published private(set) var mode = ""
     @Published private(set) var playback = PanuraPlayback()
+
+    /// Why a Chromecast cast is coming from this phone rather than the CDN, or
+    /// nil when the television fetches it itself. Panura's own receiver says
+    /// the same thing with `mode`.
+    @Published private(set) var chromecastRelay: PhoneRelay?
     /// Set when the server could not bind or Bonjour refused to publish — nearly
     /// always the local-network permission.
     @Published private(set) var lastError: String?
@@ -67,7 +72,7 @@ final class PanuraCastManager: ObservableObject {
 
     /// URL of the cast in flight. The direct-cast watchdog compares against this
     /// so a stall never downgrades a stream the user has since replaced.
-    private var castID = ""
+    private(set) var castID = ""
 
     /// What to re-send if the current direct cast turns out not to play. Held
     /// only while a direct cast is outstanding.
@@ -187,6 +192,7 @@ final class PanuraCastManager: ObservableObject {
         server.headers = [:]
         server.masterOverride = nil
         server.remux = nil
+        chromecastRelay = .file
         return true
     }
 
@@ -205,6 +211,8 @@ final class PanuraCastManager: ObservableObject {
         server.headers = [:]
         server.masterOverride = master
         server.remux = nil
+        // A kilobyte, once: the television fetches the film itself.
+        chromecastRelay = nil
         return true
     }
 
@@ -222,6 +230,7 @@ final class PanuraCastManager: ObservableObject {
         server.headers = session.headers
         server.remux = session
         server.masterOverride = session.master(root: "http://\(ip):\(PanuraCastServer.httpPort)")
+        chromecastRelay = .muxing
         return true
     }
 
@@ -242,6 +251,7 @@ final class PanuraCastManager: ObservableObject {
         server.headers = item.headers.isEmpty ? item.castHeaders : item.headers
         server.masterOverride = nil
         server.remux = nil
+        chromecastRelay = .forwarding
         return true
     }
 
@@ -251,6 +261,7 @@ final class PanuraCastManager: ObservableObject {
     /// megabytes of somebody else's film, and there is no reason for it to
     /// outlive the viewing.
     func clearRemux() {
+        chromecastRelay = nil
         guard isServerRunning else { return }
         server.remux = nil
     }
@@ -560,5 +571,27 @@ final class PanuraCastManager: ObservableObject {
         var hello = CastMessage(type: "hello")
         hello.deviceName = UIDevice.current.name
         server.send(hello)
+    }
+}
+
+/// Why a cast is being served from this phone.
+enum PhoneRelay {
+    /// The video only exists on this phone.
+    case file
+    /// Its sound arrives separately and this television cannot join the two,
+    /// so the phone is combining them as it plays. See `CastRemux`.
+    case muxing
+    /// The site only lets this phone open it, so the phone passes it on.
+    case forwarding
+
+    var reason: String {
+        switch self {
+        case .file:
+            return "This video is on your phone, so it plays from here."
+        case .muxing:
+            return "This TV can't play this video's separate sound track, so your phone is combining picture and sound as it plays."
+        case .forwarding:
+            return "This site only lets your phone open the video, so it is passing through your phone."
+        }
     }
 }
