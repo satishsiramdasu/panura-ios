@@ -381,10 +381,10 @@ struct RootTabView: View {
     /// television, and this is what it is and how to stop it.
     private var isCasting: Bool { panuraCast.isCasting || chromecast.isCasting }
 
-    /// It is the bottom-most thing on screen now that the bar is gone, so its
-    /// own ground has to reach the bottom of the display or the rounded corners
-    /// cut the strip in half.
-    private var castBarInset: CGFloat { AppChrome.bottomInset }
+    /// Extra ground only when the bar is the bottom of the screen. With the
+    /// banner under it, the banner is the edge, and the extra ground was a gap
+    /// that sat the row off-centre in its own strip.
+    private var castBarInset: CGFloat { AdPolicy.allowsBanner ? 0 : AppChrome.bottomInset }
 
     /// Stop on the bar is as deliberate as Stop on the cast page, so it owes
     /// the same exit ad. The page shows it on its way out; nothing is going

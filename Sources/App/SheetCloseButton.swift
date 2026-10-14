@@ -52,14 +52,17 @@ struct GlassCircleButton: View {
 
     var body: some View {
         if #available(iOS 26.0, *) {
-            Button(action: action) { glyph }
+            // The glass hugs its label, so the label carries the size: the
+            // 44-point bubble iOS draws for a bar button, which is what the
+            // Library and Help sheets show.
+            Button(action: action) { glyph.frame(width: 44, height: 44) }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
                 .accessibilityLabel(label)
         } else {
             Button(action: action) {
                 glyph
-                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
                     .background(.ultraThinMaterial, in: Circle())
                     .contentShape(Circle())
             }
@@ -70,7 +73,7 @@ struct GlassCircleButton: View {
 
     private var glyph: some View {
         Image(systemName: systemImage)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.system(size: 17, weight: .semibold))
             .foregroundStyle(PanuraTheme.accent)
     }
 }

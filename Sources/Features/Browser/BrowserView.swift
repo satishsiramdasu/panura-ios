@@ -937,7 +937,9 @@ struct BrowserView: View {
         // which case that strip is its job and this one sits straight on top of
         // it: two bars with a gap of app background between them read as two
         // unrelated things.
-        .padding(.bottom, castBarShowing ? 8 : 10 + AppChrome.bottomInset)
+        // With the banner under it, the banner is the edge: even padding, so
+        // the row sits centred in its strip.
+        .padding(.bottom, castBarShowing || AdPolicy.allowsBanner ? 8 : 10 + AppChrome.bottomInset)
         .background(chrome)
     }
 

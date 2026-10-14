@@ -52,9 +52,8 @@ struct SettingsHeader: View {
         HStack(spacing: 12) {
             if let onBack {
                 GlassCircleButton(systemImage: "chevron.left", label: "Back", action: onBack)
-                    .frame(width: 38, height: 38)
             } else {
-                Color.clear.frame(width: 38, height: 38)
+                Color.clear.frame(width: 44, height: 44)
             }
 
             Spacer(minLength: 0)
@@ -64,7 +63,6 @@ struct SettingsHeader: View {
             Spacer(minLength: 0)
 
             SheetCloseButton(.standalone, action: onClose)
-                .frame(width: 38, height: 38)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

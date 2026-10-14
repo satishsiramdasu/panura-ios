@@ -354,7 +354,6 @@ struct CastControlBar: View {
             .lineLimit(1)
             Spacer(minLength: 6)
             SheetCloseButton(.standalone, action: onDone)
-                .frame(width: 38, height: 38)
         }
         .padding(.horizontal, 18)
         .padding(.top, 10)
