@@ -233,7 +233,7 @@ enum CastTranscoder {
         return url
     }
 
-    private static func cacheURL(for id: String) -> URL {
+    static func cacheURL(for id: String) -> URL {
         let key = String(id.prefix(36)).replacingOccurrences(of: "/", with: "_")
         return directory.appendingPathComponent(key).appendingPathExtension("mp4")
     }

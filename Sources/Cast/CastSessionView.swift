@@ -43,6 +43,8 @@ struct CastSessionView: View {
                     title: title, caption: "Preparing for the TV",
                     detail: explanation, progress: progress, overridable: overridable
                 )
+            case let .choosingAudio(title, options):
+                audioQuestion(title: title, options: options)
             case let .sending(title, device):
                 busy(
                     title: title,
@@ -163,6 +165,46 @@ struct CastSessionView: View {
         // The work carries on behind a dismissed sheet, and there would be no
         // way back to the Cancel that stops it.
         .interactiveDismissDisabled()
+    }
+
+    /// Which language to send. Asked once, before anything is prepared.
+    private func audioQuestion(title: String, options: [CastLocalMedia.AudioOption]) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "waveform")
+                .font(.title2)
+                .foregroundStyle(PanuraTheme.accent)
+            VStack(spacing: 6) {
+                Text("Which language?").font(.headline)
+                Text(title)
+                    .font(.subheadline)
+                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+            }
+            VStack(spacing: 8) {
+                ForEach(options) { option in
+                    Button { flow.pickAudio(option) } label: {
+                        Text(option.label)
+                            .font(.subheadline.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 44)
+                            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text("Chromecast plays one language at a time. Surround tracks are sent as stereo.")
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Cancel", role: .cancel) { flow.cancel() }
+                .buttonStyle(.bordered)
+                .font(.subheadline)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity)
+        .background(PanuraTheme.surface)
     }
 
     private func failure(_ message: String) -> some View {

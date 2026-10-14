@@ -67,6 +67,10 @@ final class CastFlow: ObservableObject {
         /// offering to send the original there would only promise a black
         /// screen.
         case converting(title: String, explanation: String, progress: Float, overridable: Bool)
+        /// A file with several languages, waiting for one to be chosen. A
+        /// Chromecast plays a single track, so this is asked before anything
+        /// is prepared.
+        case choosingAudio(title: String, options: [CastLocalMedia.AudioOption])
         /// Handed over; waiting for the TV to pick it up.
         case sending(title: String, device: String)
         /// The TV has it. From here the controls take over.
@@ -75,7 +79,7 @@ final class CastFlow: ObservableObject {
 
         var isBusy: Bool {
             switch self {
-            case .reading, .converting, .sending: return true
+            case .reading, .converting, .choosingAudio, .sending: return true
             default: return false
             }
         }
@@ -103,6 +107,8 @@ final class CastFlow: ObservableObject {
     /// What the current attempt is about, so "Send original" can carry on with
     /// the same video after abandoning its conversion.
     private var pending: (file: URL, title: String, id: String)?
+    /// The answer to `choosingAudio`, while it is being asked.
+    private var audioChoice: CheckedContinuation<CastLocalMedia.AudioOption?, Never>?
 
     private init() {
         // Both receivers say the same thing in different words when a video
@@ -511,7 +517,21 @@ final class CastFlow: ObservableObject {
         }
     }
 
+    /// The language picked for a local file, or nil to give up.
+    func pickAudio(_ option: CastLocalMedia.AudioOption?) {
+        audioChoice?.resume(returning: option)
+        audioChoice = nil
+    }
+
+    private func chooseAudio(
+        title: String, options: [CastLocalMedia.AudioOption]
+    ) async -> CastLocalMedia.AudioOption? {
+        stage = .choosingAudio(title: title, options: options)
+        return await withCheckedContinuation { audioChoice = $0 }
+    }
+
     func cancel() {
+        pickAudio(nil)
         work?.cancel()
         work = nil
         pending = nil
@@ -551,9 +571,51 @@ final class CastFlow: ObservableObject {
             return
         }
 
+        // **Sound and subtitles, for a Chromecast only.** Panura on Android TV
+        // plays the file as it is — languages, surround and embedded
+        // subtitles included. A Chromecast plays the first audio track, cannot
+        // decode Dolby or more than two channels on the older sets, and reads
+        // no subtitles out of a file. See `CastLocalMedia`.
+        var subtitles: [(track: SubtitleTrack, url: URL)] = []
+        if !toPanura {
+            let options = await CastLocalMedia.audioOptions(of: file)
+            var chosen = options.first
+            if options.count > 1 {
+                guard let picked = await chooseAudio(title: title, options: options) else {
+                    stage = .idle
+                    return
+                }
+                chosen = picked
+            }
+            guard !Task.isCancelled else { return }
+            if let chosen, CastLocalMedia.needsAudioFix(options, chosen: chosen) {
+                stage = .converting(
+                    title: title,
+                    explanation: CastLocalMedia.explanation(options, chosen: chosen),
+                    progress: 0,
+                    overridable: false
+                )
+                do {
+                    url = try await CastLocalMedia.stereoCopy(file, audio: chosen.id, id: id) { [weak self] value in
+                        Task { @MainActor in self?.advance(progress: value) }
+                    }
+                } catch CastTranscoder.Failure.cancelled {
+                    stage = .idle
+                    return
+                } catch {
+                    stage = .failed("Could not prepare this video's sound for the TV.")
+                    return
+                }
+            }
+            let embedded = await CastLocalMedia.embeddedSubtitles(of: file)
+            subtitles = PanuraCastManager.shared.serveSubtitles(cues: embedded.map {
+                (track: SubtitleTrack(url: file, label: $0.label, language: $0.language), cues: $0.cues)
+            })
+        }
+
         let trusted = forceOriginal || (deviceName.map(CastPreferences.allowsOriginal(on:)) ?? false)
         if !trusted {
-            if let reason = await CastTranscoder.reason(for: file, target: target) {
+            if let reason = await CastTranscoder.reason(for: url, target: target) {
                 stage = .converting(
                     title: title,
                     explanation: reason.explanation,
@@ -562,7 +624,7 @@ final class CastFlow: ObservableObject {
                 )
                 do {
                     url = try await CastTranscoder.convert(
-                        file, id: id, repackageOnly: reason.isRepackageOnly
+                        url, id: url == file ? id : id + "-v", repackageOnly: reason.isRepackageOnly
                     ) { [weak self] value in
                         Task { @MainActor in self?.advance(progress: value) }
                     }
@@ -581,7 +643,7 @@ final class CastFlow: ObservableObject {
         if toPanura {
             panura.castLocal(file: url, title: title)
         } else {
-            CastManager.shared.castLocalFile(url, title: title, advertise: !auto)
+            CastManager.shared.castLocalFile(url, title: title, advertise: !auto, subtitles: subtitles)
         }
         stage = .playing
     }

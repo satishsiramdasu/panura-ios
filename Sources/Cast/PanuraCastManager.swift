@@ -273,16 +273,35 @@ final class PanuraCastManager: ObservableObject {
         start()
         guard isServerRunning, let ip = PanuraCastServer.localIPv4() else { return [] }
         let encoding = UserDefaults.standard.string(forKey: "subtitle_encoding") ?? ""
-        var files: [Data] = []
-        var served: [(track: SubtitleTrack, url: URL)] = []
+        var parsed: [(track: SubtitleTrack, cues: [SubtitleCue])] = []
         for track in tracks.prefix(8) {
             guard let data = await Self.subtitleData(track.url, headers: headers) else { continue }
             let cues = await Task.detached { SubtitleParser.cues(from: data, encoding: encoding) }.value
-            guard !cues.isEmpty,
-                  let url = URL(string: "http://\(ip):\(PanuraCastServer.httpPort)/sub/\(files.count).vtt")
+            if !cues.isEmpty { parsed.append((track, cues)) }
+        }
+        return publishSubtitles(parsed, ip: ip)
+    }
+
+    /// Serves subtitles that are already cues — lifted out of a local file —
+    /// the same way. Replaces whatever was being served.
+    func serveSubtitles(cues items: [(track: SubtitleTrack, cues: [SubtitleCue])]) -> [(track: SubtitleTrack, url: URL)] {
+        server.subtitleFiles = []
+        guard !items.isEmpty else { return [] }
+        start()
+        guard isServerRunning, let ip = PanuraCastServer.localIPv4() else { return [] }
+        return publishSubtitles(items, ip: ip)
+    }
+
+    private func publishSubtitles(
+        _ items: [(track: SubtitleTrack, cues: [SubtitleCue])], ip: String
+    ) -> [(track: SubtitleTrack, url: URL)] {
+        var files: [Data] = []
+        var served: [(track: SubtitleTrack, url: URL)] = []
+        for item in items {
+            guard let url = URL(string: "http://\(ip):\(PanuraCastServer.httpPort)/sub/\(files.count).vtt")
             else { continue }
-            files.append(Data(Self.webVTT(cues).utf8))
-            served.append((track, url))
+            files.append(Data(Self.webVTT(item.cues).utf8))
+            served.append((item.track, url))
         }
         server.subtitleFiles = files
         return served

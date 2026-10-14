@@ -237,32 +237,11 @@ final class CastManager: NSObject, ObservableObject {
             builder.customData = ["headers": item.castHeaders]
         }
 
-        // Side-loaded text tracks, served as WebVTT by this phone — see
-        // `PanuraCastManager.serveSubtitles`. The first is on, as it would be
-        // in the player.
-        var tracks: [GCKMediaTrack] = []
-        for (index, sub) in subtitles.enumerated() {
-            let language = sub.track.language
-            tracks.append(GCKMediaTrack(
-                identifier: index + 1,
-                contentIdentifier: sub.url.absoluteString,
-                contentType: "text/vtt",
-                type: .text,
-                textSubtype: .subtitles,
-                name: sub.track.displayName,
-                languageCode: (2...3).contains(language.count) ? language : nil,
-                customData: nil
-            ))
-        }
-        if !tracks.isEmpty { builder.mediaTracks = tracks }
-        remoteSubtitles = subtitles.enumerated().map {
-            RemoteSubtitle(id: $0.offset + 1, name: $0.element.track.displayName)
-        }
-        activeSubtitle = tracks.isEmpty ? nil : 1
+        let active = attachSubtitles(subtitles, to: builder)
 
         let request = GCKMediaLoadRequestDataBuilder()
         request.mediaInformation = builder.build()
-        if !tracks.isEmpty { request.activeTrackIDs = [NSNumber(value: 1)] }
+        request.activeTrackIDs = active
         // Non-zero only when this load is replacing one already playing — an
         // audio change. `startTime` is in seconds from the beginning.
         if startAt > 0 { request.startTime = startAt }
@@ -292,7 +271,42 @@ extension CastManager {
     /// has no such limit — it runs the same player this app does. The receiver
     /// is told the real type rather than a hopeful one, so a refusal is a clean
     /// failure instead of a black screen.
-    func castLocalFile(_ file: URL, title: String, advertise: Bool = true) {
+    /// Side-loaded text tracks, served as WebVTT by this phone — see
+    /// `PanuraCastManager.serveSubtitles`. Returns the tracks to switch on:
+    /// the first, as it would be in the player.
+    fileprivate func attachSubtitles(
+        _ subtitles: [(track: SubtitleTrack, url: URL)],
+        to builder: GCKMediaInformationBuilder
+    ) -> [NSNumber]? {
+        var tracks: [GCKMediaTrack] = []
+        for (index, sub) in subtitles.enumerated() {
+            let language = sub.track.language
+            tracks.append(GCKMediaTrack(
+                identifier: index + 1,
+                contentIdentifier: sub.url.absoluteString,
+                contentType: "text/vtt",
+                type: .text,
+                textSubtype: .subtitles,
+                name: sub.track.displayName,
+                languageCode: (2...3).contains(language.count) ? language : nil,
+                customData: nil
+            ))
+        }
+        remoteSubtitles = subtitles.enumerated().map {
+            RemoteSubtitle(id: $0.offset + 1, name: $0.element.track.displayName)
+        }
+        activeSubtitle = tracks.isEmpty ? nil : 1
+        guard !tracks.isEmpty else { return nil }
+        builder.mediaTracks = tracks
+        return [NSNumber(value: 1)]
+    }
+
+    func castLocalFile(
+        _ file: URL,
+        title: String,
+        advertise: Bool = true,
+        subtitles: [(track: SubtitleTrack, url: URL)] = []
+    ) {
         guard let session = GCKCastContext.sharedInstance()
             .sessionManager.currentCastSession else { return }
         guard PanuraCastManager.shared.startServerForLocalFile(file),
@@ -305,9 +319,11 @@ extension CastManager {
         builder.streamType = .buffered
         builder.contentType = PanuraCastServer.mimeType(for: file)
         builder.metadata = metadata
+        let active = attachSubtitles(subtitles, to: builder)
 
         let request = GCKMediaLoadRequestDataBuilder()
         request.mediaInformation = builder.build()
+        request.activeTrackIDs = active
         session.remoteMediaClient?.loadMedia(with: request.build())
         castingTitle = title
         session.remoteMediaClient?.add(self)
