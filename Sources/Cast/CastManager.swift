@@ -524,8 +524,13 @@ extension CastManager: GCKRemoteMediaClientListener {
         // interesting one — it is how a cast fails — and it was clearing the
         // title as though everything had gone fine.
         let reason = mediaStatus?.idleReason
-        let failed = idle && (reason == .error || reason == .interrupted)
-        let ended = idle && !failed
+        // `interrupted` is the old video giving way to a new load — an audio
+        // change, a resumed stall. Not an ending: reading it as one cleared
+        // the title, and the queue's "video finished" cleanup then tore down
+        // the stream the new load was about to play.
+        let replaced = idle && reason == .interrupted
+        let failed = idle && reason == .error
+        let ended = idle && !failed && !replaced
         let loading = mediaStatus?.playerState == .loading || mediaStatus?.playerState == .buffering
 
         Task { @MainActor in
@@ -535,9 +540,9 @@ extension CastManager: GCKRemoteMediaClientListener {
             // Kept even while idle: an audio change reloads, and the position
             // read a moment before that is the one worth resuming from.
             if elapsed.isFinite, elapsed > 0 { self.remotePosition = elapsed }
-            if idle {
+            if idle, !replaced {
                 self.castingTitle = nil
-            } else if let title, !title.isEmpty {
+            } else if !idle, let title, !title.isEmpty {
                 self.castingTitle = title
             }
             // The receiver is showing frames: this is the only moment a cast
@@ -553,9 +558,7 @@ extension CastManager: GCKRemoteMediaClientListener {
             // of nothing, and back to the home screen. It reports no code of
             // its own here, so say which of the two it was.
             if failed {
-                self.lastCastError = reason == .interrupted
-                    ? "The television stopped the video."
-                    : "The television could not play this video."
+                self.lastCastError = "The television could not play this video."
             }
         }
     }

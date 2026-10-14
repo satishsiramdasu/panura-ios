@@ -226,7 +226,10 @@ final class CastFlow: ObservableObject {
     /// The TV finished something. Only acts while this flow believes a video is
     /// on it, so stopping a cast by hand does not start the queue up again.
     private func finished() {
-        guard case .playing = stage else { return }
+        // Not while the same film is being re-sent: the old stream stops on
+        // the television on purpose, and treating that as the end would clear
+        // the stream about to replace it.
+        guard case .playing = stage, !reloading else { return }
         nowPlaying = nil
         // The next thing in the queue is a different stream with different
         // tracks; `play` sets this again if it has any.
@@ -351,8 +354,11 @@ final class CastFlow: ObservableObject {
         let at = CastManager.shared.remotePosition
         let payload = await chromecastPayload(media, track: track)
         let subtitles = await Self.subtitles(for: media)
-        reloading = false
         CastManager.shared.cast(payload, advertise: false, startAt: at, subtitles: subtitles)
+        // Held a moment past the load: the television reports the old stream
+        // stopping just after it is handed the new one.
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        reloading = false
     }
 
     private static func subtitles(for media: MediaItem) async -> [(track: SubtitleTrack, url: URL)] {
