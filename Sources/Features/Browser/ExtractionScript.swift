@@ -623,6 +623,21 @@ enum ExtractionScript {
           if (window.jwplayer) {
             var pl = jwplayer().getPlaylist();
             if (pl && pl[0] && pl[0].sources) pl[0].sources.forEach(function (s) { report(s.file, '', false, 'jwplayer'); });
+            // Its tracks too: captions are fetched only once someone turns
+            // them on, so the network hooks never see them. A thumbnails track
+            // is passed on as well; the app reads it and files it as previews.
+            if (pl && pl[0] && pl[0].tracks) pl[0].tracks.forEach(function (t) {
+              var kind = (t.kind || 'captions').toLowerCase();
+              if (!t.file) return;
+              if (kind === 'thumbnails') {
+                var abs = absolute(unesc(String(t.file)));
+                if (subsReported[abs]) return;
+                subsReported[abs] = true;
+                post({ kind: 'subtitle', url: abs, label: '', lang: '' });
+              } else if (kind === 'captions' || kind === 'subtitles') {
+                reportSub(t.file, t.label || '', t.language || t.srclang || '');
+              }
+            });
           }
         } catch (e) {}
         try { document.querySelectorAll('video, source').forEach(scanElement); } catch (e) {}

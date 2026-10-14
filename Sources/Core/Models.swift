@@ -24,6 +24,9 @@ struct MediaItem: Identifiable, Hashable {
     var castHeaders: [String: String] = [:]
     /// Sidecar subtitles sniffed from the page, sideloaded into the player.
     var subtitles: [SubtitleTrack] = []
+    /// A thumbnail VTT the page offered for scrubbing previews. See
+    /// `ThumbnailTrack`.
+    var previewTrack: URL?
     /// `hls` | `mp4` | `dash` hint from the manifest rule; drives the cast MIME
     /// type, which cannot be guessed from an extensionless URL.
     var contentType: String?

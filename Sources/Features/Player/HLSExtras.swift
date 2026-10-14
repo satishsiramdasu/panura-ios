@@ -29,9 +29,11 @@ final class HLSExtras: ObservableObject {
     /// The tile under the thumb, or nil — because there are none, or because
     /// its sheet has not arrived yet.
     @Published private(set) var preview: UIImage?
-    var hasPreviews: Bool { trickPlay != nil }
+    var hasPreviews: Bool { trickPlay != nil || thumbnails != nil }
 
     private var trickPlay: TrickPlay?
+    private var thumbnails: ThumbnailTrack?
+    private var headers: [String: String] = [:]
     private var sheets = NSCache<NSURL, UIImage>()
     private var fetching: Set<URL> = []
     private var loaded: URL?
@@ -47,7 +49,16 @@ final class HLSExtras: ObservableObject {
         loaded = item.url
         chapters = []
         trickPlay = nil
+        thumbnails = nil
         preview = nil
+        headers = item.headers
+
+        // The page's own thumbnail track, which works for any stream, HLS or
+        // not.
+        if let track = item.previewTrack,
+           let text = await Self.text(track, headers: item.headers, limit: 2_000_000) {
+            thumbnails = ThumbnailTrack(text, base: track)
+        }
 
         guard let text = await Self.text(item.url, headers: item.headers, limit: 65_535),
               text.contains("#EXTM3U")
@@ -108,6 +119,15 @@ final class HLSExtras: ObservableObject {
     /// times a second. It answers from cache or it answers nothing and goes to
     /// fetch, and the next call after the sheet lands shows it.
     func requestPreview(at seconds: Double) {
+        if let thumbnails {
+            guard let cue = thumbnails.cue(at: seconds) else { return }
+            guard let sheet = sheets.object(forKey: cue.image as NSURL) else {
+                fetchSheet(cue.image)
+                return
+            }
+            preview = Self.crop(sheet, rect: cue.rect)
+            return
+        }
         guard let trickPlay, let tile = trickPlay.tile(at: seconds) else {
             if preview != nil { preview = nil }
             return
@@ -126,7 +146,10 @@ final class HLSExtras: ObservableObject {
         fetching.insert(url)
         Task { [weak self] in
             defer { Task { @MainActor in self?.fetching.remove(url) } }
-            guard let (data, _) = try? await URLSession.shared.data(from: url),
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 10
+            for (name, value) in self?.headers ?? [:] { request.setValue(value, forHTTPHeaderField: name) }
+            guard let (data, _) = try? await URLSession.shared.data(for: request),
                   let image = UIImage(data: data)
             else { return }
             await MainActor.run { self?.sheets.setObject(image, forKey: url as NSURL) }
@@ -150,6 +173,14 @@ final class HLSExtras: ObservableObject {
             height: height
         )
         guard let cropped = cgImage.cropping(to: rect.integral) else { return nil }
+        return UIImage(cgImage: cropped, scale: sheet.scale, orientation: sheet.imageOrientation)
+    }
+
+    /// A region of a sheet, in its pixels, or the whole image when the cue
+    /// names no region.
+    private static func crop(_ sheet: UIImage, rect: CGRect?) -> UIImage? {
+        guard let rect else { return sheet }
+        guard let cgImage = sheet.cgImage, let cropped = cgImage.cropping(to: rect.integral) else { return nil }
         return UIImage(cgImage: cropped, scale: sheet.scale, orientation: sheet.imageOrientation)
     }
 
@@ -333,5 +364,98 @@ struct ScrubPreview: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .transition(.opacity)
+    }
+}
+
+/// A WebVTT file of scrubbing thumbnails — JW Player's `kind="thumbnails"`
+/// track, which many players copy.
+///
+///     00:05:20.246 --> 00:10:40.492
+///     sprite.jpg#xywh=200,0,200,112
+///
+/// Each cue's text is an image address, usually one sprite sheet with the
+/// region in a media fragment. It arrives on a page the way a subtitle does —
+/// a `<track>` with a `.vtt` address — so it is told apart by reading it.
+struct ThumbnailTrack {
+    struct Cue {
+        let start: Double
+        let end: Double
+        let image: URL
+        let rect: CGRect?
+    }
+
+    let cues: [Cue]
+
+    init?(_ text: String, base: URL) {
+        guard text.contains("WEBVTT") else { return nil }
+        var found: [Cue] = []
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            i += 1
+            guard line.contains("-->") else { continue }
+            let times = line.components(separatedBy: "-->")
+            guard times.count == 2,
+                  let start = SubtitleParser.seconds(times[0]),
+                  let end = SubtitleParser.seconds(times[1].split(separator: " ").first.map(String.init) ?? ""),
+                  i < lines.count
+            else { continue }
+            let payload = lines[i]
+            i += 1
+            // One cue that is words means this is a subtitle after all.
+            guard let cue = Self.cue(payload, start: start, end: end, base: base) else { return nil }
+            found.append(cue)
+        }
+        guard !found.isEmpty else { return nil }
+        cues = found
+    }
+
+    private static func cue(_ payload: String, start: Double, end: Double, base: URL) -> Cue? {
+        guard !payload.isEmpty, !payload.contains(" ") else { return nil }
+        let parts = payload.split(separator: "#", maxSplits: 1).map(String.init)
+        let path = parts[0]
+        let lower = path.lowercased().split(separator: "?").first.map(String.init) ?? ""
+        let isImage = [".jpg", ".jpeg", ".png", ".webp", ".gif"].contains { lower.hasSuffix($0) }
+        let fragment = parts.count > 1 ? parts[1] : ""
+        guard isImage || fragment.hasPrefix("xywh="),
+              let url = URL(string: path, relativeTo: base)?.absoluteURL
+        else { return nil }
+
+        var rect: CGRect?
+        if fragment.hasPrefix("xywh=") {
+            let numbers = fragment.dropFirst(5)
+                .replacingOccurrences(of: "pixel:", with: "")
+                .split(separator: ",")
+                .compactMap { Double($0) }
+            if numbers.count == 4 {
+                rect = CGRect(x: numbers[0], y: numbers[1], width: numbers[2], height: numbers[3])
+            }
+        }
+        return Cue(start: start, end: end, image: url, rect: rect)
+    }
+
+    func cue(at seconds: Double) -> Cue? {
+        cues.last { $0.start <= seconds } ?? cues.first
+    }
+
+    /// Reads the head of `url` and says whether it is thumbnails. Asked once
+    /// per track the page reports; a fetch that fails counts as a subtitle, so
+    /// nothing is lost by guessing wrong.
+    static func isThumbnails(_ url: URL, page: URL?) async -> Bool {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 8
+        request.setValue("bytes=0-4095", forHTTPHeaderField: "Range")
+        if let page { request.setValue(page.absoluteString, forHTTPHeaderField: "Referer") }
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              var text = String(data: data, encoding: .utf8)?.replacingOccurrences(of: "\r\n", with: "\n")
+        else { return false }
+        // A ranged read can stop mid-cue; drop the last, partial one.
+        if data.count >= 4096, let cut = text.range(of: "\n\n", options: .backwards) {
+            text = String(text[..<cut.lowerBound])
+        }
+        return ThumbnailTrack(text, base: url) != nil
     }
 }

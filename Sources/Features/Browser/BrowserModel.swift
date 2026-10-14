@@ -24,6 +24,9 @@ final class BrowserModel: ObservableObject {
     @Published var foundVideos: [ExtractedVideo] = []
     /// Sidecar subtitles sniffed from the page; attached to whatever the user plays.
     @Published var foundSubtitles: [SubtitleTrack] = []
+    /// The page's thumbnail VTT, if it offered one. Reported through the same
+    /// door as subtitles, because to a page both are a `<track>`.
+    private(set) var previewTrack: URL?
     /// Title/artwork the site published via MediaSession, when available.
     @Published var mediaSessionTitle = ""
 
@@ -160,6 +163,7 @@ final class BrowserModel: ObservableObject {
     func clearFindings() {
         foundVideos.removeAll()
         foundSubtitles.removeAll()
+        previewTrack = nil
         mediaSessionTitle = ""
         pagePoster = nil
         sessionArtwork = nil
@@ -269,12 +273,24 @@ final class BrowserModel: ObservableObject {
         let key = url.absoluteString
         guard !seenSubs.contains(key) else { return }
         seenSubs.insert(key)
-        foundSubtitles.append(SubtitleTrack(url: url, label: label, language: language))
+        // A `.vtt` can be a strip of scrubbing thumbnails rather than words —
+        // JW Player's thumbnails track. Listed as a subtitle it was a track
+        // with nothing to say; read once, it goes to the scrub preview instead.
+        let page = currentURL
+        Task { [weak self] in
+            let thumbnails = await ThumbnailTrack.isThumbnails(url, page: page)
+            guard let self, self.currentURL == page else { return }
+            if thumbnails {
+                self.previewTrack = url
+            } else {
+                self.foundSubtitles.append(SubtitleTrack(url: url, label: label, language: language))
+            }
+        }
     }
 
     /// Build the playable item for a detection, carrying page subtitles with it.
     func playable(_ video: ExtractedVideo) -> MediaItem {
-        MediaItem(
+        var item = MediaItem(
             title: video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title,
             url: video.url,
             thumbnailURL: posterURL,
@@ -287,6 +303,8 @@ final class BrowserModel: ObservableObject {
             // built by it came off a page.
             origin: .browser
         )
+        item.previewTrack = previewTrack
+        return item
     }
 
     /// Turn a raw address-bar string into a URL, defaulting to a web search.
