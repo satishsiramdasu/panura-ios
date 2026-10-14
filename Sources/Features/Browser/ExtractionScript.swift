@@ -629,6 +629,9 @@ enum ExtractionScript {
             if (pl && pl[0] && pl[0].tracks) pl[0].tracks.forEach(function (t) {
               var kind = (t.kind || 'captions').toLowerCase();
               if (!t.file) return;
+              // Player menu entries dressed as tracks — "Upload captions",
+              // "Off" — are controls, not subtitles.
+              if (/upload|^off$|^none$|disable/i.test(t.label || '')) return;
               if (kind === 'thumbnails') {
                 var abs = absolute(unesc(String(t.file)));
                 if (subsReported[abs]) return;
