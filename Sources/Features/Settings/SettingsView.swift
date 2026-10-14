@@ -51,7 +51,8 @@ struct SettingsHeader: View {
     var body: some View {
         HStack(spacing: 12) {
             if let onBack {
-                circle("chevron.left", label: "Back", action: onBack)
+                GlassCircleButton(systemImage: "chevron.left", label: "Back", action: onBack)
+                    .frame(width: 38, height: 38)
             } else {
                 Color.clear.frame(width: 38, height: 38)
             }
@@ -70,26 +71,6 @@ struct SettingsHeader: View {
         .background(PanuraTheme.background)
     }
 
-    /// Drawn as a navigation bar's own buttons are: the glyph in the accent
-    /// colour and nothing behind it. Settings is a sheet and has no bar to put
-    /// them in, but it was the only screen in the app inventing a different look
-    /// for Back and Close - Help and Report, which are sheets too, have worn the
-    /// plain accent glyph all along.
-    private func circle(
-        _ glyph: String,
-        label: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: glyph)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(PanuraTheme.accent)
-                .frame(width: 38, height: 38)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-    }
 }
 
 struct SettingsView: View {

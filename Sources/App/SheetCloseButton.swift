@@ -38,13 +38,24 @@ struct SheetCloseButton: View {
         }
     }
 
-    @ViewBuilder
     private var standalone: some View {
+        GlassCircleButton(systemImage: "xmark", label: "Close", action: action)
+    }
+}
+
+/// An accent glyph in a round glass button, for a screen's own header — the
+/// close cross and Settings' back chevron share it so the pair matches.
+struct GlassCircleButton: View {
+    let systemImage: String
+    let label: String
+    let action: () -> Void
+
+    var body: some View {
         if #available(iOS 26.0, *) {
             Button(action: action) { glyph }
                 .buttonStyle(.glass)
                 .buttonBorderShape(.circle)
-                .accessibilityLabel("Close")
+                .accessibilityLabel(label)
         } else {
             Button(action: action) {
                 glyph
@@ -53,12 +64,12 @@ struct SheetCloseButton: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+            .accessibilityLabel(label)
         }
     }
 
     private var glyph: some View {
-        Image(systemName: "xmark")
+        Image(systemName: systemImage)
             .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(PanuraTheme.accent)
     }
