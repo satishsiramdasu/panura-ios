@@ -332,11 +332,19 @@ struct ChromecastControlView: View {
 
                     castError
 
-                    muxToggle
+                    muxUnavailableNote
 
-                    audioPicker
+                    HStack(spacing: 10) {
+                        audioPicker
+                        subtitlePicker
+                    }
 
-                    subtitlePicker
+                    if flow.tracks.count > 1 {
+                        Text("Changing audio restarts the video on the TV from where it is now.")
+                            .font(.caption2)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            .multilineTextAlignment(.center)
+                    }
 
                     PhoneRelayNotice()
 
@@ -412,43 +420,20 @@ struct ChromecastControlView: View {
     /// switch that changes nothing would send somebody chasing the wrong
     /// fault.
     @ViewBuilder
-    private var muxToggle: some View {
-        if flow.canMux {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle(isOn: Binding(get: { flow.muxWanted }, set: { flow.setMuxing($0) })) {
-                    Text("Combine sound into the picture")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .tint(PanuraTheme.accent)
-                .disabled(flow.reloading)
-
-                Text(muxCaption)
-                    .font(.caption2)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(12)
-            .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
-        }
-    }
-
-    /// Four states, and the two in the middle are why this is not one string:
-    /// the switch says what is wanted, this says what is actually happening.
-    private var muxCaption: String {
-        if flow.reloading { return "Preparing the stream…" }
+    /// Combining video and audio on the phone is not a choice: a stream whose
+    /// audio arrives separately does not play on these televisions otherwise.
+    /// So there is no switch, only a word when it could not be done.
+    @ViewBuilder
+    private var muxUnavailableNote: some View {
         if flow.muxUnavailable {
-            return "This video cannot be combined on the phone — a live "
-                + "channel, encrypted segments, or a format this cannot open. "
-                + "It has been sent the ordinary way instead."
+            Text("This video's audio and video could not be combined on the phone (a live channel, encrypted, or a format this cannot open), so it was sent as it is.")
+                .font(.caption)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(PanuraTheme.surfaceVariant, in: RoundedRectangle(cornerRadius: 12))
         }
-        if flow.isMuxing {
-            return "The phone is joining the picture and sound for this "
-                + "video, so keep it on this network and awake while the film "
-                + "plays."
-        }
-        return "On for televisions that start a video and stop a few seconds "
-            + "in. Only used where a video needs it — this one did not, and "
-            + "is streaming straight from the source."
     }
 
     /// Which audio is on the television, and how to change it.
@@ -531,10 +516,6 @@ struct ChromecastControlView: View {
                     .contentShape(Capsule())
                 }
 
-                Text("Changing audio restarts the video on the TV from where it is now.")
-                    .font(.caption2)
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .multilineTextAlignment(.center)
             }
             .accessibilityLabel("Audio track")
         }
@@ -611,7 +592,7 @@ struct CastQueueView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) { EditButton() }
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button("Done") { dismiss() }
+                SheetCloseButton { dismiss() }
             }
         }
     }

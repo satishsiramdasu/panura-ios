@@ -890,7 +890,7 @@ private struct IPTVGroupSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    SheetCloseButton { dismiss() }
                 }
             }
         }
@@ -1074,7 +1074,7 @@ private struct IPTVSeriesSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    SheetCloseButton { dismiss() }
                 }
             }
         }

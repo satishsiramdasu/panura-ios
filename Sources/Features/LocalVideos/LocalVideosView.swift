@@ -687,7 +687,7 @@ struct LocalVideosView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { showAlbums = false }
+                    SheetCloseButton { showAlbums = false }
                 }
             }
         }
@@ -708,7 +708,7 @@ struct LocalVideosView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { infoItem = nil }
+                    SheetCloseButton { infoItem = nil }
                 }
             }
         }

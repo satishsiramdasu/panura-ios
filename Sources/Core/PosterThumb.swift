@@ -32,10 +32,7 @@ struct PosterThumb: View {
     @State private var fellBack = false
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: corner, style: .continuous)
-                .fill(PanuraTheme.surfaceVariant)
-
+        Group {
             if let image {
                 fitted(Image(uiImage: image))
             } else if let shown = fellBack ? alternate : url {
@@ -47,50 +44,44 @@ struct PosterThumb: View {
                         if !fellBack, alternate != nil {
                             // Drawn as the glyph for the instant it takes to
                             // ask again, so the row never flashes a broken mark.
-                            glyph.onAppear { fellBack = true }
+                            tile.onAppear { fellBack = true }
                         } else {
-                            glyph
+                            tile
                         }
                     default:
                         // Empty and failure look the same on purpose: a poster
                         // that never arrives should leave the row as it was, not
                         // announce itself.
-                        glyph
+                        tile
                     }
                 }
             } else {
-                glyph
+                tile
             }
         }
         .frame(width: width, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
     }
 
-    /// The whole picture, whatever shape it is, over a blur of itself.
+    /// The whole picture, in its own shape, inside the box.
     ///
     /// Posters are not one shape: a film site publishes a portrait sheet, a
     /// video site a 16:9 still, and plenty publish a square. Filling the box
-    /// with any of them crops the other two — a portrait poster loses its top
-    /// and bottom, which is where the title usually is. Fitting instead leaves
-    /// bars, and the blown-up blur behind is what cinemas and every television
-    /// app put in those bars: it is made of the picture, so it is always the
-    /// right colour, and it reads as depth rather than as empty space.
-    @ViewBuilder
+    /// crops two of the three. It used to fit the picture over a blown-up blur
+    /// of itself, and the blur read as the same poster cropped to the box — so
+    /// the picture now stands alone, rounded on its own edges, and the box is
+    /// only room for it.
     private func fitted(_ image: Image) -> some View {
-        ZStack {
-            image
-                .resizable()
-                .scaledToFill()
-                // A blur samples past its own edges, and clipping afterwards
-                // leaves a pale rim where it ran out of picture. Oversizing the
-                // layer puts that rim outside the box.
-                .scaleEffect(1.25)
-                .blur(radius: 14, opaque: true)
-                .opacity(0.55)
+        image
+            .resizable()
+            .scaledToFit()
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+    }
 
-            image
-                .resizable()
-                .scaledToFit()
+    private var tile: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(PanuraTheme.surfaceVariant)
+            glyph
         }
     }
 

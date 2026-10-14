@@ -65,7 +65,7 @@ struct LibrarySheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    SheetCloseButton { dismiss() }
                 }
             }
         }

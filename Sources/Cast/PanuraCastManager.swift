@@ -684,7 +684,7 @@ enum PhoneRelay {
         case .file:
             return "This video is on your phone, so it plays from here."
         case .muxing:
-            return "This TV can't play this video's separate sound track, so your phone is combining picture and sound as it plays."
+            return "This TV can't play this video's separate audio track, so your phone is combining the video and audio as it plays."
         case .forwarding:
             return "This site only lets your phone open the video, so it is passing through your phone."
         }

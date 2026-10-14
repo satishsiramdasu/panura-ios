@@ -353,15 +353,8 @@ struct CastControlBar: View {
             }
             .lineLimit(1)
             Spacer(minLength: 6)
-            Button(action: onDone) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                    .frame(width: 38, height: 38)
-                    .background(Circle().fill(PanuraTheme.surfaceVariant))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close")
+            SheetCloseButton(action: onDone)
+                .frame(width: 38, height: 38)
         }
         .padding(.horizontal, 18)
         .padding(.top, 10)
@@ -389,12 +382,11 @@ struct CastHero: View {
         VStack(spacing: 14) {
             Group {
                 if hasPoster {
-                    // Sixteen by nine, because that is the shape of what is on
-                    // the TV. The square tile is for the glyph, which is a mark
-                    // rather than a picture.
+                    // Room for either shape: a 16:9 still fills the width, a
+                    // portrait sheet the height, each drawn whole.
                     PosterThumb(
                         url: posterURL, image: posterImage, fallback: "tv.fill",
-                        width: 208, height: 117, corner: 18
+                        width: 240, height: 200, corner: 14
                     )
                 } else {
                     ZStack {

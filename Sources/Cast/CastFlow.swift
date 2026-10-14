@@ -396,7 +396,9 @@ final class CastFlow: ObservableObject {
 
         // nil means nobody has said, and the default is yes — see
         // `CastPreferences.muxingChoice`.
-        let wanted = CastPreferences.muxingChoice(on: deviceName ?? "") ?? true
+        // Always: the switch that could turn this off is gone, because a
+        // separate-audio stream does not play on these televisions otherwise.
+        let wanted = true
         if wanted,
            let session = await CastRemux.prepare(media, track: track),
            PanuraCastManager.shared.startServerForRemux(session),

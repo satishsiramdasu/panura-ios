@@ -609,7 +609,7 @@ struct HomeView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) { EditButton() }
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { showBookmarksSheet = false }
+                    SheetCloseButton { showBookmarksSheet = false }
                 }
             }
         }

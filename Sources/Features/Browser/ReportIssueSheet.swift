@@ -142,7 +142,7 @@ struct ReportIssueSheet: View {
             .toolbar {
                 // Right, where every other sheet in the app closes.
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                    SheetCloseButton { dismiss() }
                 }
             }
             .onAppear { if reason.isEmpty { reason = reasons[0] } }

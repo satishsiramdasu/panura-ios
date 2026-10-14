@@ -62,7 +62,8 @@ struct SettingsHeader: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
 
-            circle("xmark", label: "Close", action: onClose)
+            SheetCloseButton(action: onClose)
+                .frame(width: 38, height: 38)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

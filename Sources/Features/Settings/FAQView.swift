@@ -189,7 +189,7 @@ struct FAQView: View {
                     // The same cross as Report and Settings. "Done" claims
                     // something was finished, and reading an answer is not a
                     // task with a state to commit.
-                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                    SheetCloseButton { dismiss() }
                 }
             }
             .sheet(isPresented: $showReport) {
