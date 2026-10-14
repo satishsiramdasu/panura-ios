@@ -116,9 +116,11 @@ final class CastFlow: ObservableObject {
 
     enum ConversionAnswer { case convert, original, cancel }
     private var conversionAnswer: CheckedContinuation<ConversionAnswer, Never>?
-    /// The conversion running under a rewarded ad. Its own task, so Cancel
-    /// reaches it as well as the attempt that started it.
-    private var conversionJob: Task<URL, Error>?
+    /// Stops the conversion running under a rewarded ad. Its own task, so
+    /// Cancel reaches it as well as the attempt that started it.
+    private var conversionCancel: (() -> Void)?
+
+    private enum Offered<T> { case done(T), original, cancelled, failed }
 
     private init() {
         // Both receivers say the same thing in different words when a video
@@ -548,8 +550,8 @@ final class CastFlow: ObservableObject {
     func cancel() {
         pickAudio(nil)
         answerConversion(.cancel)
-        conversionJob?.cancel()
-        conversionJob = nil
+        conversionCancel?()
+        conversionCancel = nil
         work?.cancel()
         work = nil
         pending = nil
@@ -597,8 +599,10 @@ final class CastFlow: ObservableObject {
         var subtitles: [(track: SubtitleTrack, url: URL)] = []
         var audioFix: CastLocalMedia.AudioOption?
         var audioReason: String?
+        var audioTracks = 0
         if !toPanura {
             let options = await CastLocalMedia.audioOptions(of: file)
+            audioTracks = options.count
             var chosen = options.first
             if options.count > 1 {
                 guard let picked = await chooseAudio(title: title, options: options) else {
@@ -624,77 +628,83 @@ final class CastFlow: ObservableObject {
         // for being QuickTime is fixed along the way.
         if audioFix != nil, videoReason == .containerForChromecast { videoReason = nil }
 
+        // **Streamed as it is converted**, where the picture can be copied: an
+        // H.264 file whose sound or wrapper is what the Chromecast cannot take.
+        // It starts at once and seeks freely, where converting the whole file
+        // first meant minutes of waiting on a long film. See `LocalStream`.
+        if !toPanura,
+           audioFix != nil || videoReason == .containerForChromecast,
+           videoReason == nil || videoReason == .containerForChromecast,
+           await LocalStream.canStream(file) {
+            let explanation = [audioReason, videoReason?.explanation].compactMap { $0 }.joined(separator: " ")
+                + " It starts playing on the TV straight away."
+            let track = audioFix?.id ?? (audioTracks > 0 ? 0 : nil)
+            let outcome = await offer(
+                title: title, explanation: explanation, overridable: false,
+                work: { try await LocalStream.open(file, audioTrack: track) },
+                discard: { $0.close() }
+            )
+            switch outcome {
+            case .cancelled, .original:
+                return
+            case .failed:
+                stage = .failed("Could not prepare this video for the TV.")
+                return
+            case let .done(stream):
+                guard !Task.isCancelled else { stream.close(); return }
+                guard let playlist = PanuraCastManager.shared.startServerForLocalStream(stream) else {
+                    stream.close()
+                    stage = .failed("No Wi-Fi address — the TV has no way to reach this phone.")
+                    return
+                }
+                stage = .sending(title: title, device: device)
+                CastManager.shared.castLocalStream(
+                    playlist, title: title, duration: stream.duration,
+                    advertise: !auto, subtitles: subtitles
+                )
+                stage = .playing
+                return
+            }
+        }
+
         let audioID = audioFix.map { id + "-a\($0.id)" }
         let videoID = audioID.map { $0 + "-v" } ?? id
         let finalID = videoReason != nil ? videoID : audioID
 
         if let finalID {
             let explanation = [audioReason, videoReason?.explanation].compactMap { $0 }.joined(separator: " ")
-            let job: () -> Task<URL, Error> = { [audioFix, videoReason] in
-                Task { [weak self] in
-                    guard let self else { throw CastTranscoder.Failure.cancelled }
-                    return try await self.prepare(
-                        file: file, id: id, audioFix: audioFix,
-                        videoReason: videoReason, videoID: videoID
-                    )
-                }
+            let work: () async throws -> URL = { [weak self, audioFix, videoReason] in
+                guard let self else { throw CastTranscoder.Failure.cancelled }
+                return try await self.prepare(
+                    file: file, id: id, audioFix: audioFix,
+                    videoReason: videoReason, videoID: videoID
+                )
             }
-
             // Converted before: nothing to do, so nothing to ask.
             if CastTranscoder.isCached(finalID) {
-                guard let ready = try? await job().value else {
+                guard let ready = try? await work() else {
                     stage = .failed("Could not convert that video for the TV.")
                     return
                 }
                 url = ready
             } else {
-                // Offered, then converted under a rewarded ad. The work starts
-                // with the ad rather than after it, so the wait and the ad are
-                // the same minute; closing the ad early abandons both and puts
-                // the offer back.
-                while true {
-                    stage = .offerConversion(
-                        title: title, explanation: explanation,
-                        overridable: videoReason?.isDisplayJudgement ?? false
-                    )
-                    let answer = await withCheckedContinuation { conversionAnswer = $0 }
-                    switch answer {
-                    case .cancel:
-                        stage = .idle
-                        return
-                    case .original:
-                        if let tv = deviceName { CastPreferences.allowOriginal(on: tv) }
-                        await run(file: file, title: title, id: id, forceOriginal: true, auto: auto)
-                        return
-                    case .convert:
-                        break
-                    }
-
-                    stage = .converting(title: title, explanation: explanation, progress: 0, overridable: false)
-                    let running = job()
-                    conversionJob = running
-                    let earned = await withCheckedContinuation { done in
-                        AdManager.shared.showRewarded(for: .conversion) { done.resume(returning: $0) }
-                    }
-                    guard earned else {
-                        running.cancel()
-                        _ = try? await running.value
-                        conversionJob = nil
-                        continue
-                    }
-                    do {
-                        url = try await running.value
-                        conversionJob = nil
-                    } catch CastTranscoder.Failure.cancelled {
-                        conversionJob = nil
-                        stage = .idle
-                        return
-                    } catch {
-                        conversionJob = nil
-                        stage = .failed("Could not convert that video for the TV.")
-                        return
-                    }
-                    break
+                let outcome = await offer(
+                    title: title, explanation: explanation,
+                    overridable: videoReason?.isDisplayJudgement ?? false,
+                    work: work, discard: { _ in }
+                )
+                switch outcome {
+                case .cancelled:
+                    return
+                case .original:
+                    if let tv = deviceName { CastPreferences.allowOriginal(on: tv) }
+                    await run(file: file, title: title, id: id, forceOriginal: true, auto: auto)
+                    return
+                case .failed:
+                    stage = .failed("Could not convert that video for the TV.")
+                    return
+                case let .done(ready):
+                    url = ready
                 }
             }
         }
@@ -707,6 +717,53 @@ final class CastFlow: ObservableObject {
             CastManager.shared.castLocalFile(url, title: title, advertise: !auto, subtitles: subtitles)
         }
         stage = .playing
+    }
+
+    /// Offers a conversion and runs `work` under a rewarded ad.
+    ///
+    /// The work starts with the ad rather than after it, so the wait and the
+    /// ad are the same minute. Closing the ad early abandons the work and puts
+    /// the offer back; `discard` lets go of anything it had already made.
+    private func offer<T>(
+        title: String, explanation: String, overridable: Bool,
+        work: @escaping () async throws -> T,
+        discard: @escaping (T) -> Void
+    ) async -> Offered<T> {
+        while true {
+            stage = .offerConversion(title: title, explanation: explanation, overridable: overridable)
+            let answer = await withCheckedContinuation { conversionAnswer = $0 }
+            switch answer {
+            case .cancel:
+                stage = .idle
+                return .cancelled
+            case .original:
+                return .original
+            case .convert:
+                break
+            }
+
+            stage = .converting(title: title, explanation: explanation, progress: 0, overridable: false)
+            let running = Task { try await work() }
+            conversionCancel = { running.cancel() }
+            let earned = await withCheckedContinuation { done in
+                AdManager.shared.showRewarded(for: .conversion) { done.resume(returning: $0) }
+            }
+            guard earned else {
+                running.cancel()
+                if let made = try? await running.value { discard(made) }
+                conversionCancel = nil
+                continue
+            }
+            defer { conversionCancel = nil }
+            do {
+                return .done(try await running.value)
+            } catch CastTranscoder.Failure.cancelled {
+                stage = .idle
+                return .cancelled
+            } catch {
+                return .failed
+            }
+        }
     }
 
     /// Every conversion a file needs, in order: the sound first, because the

@@ -301,6 +301,37 @@ extension CastManager {
         return [NSNumber(value: 1)]
     }
 
+    /// Sends a file this phone is serving as HLS, segment by segment. See
+    /// `LocalStream`.
+    func castLocalStream(
+        _ playlist: URL,
+        title: String,
+        duration: Double,
+        advertise: Bool = true,
+        subtitles: [(track: SubtitleTrack, url: URL)] = []
+    ) {
+        guard let session = GCKCastContext.sharedInstance()
+            .sessionManager.currentCastSession else { return }
+        let metadata = GCKMediaMetadata(metadataType: .movie)
+        metadata.setString(title, forKey: kGCKMetadataKeyTitle)
+        let builder = GCKMediaInformationBuilder(contentURL: playlist)
+        builder.streamType = .buffered
+        builder.contentType = "application/x-mpegURL"
+        builder.metadata = metadata
+        if duration.isFinite, duration > 0 { builder.streamDuration = duration }
+        let active = attachSubtitles(subtitles, to: builder)
+
+        let request = GCKMediaLoadRequestDataBuilder()
+        request.mediaInformation = builder.build()
+        request.activeTrackIDs = active
+        lastCastError = nil
+        let load = session.remoteMediaClient?.loadMedia(with: request.build())
+        load?.delegate = self
+        castingTitle = title
+        session.remoteMediaClient?.add(self)
+        if advertise { armCastAd() }
+    }
+
     func castLocalFile(
         _ file: URL,
         title: String,

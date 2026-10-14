@@ -192,6 +192,7 @@ final class PanuraCastManager: ObservableObject {
         server.headers = [:]
         server.masterOverride = nil
         server.remux = nil
+        server.localStream = nil
         chromecastRelay = .file
         return true
     }
@@ -211,6 +212,7 @@ final class PanuraCastManager: ObservableObject {
         server.headers = [:]
         server.masterOverride = master
         server.remux = nil
+        server.localStream = nil
         // A kilobyte, once: the television fetches the film itself.
         chromecastRelay = nil
         return true
@@ -229,6 +231,7 @@ final class PanuraCastManager: ObservableObject {
         server.streamURL = session.original.url
         server.headers = session.headers
         server.remux = session
+        server.localStream = nil
         server.masterOverride = session.master(root: "http://\(ip):\(PanuraCastServer.httpPort)")
         chromecastRelay = .muxing
         return true
@@ -251,8 +254,23 @@ final class PanuraCastManager: ObservableObject {
         server.headers = item.headers.isEmpty ? item.castHeaders : item.headers
         server.masterOverride = nil
         server.remux = nil
+        server.localStream = nil
         chromecastRelay = .forwarding
         return true
+    }
+
+    /// Starts the HTTP server for a file cut into segments as the TV asks, and
+    /// returns its playlist's address. See `LocalStream`.
+    func startServerForLocalStream(_ stream: LocalStream) -> URL? {
+        start()
+        guard isServerRunning, let ip = PanuraCastServer.localIPv4() else { return nil }
+        server.streamURL = nil
+        server.headers = [:]
+        server.masterOverride = nil
+        server.remux = nil
+        server.localStream = stream
+        chromecastRelay = .file
+        return URL(string: "http://\(ip):\(PanuraCastServer.httpPort)/local/index.m3u8")
     }
 
     /// Drops a muxing session, and with it the segments it is holding.
@@ -338,6 +356,7 @@ final class PanuraCastManager: ObservableObject {
         chromecastRelay = nil
         guard isServerRunning else { return }
         server.remux = nil
+        server.localStream = nil
     }
 
     func castLocal(file: URL, title: String) {
@@ -349,6 +368,7 @@ final class PanuraCastManager: ObservableObject {
         server.headers = [:]
         server.masterOverride = nil
         server.remux = nil
+        server.localStream = nil
         guard let proxy = PanuraCastServer.proxyURL(for: file) else {
             lastError = "No Wi-Fi address — the TV has no way to reach this device."
             return
@@ -392,6 +412,7 @@ final class PanuraCastManager: ObservableObject {
         // its own track picker, so it gets the real playlist.
         server.masterOverride = nil
         server.remux = nil
+        server.localStream = nil
         guard let proxy = PanuraCastServer.proxyURL(for: item.url) else {
             lastError = "No Wi-Fi address — the TV has no way to reach this device."
             return

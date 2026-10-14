@@ -512,3 +512,30 @@ An app-open ad expires four hours after it loads; a stale one is dropped and
 reloaded rather than shown. State: `ads.last.appOpen`.
 
 Android: the old app-open code fires on launch. Port these rules instead.
+
+---
+
+## 14. Conversion for the TV — rewarded, added 2026-10-14
+
+A file on the phone that a Chromecast cannot play as it is (several audio
+languages, surround or Dolby sound, a QuickTime wrapper, HEVC, HDR, Dolby
+Vision) is no longer converted on arrival. The cast screen offers
+**Convert and play on TV**, with "A short ad plays while it converts" when one
+is due.
+
+- Pressing it starts the conversion **and** the rewarded ad together, so the
+  wait and the ad are the same minute.
+- Watched to the end: the video goes to the TV. An H.264 file is streamed as it
+  converts and starts at once; anything whose picture must be re-encoded waits
+  for the whole-file conversion, already under way during the ad.
+- Closed early: the conversion is cancelled and the offer comes back.
+- No ad available (fill, network, first session): the conversion goes ahead,
+  as every rewarded placement grants on failure.
+- **No gap.** Each conversion is real work done on request. A copy converted
+  before plays without asking again; a streamed file is converted afresh each
+  time, so it asks each time.
+- Panura on Android TV is never asked: it plays the file as it is, except for a
+  Dolby Vision or HDR picture, which it is offered the same way.
+
+Clock: `ads.last.conversion`, recorded only when the ad is earned. Same unit
+as the server refresh ("Server Ads").

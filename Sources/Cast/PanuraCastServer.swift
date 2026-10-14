@@ -69,6 +69,11 @@ final class PanuraCastServer: NSObject {
     /// Served from memory: a receiver only reads text tracks it can fetch
     /// across origins, in WebVTT, and most subtitle hosts offer neither.
     var subtitleFiles: [Data] = []
+    /// A file on this phone being cut into segments as the TV asks. See
+    /// `LocalStream`. Replacing it stops the one before.
+    var localStream: LocalStream? {
+        didSet { if oldValue !== localStream { oldValue?.close() } }
+    }
 
     var onMessage: ((CastMessage) -> Void)?
     var onClientCountChanged: ((Int) -> Void)?
@@ -313,6 +318,27 @@ final class PanuraCastServer: NSObject {
             let data = self.subtitleFiles[index]
             var headers = Self.cors
             headers["Content-Type"] = "text/vtt; charset=utf-8"
+            headers["Content-Length"] = "\(data.count)"
+            return .raw(200, "OK", headers) { try $0.write(data) }
+        }
+
+        http["/local/:name"] = { [weak self] request in
+            if request.method.uppercased() == "OPTIONS" { return Self.preflight }
+            guard let self, let stream = self.localStream, let name = request.params[":name"],
+                  let ip = Self.localIPv4()
+            else { return .notFound }
+            if name == "index.m3u8" {
+                return Self.playlist(Data(stream.playlist(root: "http://\(ip):\(Self.httpPort)/local").utf8))
+            }
+            guard let number = Int(name.replacingOccurrences(of: ".ts", with: "")),
+                  let data = stream.segment(number)
+            else {
+                self.onProxyRequest?("local \(name) FAILED", 500, 0)
+                return .notFound
+            }
+            self.onProxyRequest?("local \(name)", 200, data.count)
+            var headers = Self.cors
+            headers["Content-Type"] = "video/mp2t"
             headers["Content-Length"] = "\(data.count)"
             return .raw(200, "OK", headers) { try $0.write(data) }
         }
