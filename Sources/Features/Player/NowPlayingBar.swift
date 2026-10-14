@@ -88,7 +88,7 @@ struct NowPlayingBar: View {
         }
         .padding(.leading, 10)
         .padding(.trailing, 2)
-        .padding(.vertical, 6)
+        .padding(.vertical, 9)
         .padding(.bottom, bottomInset)
         // Flat, edge to edge, in the app's own dark. It was briefly a floating
         // card with corners and a shadow, which made a permanent strip look
