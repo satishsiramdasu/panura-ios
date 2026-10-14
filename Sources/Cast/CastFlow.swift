@@ -314,6 +314,18 @@ final class CastFlow: ObservableObject {
         Task { await resend(media, track: id) }
     }
 
+    /// Re-sends the current film from where the television had got to, after
+    /// the receiver lost it. Returns false when there is nothing to re-send.
+    ///
+    /// Prepared from scratch, not reloaded: the phone's server is rebuilt when
+    /// the app returns from suspension, and a muxing session made before that
+    /// is serving nobody.
+    func resumeAfterStall() -> Bool {
+        guard let media = sent, CastManager.shared.isConnected else { return false }
+        Task { await resend(media, track: chosenTrack) }
+        return true
+    }
+
     /// Prepares `media` again and replaces what the television is playing,
     /// from where it had got to.
     private func resend(_ media: MediaItem, track: Int?) async {

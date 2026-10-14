@@ -453,7 +453,18 @@ extension CastManager: GCKRemoteMediaClientListener {
     func toggleRemotePlay() {
         guard let client = GCKCastContext.sharedInstance()
             .sessionManager.currentCastSession?.remoteMediaClient else { return }
-        if isRemotePlaying { client.pause() } else { client.play() }
+        if isRemotePlaying { client.pause(); return }
+        // Nothing loaded on the television any more, so `play()` has nothing
+        // to play. This is what a cast served from this phone looks like after
+        // the phone was locked: iOS suspended the server, the receiver ran dry
+        // and fell back to its splash, and the controls here still read
+        // "paused". Send it again from where it got to instead.
+        let state = client.mediaStatus?.playerState
+        if state == nil || state == .idle || state == .unknown,
+           CastFlow.shared.resumeAfterStall() {
+            return
+        }
+        client.play()
     }
 
     func stopRemote() {
