@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// The one close control for every sheet and page that closes: a plain cross
-/// in the accent colour, as Help, Report and Settings have always worn it.
+/// The one close control for every sheet and page that closes: the app's
+/// accent cross, sitting in a bubble.
 ///
-/// Tried as the system's own close button — iOS 26's glass circle, UIKit's
-/// grey one before it — and it read as foreign next to the app's other bar
-/// glyphs, so it is back to this.
+/// The system's own close button was tried and read as foreign next to the
+/// app's other bar glyphs, so the cross stays ours. The bubble is iOS 26's
+/// glass, which also answers the touch; before iOS 26, a material circle in
+/// the same place.
 struct SheetCloseButton: View {
     let action: () -> Void
 
@@ -16,12 +17,23 @@ struct SheetCloseButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark")
-                .font(.system(size: 17, weight: .medium))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(PanuraTheme.accent)
-                .frame(width: 38, height: 38)
-                .contentShape(Rectangle())
+                .frame(width: 36, height: 36)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .modifier(Bubble())
         .accessibilityLabel("Close")
+    }
+}
+
+private struct Bubble: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: .circle)
+        } else {
+            content.background(.ultraThinMaterial, in: Circle())
+        }
     }
 }
