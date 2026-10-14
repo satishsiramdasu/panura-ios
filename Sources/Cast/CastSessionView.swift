@@ -401,25 +401,6 @@ struct ChromecastControlView: View {
         }
     }
 
-    /// The switch for a television whose Chromecast cannot play audio and
-    /// video as two separate streams.
-    ///
-    /// **On by default, and here to be turned off.** A master that declares
-    /// its audio separately is unplayable on this hardware, so the switch
-    /// starts on and the first attempt works; what it exists for is the
-    /// television that turns out to manage the original perfectly well, which
-    /// should not be made to pay for the bytes. That answer cannot be
-    /// detected either — a set that lacks the second pipeline shows one frame
-    /// and stops, which is also what a slow network, a refused manifest and an
-    /// undecodable codec look like from the sofa — so the person in front of
-    /// it is the only judge, and their answer is kept against that set's name.
-    /// See `CastPreferences.muxingChoice`.
-    ///
-    /// Shown only where it could matter: an HLS stream whose audio is declared
-    /// separately. Anywhere else the audio is already inside the video, and a
-    /// switch that changes nothing would send somebody chasing the wrong
-    /// fault.
-    @ViewBuilder
     /// Combining video and audio on the phone is not a choice: a stream whose
     /// audio arrives separately does not play on these televisions otherwise.
     /// So there is no switch, only a word when it could not be done.
