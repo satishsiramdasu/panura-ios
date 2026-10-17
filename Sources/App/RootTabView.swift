@@ -39,7 +39,7 @@ struct RootTabView: View {
         // by tapping its way there — see ScreenshotMode.screen.
         if ScreenshotMode.isActive {
             switch ScreenshotMode.screen {
-            case "web": return .web
+            case "web", "found": return .web
             case "videos", "player": return .videos
             default: return .home
             }

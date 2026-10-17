@@ -7,7 +7,14 @@ import Foundation
 /// the clearest App Review 5.2.3 exposure in this app, so it is not a flag flip
 /// away from returning.
 enum FeatureFlags {
-    static let adsEnabled = true
+    static var adsEnabled: Bool {
+        #if DEBUG
+        // Never in an App Store screenshot: a banner in the listing advertises
+        // somebody else's product on ours.
+        if ScreenshotMode.isActive { return false }
+        #endif
+        return true
+    }
 
     /// Serve Google's **test** units instead of ours, in a build that is not
     /// a debug build.

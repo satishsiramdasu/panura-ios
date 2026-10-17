@@ -201,7 +201,9 @@ struct BrowserView: View {
     /// and a sheet raised from a hidden one lands on whatever is in front.
     private func offerFoundSheet() {
         #if DEBUG
-        if ScreenshotMode.isActive { return }
+        // Only the shot that is of this sheet; on the browser shot it would
+        // cover the page the bar is meant to be seen on.
+        if ScreenshotMode.isActive, ScreenshotMode.screen != "found" { return }
         #endif
         guard model.foundVideos.count > 1, !offeredFoundSheet, isActive,
               !showFoundSheet, !showAddress, !showReport, !showMenu,
