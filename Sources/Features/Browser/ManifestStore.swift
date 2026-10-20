@@ -1,27 +1,32 @@
-import CryptoKit
 import Foundation
 
 /// Reads the remote detection manifest so rules can be fixed without shipping an
 /// app update — which matters far more on iOS, where a release takes days.
 ///
-/// The deployed manifest names no domains: each site's `id` IS a list of
-/// HMAC-SHA256 hashes of its hostnames — the rule has no readable name at all.
-/// We hash the *frame's own* hostname here, natively, and match. The salt
-/// (`ManifestSalt`) never enters a web view, so a page can neither read our
-/// target list nor brute-force it — and a plain fetch of the manifest is just
-/// opaque hashes.
+/// The deployed manifest names no domains and no longer identifies sites at
+/// all. A rule is a URL *shape* plus the handling that shape needs, and it is
+/// selected in the page by matching a candidate against its pattern — the way
+/// a filter list works. Nothing is looked up by host, so there is nothing to
+/// hash and no salt to keep in step across three places.
 ///
-/// Schema v3 renamed `h` -> `id` and `stream` -> `pattern`. There is no v2
-/// fallback: an unrecognised manifest simply matches nothing, which drops
-/// detection to the generic sniffer rather than breaking playback.
+/// What that replaced: `id` used to be a list of HMAC-SHA256 hashes of the
+/// rule's hostnames, matched against the frame's own hashed host. It worked,
+/// but the salt had to agree between this app, the Android build and the CDN
+/// build tool, so re-hashing meant a coordinated release on both platforms
+/// rather than a CDN commit. A pattern specific enough to identify a site
+/// without naming it — `/hls/<28 base64>(QT09|Zz09|dz09|UT09)/` — does the
+/// same job with none of that.
+///
+/// `id` is still tolerated and ignored, so this reads a v3 file (which carries
+/// it) and a host-free one identically. That is deliberate: it means the apps
+/// can ship before the CDN changes, with no flag day between them.
 enum ManifestStore {
     private static let url = URL(string: "https://panura.app/manifest.json")!
     private static let ttl: TimeInterval = 6 * 60 * 60   // Android refreshes every 6h
     private static let cacheFile = "manifest.json"
     private static let lastFetchKey = "manifest_last_fetch"
 
-    /// Hashed site entries verbatim (each has `id`: [hex hmac], plus optional
-    /// type/pattern/referer/headers). Order preserved — first host match wins.
+    /// Rule entries verbatim. Order preserved — first *pattern* match wins.
     ///
     /// They live under `presets` in the served file: the deployed manifest is
     /// meant to read as ordinary player config, not as a list of targets.
@@ -42,43 +47,18 @@ enum ManifestStore {
         return root["ads"] as? [String: Any]
     }
 
-    /// The rule for `host`, or nil — the first entry whose hashed host list
-    /// contains the HMAC of the host or any of its parent domains. Returned
-    /// verbatim (still carrying `id`); the caller strips it before use.
-    static func rule(forHost host: String) async -> [String: Any]? {
-        let sites = await sites()
-        guard !sites.isEmpty else { return nil }
-        let candidateHashes = Set(hostCandidates(host).map(hash))
-        for site in sites {
-            if let hashes = site["id"] as? [String],
-               hashes.contains(where: candidateHashes.contains) {
-                return site
-            }
+    /// Every rule, with `id` dropped, in manifest order.
+    ///
+    /// All of them, because which one applies is not knowable until a URL turns
+    /// up: the pattern is the selector. `id` is removed rather than read — a v3
+    /// file still carries the old hashed host list and it is now dead weight,
+    /// and it has no business being handed to a page either way.
+    static func rules() async -> [[String: Any]] {
+        await sites().map { site in
+            var rule = site
+            rule.removeValue(forKey: "id")
+            return rule
         }
-        return nil
-    }
-
-    /// HMAC-SHA256(salt, host) as lowercase hex — byte-identical to the Node
-    /// build tool (which is why the host must be canonicalised the same way).
-    static func hash(_ canonicalHost: String) -> String {
-        let key = SymmetricKey(data: Data(ManifestSalt.value.utf8))
-        let mac = HMAC<SHA256>.authenticationCode(for: Data(canonicalHost.utf8), using: key)
-        return mac.map { String(format: "%02x", $0) }.joined()
-    }
-
-    /// `example.com` and every parent down to two labels, canonicalised to match
-    /// the build tool: lowercased, trailing dot removed. Hashing the registrable
-    /// domain lets one manifest entry cover every rotating subdomain.
-    static func hostCandidates(_ host: String) -> [String] {
-        var base = host.lowercased()
-        if base.hasSuffix(".") { base.removeLast() }
-        var parts = base.split(separator: ".").map(String.init)
-        var out: [String] = []
-        while parts.count >= 2 {
-            out.append(parts.joined(separator: "."))
-            parts.removeFirst()
-        }
-        return out
     }
 
     /// Force the next read to refetch, but keep the cached file as offline

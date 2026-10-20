@@ -51,8 +51,8 @@ enum ExtractionScript {
       }
       window.__panuraUnescape = unesc;
 
-      // Announce this frame so the app can resolve its rule (by hashing the
-      // frame's own host natively) and push it in as window.__panuraRule.
+      // Announce this frame so the app can push the rules in as
+      // window.__panuraRules.
       post({ kind: 'ready' });
       function absolute(u) {
         try { return new URL(String(u), location.href).href; } catch (e) { return String(u); }
@@ -100,25 +100,60 @@ enum ExtractionScript {
             lower.indexOf('.mp4') !== -1) return true;
         // A site rule's stream pattern is authoritative — it may well point at a
         // URL none of the generic rules above would accept.
-        if (matchesStream(matchedSite(), url)) return true;
+        if (ruleFor(url)) return true;
         return false;
       }
 
-      // ── Manifest site rules ────────────────────────────────────────────────
-      // The rule for THIS frame is resolved natively (the app hashes the frame's
-      // own host and looks it up) and pushed in as window.__panuraRule. The web
-      // view never sees the host list or the salt — only this one frame's rule,
-      // about a domain the page already knows: its own. May arrive after the
-      // first URL is classified, so it is read on each call, never memoised.
-      function matchedSite() { return window.__panuraRule || null; }
+      // ── Manifest rules ─────────────────────────────────────────────────────
+      // Every rule, pushed in as window.__panuraRules. A rule names no host: it
+      // is a URL shape plus the handling that shape needs, so the page learns
+      // nothing about anywhere else by reading them, and which rule applies is
+      // decided per URL rather than per frame. Arrives after the sniffer starts,
+      // so it is read on each call and never memoised.
+      function rulesList() {
+        var r = window.__panuraRules;
+        return (r && r.length) ? r : [];
+      }
 
-      // pattern is a list of DOMAINLESS regexes — any match counts.
-      function matchesStream(site, url) {
-        if (!site || !site.pattern || !site.pattern.length) return false;
-        for (var i = 0; i < site.pattern.length; i++) {
-          try { if (new RegExp(site.pattern[i]).test(url)) return true; } catch (e) {}
+      // The rule claiming THIS frame, or null — matched once, against the
+      // frame's own URL, before any candidate exists.
+      //
+      // This is what makes strict mode possible without naming a host. A rule
+      // with a `frame` shape is known to apply at load, so non-matching
+      // candidates can be held from the first one rather than emitted and
+      // retracted afterwards. Rules without one still work; they just gate
+      // later, on the first `pattern` match.
+      var frameRuleCache;
+      function frameRule() {
+        if (frameRuleCache !== undefined) return frameRuleCache;
+        var all = rulesList();
+        if (!all.length) return undefined;          // rules not in yet; ask again
+        frameRuleCache = null;
+        for (var i = 0; i < all.length; i++) {
+          var fr = all[i].frame;
+          if (!fr || !fr.length) continue;
+          for (var j = 0; j < fr.length; j++) {
+            try {
+              if (new RegExp(fr[j]).test(location.href)) { frameRuleCache = all[i]; break; }
+            } catch (e) {}
+          }
+          if (frameRuleCache) break;
         }
-        return false;
+        return frameRuleCache;
+      }
+
+      // The first rule claiming this URL, or null. pattern is a list of
+      // DOMAINLESS regexes — any one matching claims it.
+      function ruleFor(url) {
+        var all = rulesList();
+        for (var i = 0; i < all.length; i++) {
+          var pats = all[i].pattern;
+          if (!pats || !pats.length) continue;
+          for (var j = 0; j < pats.length; j++) {
+            try { if (new RegExp(pats[j]).test(url)) return all[i]; } catch (e) {}
+          }
+        }
+        return null;
       }
 
       // Referer exactly as the rule requires — the form matters: some CDNs are
@@ -130,13 +165,32 @@ enum ExtractionScript {
         return location.href;
       }
 
-      // Strict mode: when the matched rule declares a stream pattern we report
-      // ONLY those, so the list is the real stream instead of every candidate.
-      // Non-matches are held here and flushed if no strict hit arrives in time —
-      // a stale pattern must never leave a site dead.
+      // Two gates, and which one runs depends on whether the frame itself is
+      // claimed (see frameRule).
+      //
+      // STRICT — the frame matched a `frame` shape, so the rule is known before
+      // any candidate arrives. Non-matches are HELD and released after 8s if no
+      // match ever comes, so a stale `pattern` can slow a site but never leave
+      // it dead. Nothing is ever emitted that has to be taken back.
+      //
+      // CLAIM — no frame shape, so the rule can only be discovered by a URL
+      // matching it. Candidates go out optimistically; the first `pattern` match
+      // withdraws what went before and silences what comes after.
+      //
+      // Proven URLs are never retracted and never held: an #EXTM3U body is a
+      // fact about that URL, and no rule match makes it untrue.
       var pending = [];
-      var strictSatisfied = false;
+      var loose = [];
+      var ruleClaimed = false;
       var FALLBACK_MS = 8000;
+
+      function retractLoose() {
+        for (var i = 0; i < loose.length; i++) {
+          post({ kind: 'retract', url: loose[i] });
+          dbg(loose[i], 'retracted: a rule claimed this frame', 'rule');
+        }
+        loose = [];
+      }
 
       // Which hook found a URL, in the three buckets the badge draws: 'text'
       // (markup or an inline script body), 'network' (seen on the wire — the
@@ -212,22 +266,34 @@ enum ExtractionScript {
           reported[abs] = true;
           if (proven) confirmed[abs] = true;
 
-          var site = matchedSite();
-          var strict = !!(site && site.pattern && site.pattern.length);
+          var site = ruleFor(abs);
+          var frame = frameRule();
 
-          if (!strict) { dbg(abs, 'emitted (no rule)', src); emit(abs, title, site, proven, kindOf(src)); return; }
-
-          if (proven || matchesStream(site, abs)) {
-            strictSatisfied = true;
-            pending = [];               // the real stream won; drop the noise
-            dbg(abs, proven ? 'emitted (proven manifest)' : 'emitted (rule match)', src);
+          if (site) {
+            if (!ruleClaimed) { ruleClaimed = true; pending = []; retractLoose(); }
+            dbg(abs, 'emitted (rule match)', src);
             // What got this through the gate is what the badge should say,
             // whichever hook happened to spot the URL first.
             emit(abs, title, site, proven, 'rule');
-          } else {
+            return;
+          }
+
+          // Nothing claims this URL. If a rule has already claimed something in
+          // this frame, that something is the stream and this is noise.
+          if (ruleClaimed) { dbg(abs, 'dropped: a rule already claimed this frame', src); return; }
+
+          // STRICT: this frame is a rule's, so its stream is coming and this is
+          // not it. Hold rather than emit — the 8s release below is the only
+          // thing that lets it out, and only if the stream never arrives.
+          if (frame && !proven) {
             dbg(abs, 'held: no rule match', src);
             pending.push([abs, title, src]);
+            return;
           }
+
+          dbg(abs, proven ? 'emitted (proven manifest)' : 'emitted (no rule)', src);
+          if (!proven && !frame) loose.push(abs);
+          emit(abs, title, null, proven, kindOf(src));
         } catch (e) {}
       }
 
@@ -268,12 +334,14 @@ enum ExtractionScript {
         } catch (e) {}
       }
 
+      // A rule's frame whose stream never arrived: the `pattern` is stale, or
+      // the site changed. Let the held candidates out rather than leaving the
+      // page with nothing — rules refine detection, they never gate it off.
       setTimeout(function () {
         try {
-          if (strictSatisfied || !pending.length) return;
-          var site = matchedSite();
+          if (ruleClaimed || !pending.length) return;
           for (var i = 0; i < pending.length; i++) {
-            emit(pending[i][0], pending[i][1], site, false, kindOf(pending[i][2]));
+            emit(pending[i][0], pending[i][1], null, false, kindOf(pending[i][2]));
           }
           pending = [];
         } catch (e) {}

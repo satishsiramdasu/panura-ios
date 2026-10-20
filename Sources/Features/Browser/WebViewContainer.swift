@@ -692,12 +692,11 @@ struct WebViewContainer: UIViewRepresentable {
 
         /// `window.__panuraRule = {…}` for the frame — the manifest entry minus
         /// its `id` hashes (the page has no use for them and shouldn't see them).
-        static func ruleInjectionJS(_ rule: [String: Any]) -> String? {
-            var r = rule
-            r.removeValue(forKey: "id")
-            guard let data = try? JSONSerialization.data(withJSONObject: r),
+        static func ruleInjectionJS(_ rules: [[String: Any]]) -> String? {
+            guard !rules.isEmpty,
+                  let data = try? JSONSerialization.data(withJSONObject: rules),
                   let json = String(data: data, encoding: .utf8) else { return nil }
-            return "window.__panuraRule = \(json);"
+            return "window.__panuraRules = \(json);"
         }
 
         // Hits posted from the injected extraction script.
@@ -749,17 +748,21 @@ struct WebViewContainer: UIViewRepresentable {
                 }
                 return
             case "ready":
-                // A frame's sniffer is up. Resolve its rule by the FRAME's own
-                // host (authoritative, from WebKit — not anything the page said)
-                // and push only that one rule back into that one frame. No list,
-                // no salt, no other site's domains ever reach the page.
-                let host = message.frameInfo.securityOrigin.host
-                guard !host.isEmpty else { return }
+                // A frame's sniffer is up. Push the rules in so it can match a
+                // candidate against them as one appears.
+                //
+                // All of them, which used to be the thing this deliberately
+                // avoided: the rule was resolved natively by the frame's own
+                // host so that no other site's domains ever reached a page.
+                // There are no domains in a rule any more — only a URL shape
+                // and the handling that shape needs — so a page learns nothing
+                // about anywhere else from reading them, and the host lookup
+                // that justified the salt is gone with it.
                 let frame = message.frameInfo
                 let wv = message.webView
                 Task { @MainActor in
-                    guard let rule = await ManifestStore.rule(forHost: host),
-                          let js = Self.ruleInjectionJS(rule) else { return }
+                    guard let js = Self.ruleInjectionJS(await ManifestStore.rules())
+                    else { return }
                     // Same content world the sniffer runs in (the default page
                     // world), and only into this one frame.
                     wv?.evaluateJavaScript(js, in: frame, in: .page, completionHandler: nil)
