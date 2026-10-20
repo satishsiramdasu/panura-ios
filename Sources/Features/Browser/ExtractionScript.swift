@@ -118,11 +118,12 @@ enum ExtractionScript {
       // The rule claiming THIS frame, or null — matched once, against the
       // frame's own URL, before any candidate exists.
       //
-      // This is what makes strict mode possible without naming a host. A rule
-      // with a `frame` shape is known to apply at load, so non-matching
+      // A `frame` shape does two jobs. It makes strict mode possible without
+      // naming a host: the rule is known to apply at load, so non-matching
       // candidates can be held from the first one rather than emitted and
-      // retracted afterwards. Rules without one still work; they just gate
-      // later, on the first `pattern` match.
+      // retracted afterwards. And it SCOPES the rule — see appliesHere.
+      // Rules without one still work; they just gate later, on the first
+      // `pattern` match, and they apply everywhere.
       var frameRuleCache;
       function frameRule() {
         if (frameRuleCache !== undefined) return frameRuleCache;
@@ -142,6 +143,24 @@ enum ExtractionScript {
         return frameRuleCache;
       }
 
+      // Whether a rule is allowed to act in this frame at all.
+      //
+      // A rule that describes the frame it belongs to is confined to frames of
+      // that shape. Without this a rule's `pattern` is matched against every
+      // candidate on every site, so an unrelated page serving a URL of a
+      // similar shape gets claimed — badged as a rule match, and handed that
+      // rule's referer and headers. A confident wrong answer, which is worse
+      // than none: the generic sniffer would have got it right.
+      //
+      // This is the scoping the hashed host list used to provide, by structure
+      // rather than by name. A rule with no `frame` keeps the old behaviour and
+      // applies everywhere — which is right for a shape specific enough to
+      // identify itself, and is how the other four rules still work.
+      function appliesHere(rule) {
+        if (!rule.frame || !rule.frame.length) return true;
+        return frameRule() === rule;
+      }
+
       // The first rule claiming this URL, or null. pattern is a list of
       // DOMAINLESS regexes — any one matching claims it.
       function ruleFor(url) {
@@ -149,6 +168,7 @@ enum ExtractionScript {
         for (var i = 0; i < all.length; i++) {
           var pats = all[i].pattern;
           if (!pats || !pats.length) continue;
+          if (!appliesHere(all[i])) continue;
           for (var j = 0; j < pats.length; j++) {
             try { if (new RegExp(pats[j]).test(url)) return all[i]; } catch (e) {}
           }
