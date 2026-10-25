@@ -11,23 +11,37 @@ Settled 2026-10-11. iOS code lives in `Sources/Ads/`.
 
 ## 1. The whole design in one table
 
-| Placement | Format | Trigger | Qualifier | Gap |
-|---|---|---|---|---|
-| Player exit | Interstitial | Leaving any player, any engine | country-tiered watch time **or** 25 % of duration | country-tiered |
-| Cast entry | Interstitial | Receiver *confirmed* playing, before cast controls appear | — | country-tiered (shared) |
-| Cast exit | Interstitial | Deliberate stop/disconnect | country-tiered watch time | country-tiered (shared) |
-| Server refresh | **Rewarded** | Refresh pressed on a playlist server | — | 1 h free window, then due |
-| Banner | Banner | Every screen except the player, cast controls included | — | 30 s refresh, set on the unit |
-| App open | App open | Returning to the app after ≥ 30 s away. Never a cold start, never over a video or a cast | — | 1 h, fixed |
+*Revised 2026-10-25 (Android 3.5 first; iOS to follow). The earlier design gave
+each placement its own clock and made server refresh a rewarded wall; both are
+superseded below.*
 
-Plus two global rules that override all of the above:
+| Placement | Format | Trigger | Qualifier |
+|---|---|---|---|
+| App open | App open | Returning to the app after >= 30 s away. Never a cold start, never over a video or a cast | an hour since the last app open |
+| Player exit | Interstitial | Leaving any player, any engine | tier watch time **or** 25 % of duration |
+| Cast success | Interstitial | Receiver *confirmed* playing, within 15 s of the request | - |
+| Cast stop | Interstitial | Deliberate Stop / Disconnect | tier watch time of confirmed playback |
+| Download start | Interstitial | A download was successfully enqueued | - |
+| Server open | Interstitial | A server's listing **has loaded** after the person opened it | - |
+| Server refresh | Interstitial | A listing **has loaded** after a manual refresh | - |
+| Convert to share | **Rewarded** | Person asks to share a downloaded HLS video as MP4 | - |
+| Banner | Banner | Every screen except the player, cast controls included | 30 s refresh, set on the unit |
 
-- **The entire first session is ad-free**, banner included.
-- **No global floor between placements.** Each keeps its own clock and nothing
-  else's. Asked for and rejected: the rewarded ad is a button the user pressed,
-  so suppressing it because an unrelated interstitial fired two minutes ago
-  would withhold a feature they explicitly asked for. These are different
-  actions.
+Three global rules override everything above:
+
+- **One interstitial clock.** Every interstitial placement *and app open* read
+  and reset one shared clock. The gap is the manifest's country-tiered
+  `gapSeconds` (§12) - 15 min by default, 5 min in the low-CPM tier. The
+  placements are only *triggers*: watching the player-exit ad and then tapping
+  Save shows nothing, because the gap has not passed. Rewarded has its own
+  clock and never waits on, or delays, the interstitials - the person asked for
+  it.
+- **The first two launches are ad-free**, banner included (§7).
+- **No timers.** Every ad follows something the person did. The old
+  mid-playback interstitial (5 min into a video) and the browser interstitial
+  (every 30 min of browsing) are removed: AdMob treats an interstitial that
+  interrupts content as an unexpected interruption, the fastest route to a
+  limited account.
 
 Everything else in this document is the reasoning, the edge cases, and the
 exact state each rule needs.
@@ -40,7 +54,7 @@ exact state each rule needs.
 |---|---|
 | App-open ad **on launch** | The highest-complaint format there is; it taxes launching the app, which is not a thing we built. An app-open ad on *returning* was added later on request, hedged — see §13. |
 | Interstitial per video | In-player next/previous walks the playlist without closing the screen, so an exit-triggered ad gives one ad per *session* rather than one between every pair of episodes. The gap length could never have fixed this: episodes run 25–40 min, so any gap worth having is already satisfied when one ends. |
-| Interstitial on opening a server | Where this started, and the highest-friction idea in the app: an unrequested ad in front of hardware the user owns. Replaced by refresh-as-reward. |
+| Interstitial *before* a server listing | An ad between the tap and the thing asked for is an ad for waiting. The server ad (§5) shows only after the listing has loaded. |
 | Mid-playback / mid-task interstitials | Accidental clicks, invalid-traffic flags, uninstalls. |
 | Ads on AirPlay | No AirPlay code was written — the system route picker does it. *"We only monetise what we worked and built."* |
 | Rewarded on showing cast controls | Considered, dropped. Replaced by the cast exit interstitial. |
@@ -70,7 +84,7 @@ link expired.
 The 25 % branch exists so a 90-second clip can qualify while a 40-minute
 episode does not need ten minutes of credit.
 
-**Gap: country-tiered, 15 min by default.** Barely binds — the real gap for
+**Gap: the shared interstitial clock (§1), country-tiered, 15 min by default.** Barely binds — the real gap for
 anyone watching something of normal length is however long that thing was. It
 bites on short clips opened and abandoned one after another, which is exactly
 when it should. Fifteen rather than ten not because ten fires too often, but
@@ -86,141 +100,70 @@ Activity/Fragment — finish the player, then show from the host.
 
 ---
 
-## 4. Cast interstitials — one clock, two triggers
+## 4. Cast interstitials - two triggers, the shared clock
 
-**Entry fires on confirmation, not on request.** The only moment a cast is
+**Success fires on confirmation, not on request.** The only moment a cast is
 known to have worked is when the receiver reports it is playing frames. An ad
 for a cast that was refused is an ad for a failure. So: arm a pending ad when
 casting starts, fire it when the receiver confirms, and **disarm on a
 15-second timeout**, so an armed ad can never fire against the next cast.
 
-It is also the best-placed ad in the app — the TV is handshaking anyway, so it
+It is also the best-placed ad in the app - the TV is handshaking anyway, so it
 costs no real time.
 
-**Exit fires only on a deliberate stop** — the Stop button or Disconnect.
+**Stop fires only on a deliberate stop** - the Stop button or Disconnect.
 *Not* on the session-ended callback: that fires for a TV switched off, a
 dropped network and an errored session as much as for Disconnect, and an ad
 after an unplanned disconnection is an ad for a failure. That callback instead
-**clears both cast clocks** and shows nothing.
+clears the cast state and shows nothing.
 
-**Exit qualifier:** 60 s of confirmed playback, matching the player's. Start
-the clock on the same signal the entry ad waits for (first frames reported).
+**Stop qualifier:** the tier's `minWatchSeconds` of confirmed playback (60 s by
+default, 30 s low-CPM), counted from the same signal the success ad waits for.
 Something the receiver refuses, or that is abandoned after ten seconds, costs
 nothing.
 
-**The shared clock is the point.** Both triggers read one `cast` clock
-(country-tiered, 15 min by default — see §12), so:
+**Both triggers read the one shared clock (§1)**, so:
 
 | Cast length | Ads |
 |---|---|
-| 2-minute test | 1 (entry only — exit falls inside the gap) |
-| Full film | 2 (entry + exit) |
+| 2-minute test | 1 (success only - stop falls inside the gap) |
+| Full film | 2 (success + stop) |
 
-Separate clocks would put two full-screen ads either side of a three-minute
-clip.
+The gap also covers channel zapping: casting IPTV and changing channel sends a
+fresh load each time, and five channels in two minutes would otherwise be five
+interstitials.
 
-The gap also exists for channel zapping: casting IPTV and changing channel
-sends a fresh load each time, and five channels in two minutes would otherwise
-be five interstitials.
-
-**Sequencing:** the exit ad has the same closing-screen problem as the player —
+**Sequencing:** the stop ad has the same closing-screen problem as the player -
 the Stop button stops the cast *and then* dismisses the cast controls. Queue,
 and show from the controls screen's dismissal callback.
 
 ---
 
-## 5. Server refresh — the rewarded placement
+## 5. Servers - open and refresh
 
-Playlist servers only (M3U / Xtream). **Not** SMB/SFTP/FTP: those list live
-every time a folder is opened, so "refresh" there is just re-listing, and a
-daily ad to re-read your own NAS is a toll with a nicer name.
+*Replaces the rewarded refresh wall (1 h free / ad / 24 h expiry). There is no
+per-server clock and no wall any more.*
 
-One timestamp per server — *the last time the user refreshed*, meaning the last
-time an ad was shown or waived — answers all three rules:
+**Triggers:** a media server opened from the Servers list (playlist, Xtream,
+SMB share or DLNA device), and a refresh the person pressed (the refresh button
+inside a server, or Refresh on a server's card).
 
-```
-< 1 h       refresh is free, unlimited presses   — a retry is never punished
-1 h – 24 h  refresh plays a rewarded ad          — voluntary
-> 24 h      refresh is required                  — catalogue is not shown at all
-```
+**After, never before.** The ad shows once the listing has *loaded*, never in
+front of it - an ad between the tap and the thing asked for is an ad for
+waiting. A load that fails shows nothing.
 
-### Why its own timestamp, and not the catalogue's fetch time
+**What is not an open:** walking into folders inside a server, and returning
+to a playlist that is already open (switching tabs and back). Saving a newly
+added server also opens it, but shows nothing - nobody adds a server to be
+shown an ad.
 
-The obvious candidate is wrong. The store already re-fetches anything older
-than its freshness window (3 h on iOS) by itself, and resets the fetch time as
-it does — so a 24-hour wall built on that field would never appear. This is a
-separate, user-driven clock, and **only a user-pressed refresh moves it.**
+**Open and refresh share one unit and the shared clock**, so open-then-refresh
+is one ad, not two.
 
-### Starting the clock
-
-Stamped on the *first successful load* of a server, and only if not already
-set. A server that has never been refreshed is **not** expired: meeting a wall
-before ever seeing a channel reads as a broken app, not as a stale catalogue.
-
-Stamp **before** the fetch, not after — otherwise a provider being down wastes
-an ad the user has already watched.
-
-Drop a server's timestamp when the server is deleted, so re-adding the same
-address does not inherit a wall from the one before it.
-
-### The expiry wall
-
-After 24 h the content is **deleted, not hidden** — channels, movies, series,
-and every section's cache file. So the screen is not withholding a list it is
-quietly holding; there is no list. A hard wall was chosen over a prompt:
-*"we don't show content, instead we show a message… What user left is to press
-refresh."*
-
-The wall is: an icon, "Catalogue expired", an age-aware line explaining that
-provider catalogues go stale, one filled **Refresh** button, and — only when
-an ad is actually due — the line **"A short ad plays first."**
-
-Naming the ad before it plays is not politeness, it is the rewarded format's
-rule: the reward has to be described before the ad. A screen whose only control
-is Refresh would otherwise be an interstitial with a reward unit's paperwork.
-Backing out of the server is the decline path.
-
-### The free hour is anchored to the last ad, not the last refresh
-
-This is the one thing in the design that is easy to get backwards, and getting
-it backwards makes the rewarded ad **unreachable**.
-
-The per-server timestamp moves on *every* refresh — it has to, because it also
-drives the 24-hour wall and the catalogue really was just refreshed. So "has an
-hour passed since the last refresh" is a question that can never answer yes to
-anybody who refreshes more than once an hour: pressing the button resets the
-clock the button is waiting on.
-
-Gate the ad on the **ad** clock — one hour since the last rewarded ad was
-*shown* — which pressing Refresh does not touch. That gives exactly the agreed
-behaviour: an ad, then an hour of unlimited free refreshes, then the next ad.
-
-The per-server timestamp still has two jobs, neither of them the hour: the
-24-hour expiry, and "has this server ever loaded" (nothing is owed by somebody
-who has not finished opening it once).
-
-iOS shipped the wrong version of this for one build. The symptom is the
-tell — every other placement fires, the rewarded gap reads *ready*, and the ad
-never comes.
-
-### One door
-
-Any other reload affordance — a toolbar refresh glyph, pull-to-refresh — must
-route through the *same* gated function. Two doors means the clock can be
-walked round by using the other one.
-
-### Grant on failure — the rule that keeps a wall from becoming a lock
-
-The reward is granted when **no ad could be shown at all**: no fill, no
-network, no unit configured, ads switched off, or no ad due. Fill is our
-problem, not the user's — a server they added, on hardware they own, must never
-stay shut because an ad network had a bad minute.
-
-The reward is withheld **only** when somebody opened the ad and closed it
-early. Nothing is taken away; the button is still there.
-
-And **only a watched ad spends the hour.** Closing one early leaves the clock
-alone, so the next press still has something to offer.
+Android: `IptvViewModel.loadedByUser` / `NetworkBrowserViewModel.loadedByUser`
+emit on the loaded listing; `ServersScreen` calls `AdManager.showForServer`.
+The unit created as "browser" serves this placement (unit ids cannot be
+renamed).
 
 ---
 
@@ -273,33 +216,37 @@ banner of its own.
 
 ---
 
-## 7. First session
+## 7. First sessions
 
-**The entire first session shows nothing, banner included.** Somebody who
-installs the app, watches one thing and leaves sees no ads — and was never
-going to earn anything either way.
+**The first two launches show nothing, banner included.** Somebody who
+installs the app, tries it, and comes back once more sees no ads.
 
 Counted in **launches**, not with a timer. Simpler, and strictly more generous:
 a timer is burned by backgrounding the app for ten seconds to read a message,
-and *"ads start the second time you open it"* is a sentence anybody can check.
+and *"ads start the third time you open it"* is a sentence anybody can check.
 Increment a launch counter once at startup, before anything asks; ads are off
-while it is `<= 1`.
+while it is `<= 2`.
 
 Two consequences, both accepted:
 
-- **App Review almost certainly sees no ads at all**, since a reviewer works in
-  one session. Good for approval — and the reason the ad paths have to be right
-  *before* shipping rather than after.
-- Day-one impressions from install-once-and-leave users are lost, which is
-  close to nothing in revenue.
+- **Store review almost certainly sees no ads at all**, since a reviewer works
+  in one or two sessions. Good for approval - and the reason the ad paths have
+  to be right *before* shipping rather than after.
+- Early impressions from install-and-leave users are lost, which is close to
+  nothing in revenue.
 
 ---
 
 ## 8. Consent, tracking, and the launch crash
 
-**Non-personalised only.** `npa=1` registered on every request. No tracking
+**iOS: non-personalised only.** `npa=1` registered on every request. No tracking
 prompt, tracking declared false in the privacy manifest, and the store
 description's "No ad tracking" line stays true. The cost is eCPM.
+
+**Android: personalised.** Android has no tracking prompt to avoid, so it does
+not send `npa=1`; the Play Data safety form must then declare the advertising
+ID. Consent comes from UMP below (`AdConsent.gather` before `MobileAds`
+starts, and a Privacy choices button in About when UMP says it is required).
 
 **A certified CMP is mandatory** regardless of personalisation: without one,
 AdMob stops serving EEA and UK traffic altogether. iOS uses Google's UMP —
@@ -321,21 +268,20 @@ declared — only if personalisation is ever turned on.
 
 ## 9. State to persist
 
-Five keys and nothing else. All plain preferences.
-
 | Key | Type | Written when |
 |---|---|---|
 | `ads.launch_count` | Int | Once per launch, at startup |
-| `ads.last.player` | Epoch seconds | A player-exit interstitial is **presented** |
-| `ads.last.cast` | Epoch seconds | A cast interstitial is **presented** (either trigger) |
-| `ads.last.servers` | Epoch seconds | A rewarded ad is **earned** |
-| `server.refreshed.<server id>` | Epoch seconds | First successful load, and every user refresh |
+| `ads.last.interstitial` | Epoch ms | **Any** interstitial *or app open* is **presented** |
+| `ads.last.appOpen` | Epoch ms | An app-open ad is **presented** |
+| `ads.last.rewarded` | Epoch ms | A rewarded ad is presented (bookkeeping only; nothing waits on it) |
+| `ads.tiers` | JSON | The manifest's `ads` block, cached so an offline launch keeps the last tier |
 
-**Record on presentation, never on request.** A failed load that spent the gap
-would also spend the next genuine chance with it.
+**Record on presentation, never on request.** A request that found nothing
+loaded spent nothing, and the next trigger may try.
 
-All of these are cleared by Clear Data — which is also the fastest way to test
-without waiting an hour.
+All of these are cleared by Clear Data - which is also the fastest way to test.
+(Android: `panura_ads` shared preferences - `launches`, `last_interstitial`,
+`last_app_open`, `last_rewarded`, `tiers`.)
 
 ---
 
@@ -489,29 +435,28 @@ logging, say — the privacy policy needs updating first, not after.
 
 ---
 
-## 13. App open — added 2026-10-14
+## 13. App open
 
-Left out of the first design and added on request, so it is the most hedged
-placement here. Unit "App Open", `…/6221286156`.
+Unit "App Open". **Shown only on a return to the app**, and only when all of
+these hold:
 
-**Shown only on a return to the app**, and only when all of these hold:
-
-- the app was away for **at least 30 seconds** — a glance at a message is not
+- the app was away for **at least 30 seconds** - a glance at a message is not
   opening the app, and the return from a tapped ad leaves the same way;
 - **nothing is playing**: no player, no Picture in Picture, no cast. Coming
   back to something playing is coming back for a control;
-- no other full-screen ad is up or queued;
-- it is not the first session;
-- **an hour** since the last one. Fixed, not country-tiered: this is the one ad
-  nobody did anything to bring on.
+- no other full-screen ad is up;
+- not one of the first two launches;
+- **an hour** since the last app open - fixed, not country-tiered: this is the
+  one ad nobody did anything to bring on;
+- **the shared interstitial gap has passed** - it is full-screen too, so
+  closing the player on an ad, leaving for 30 s and coming back is one ad, not
+  two. Showing it then resets the shared clock.
 
 **Never on a cold start.** Nothing is loaded that early, and holding the first
 screen back for an ad is the version of this format people uninstall over.
 
 An app-open ad expires four hours after it loads; a stale one is dropped and
-reloaded rather than shown. State: `ads.last.appOpen`.
-
-Android: the old app-open code fires on launch. Port these rules instead.
+reloaded rather than shown.
 
 ---
 
