@@ -37,6 +37,12 @@ struct MediaItem: Identifiable, Hashable {
     /// in the camera roll. `isLocal` cannot answer it — an IPTV channel and a
     /// browser stream are both remote.
     var origin: Origin = .other
+    /// Played out of a private browser. Belongs to the playback, not to the
+    /// browser's mode at the moment of asking: a file from Videos or Continue
+    /// Watching while the browser happens to be private is not private, and
+    /// flipping the switch mid-film does not change what this one was
+    /// (Android daf605b). Keeps it out of Continue Watching and resume.
+    var isPrivate = false
 
     enum Origin: String, Hashable {
         /// Found on a web page by the browser. The one that monetises.

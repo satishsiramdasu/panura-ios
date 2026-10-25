@@ -310,10 +310,24 @@ enum CastAudioMaster {
         return groups.first ?? ""
     }
 
+    /// The player settings' preferred audio language; if unset, the last
+    /// track picked by hand while casting (Android 7144cb7). Empty when
+    /// neither, which leaves the playlist's own default.
     private static var preferredLanguage: String {
-        (UserDefaults.standard.string(forKey: "preferred_audio_language") ?? "")
+        let defaults = UserDefaults.standard
+        let set = (defaults.string(forKey: "preferred_audio_language") ?? "")
             .trimmingCharacters(in: .whitespaces)
             .lowercased()
+        if !set.isEmpty { return set }
+        return (defaults.string(forKey: lastChosenKey) ?? "").lowercased()
+    }
+
+    static let lastChosenKey = "cast_last_audio_language"
+
+    /// Remembers a track picked by hand, by language or, failing that, name.
+    static func rememberChoice(_ rendition: HLSAudioRendition) {
+        let value = rendition.language?.isEmpty == false ? rendition.language! : rendition.name
+        UserDefaults.standard.set(value, forKey: lastChosenKey)
     }
 
     /// Prefix matching, not equality: a playlist may say `tel`, `te` or

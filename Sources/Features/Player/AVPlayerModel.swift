@@ -256,6 +256,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         }
         let asset = AVURLAsset(url: playURL, options: options)
         let playerItem = AVPlayerItem(asset: asset)
+        // A minute ahead, so a skip lands in what is already here (Android
+        // c00dc30). Zero, the default, lets AVFoundation keep only a little.
+        playerItem.preferredForwardBufferDuration = 60
 
         applySubtitleStyle(to: playerItem)
         applyQualityCap(to: playerItem)
@@ -1023,7 +1026,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     private func saveResume() {
         // A dead source has already had its row deleted; saving on the way out
         // would re-add exactly the entry that was just dropped.
-        guard !resumeEntryRemoved, resumeEnabled, let item else { return }
+        guard !resumeEntryRemoved, resumeEnabled, let item, !item.isPrivate else { return }
         let e = elapsedSeconds, total = totalSeconds
         if total > 0, e > 15, e < total - 15 {
             UserDefaults.standard.set(e, forKey: Self.resumeKey(item.url))

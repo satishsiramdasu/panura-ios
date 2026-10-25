@@ -308,6 +308,7 @@ final class BrowserModel: ObservableObject {
             origin: .browser
         )
         item.previewTrack = previewTrack
+        item.isPrivate = privateMode
         return item
     }
 

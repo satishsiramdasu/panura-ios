@@ -260,6 +260,11 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         if let cookie = value("Cookie", "cookie") {
             media.addOption(":http-cookie=\(cookie)")
         }
+        // Enough ahead to skip into (Android c00dc30): a ten-second skip hit
+        // the spinner because the player held barely more than it was
+        // playing. Adaptive streams may run two minutes ahead. Not
+        // `network-caching`, which is a start-up delay, not a ceiling.
+        media.addOption(":adaptive-maxbuffer=120000")
     }
 
     /// Subtitle look — set at media-open time (libVLC's text renderer reads these
@@ -846,7 +851,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // A dead source has already had its row deleted; saving on the way out
         // would re-add exactly the entry that was just dropped.
         guard !resumeEntryRemoved else { return }
-        guard resumeEnabled, let item else { return }
+        guard resumeEnabled, let item, !item.isPrivate else { return }
         let e = elapsedSeconds, total = totalSeconds
         if total > 0, e > 15, e < total - 15 {
             UserDefaults.standard.set(e, forKey: Self.resumeKey(item.url))

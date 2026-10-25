@@ -692,6 +692,7 @@ final class BrowsingStore: ObservableObject {
     /// Called when playback starts, so an item shows up on Home even if the user
     /// leaves before the first position save.
     func beginWatching(_ item: MediaItem) {
+        guard !item.isPrivate else { return }
         let key = item.url.absoluteString
         if let i = resumes.firstIndex(where: { $0.url == key }) {
             resumes[i].updated = Date()

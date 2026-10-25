@@ -332,6 +332,9 @@ final class CastFlow: ObservableObject {
     /// the whole ad design avoids.
     func changeAudio(to id: Int) {
         guard chosenTrack != id, let media = sent else { return }
+        if let picked = tracks.first(where: { $0.id == id }) {
+            CastAudioMaster.rememberChoice(picked)
+        }
         Task { await resend(media, track: id) }
     }
 
