@@ -99,6 +99,8 @@ struct RootTabView: View {
     @State private var showSwitcher = false
     /// From the menu, over every section.
     @State private var showClearData = false
+    /// Downloads, opened from the header as a sheet.
+    @State private var showDownloads = false
 
     var body: some View {
         shell
@@ -151,6 +153,9 @@ struct RootTabView: View {
                 library = nil
                 openInBrowser(address)
             }
+        }
+        .sheet(isPresented: $showDownloads, onDismiss: { playback.flushPending() }) {
+            DownloadsSheet { page in openInBrowser(page) }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(deepLink: $settingsDeepLink)
@@ -221,7 +226,8 @@ struct RootTabView: View {
                     seat: selection.chrome(privateBrowsing: session.privateMode),
                     onSwitcher: {
                         withAnimation(PanelMetrics.motion) { showSwitcher = true }
-                    }
+                    },
+                    onDownloads: { showDownloads = true }
                 ) { menuRows }
                 .frame(height: chrome.visible ? Self.chromeHeight : 0, alignment: .bottom)
                 .opacity(chrome.visible ? 1 : 0)

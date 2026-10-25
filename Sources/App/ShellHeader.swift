@@ -32,6 +32,8 @@ struct ShellHeader<MenuContent: View>: View {
     var ground: Color = AppChrome.bar
     var seat: Color = AppChrome.seat
     let onSwitcher: () -> Void
+    /// Opens the Downloads sheet.
+    var onDownloads: () -> Void = {}
     /// The rows behind the menu button, supplied by the shell so this view
     /// stays about layout. A `Menu` anchors beside the control it belongs to.
     @ViewBuilder var menu: MenuContent
@@ -52,6 +54,7 @@ struct ShellHeader<MenuContent: View>: View {
             HStack(spacing: 0) {
                 CastToolbarButton()
                     .frame(width: 44, height: 44)
+                DownloadsHeaderButton(action: onDownloads)
                 menuButton
             }
         }
