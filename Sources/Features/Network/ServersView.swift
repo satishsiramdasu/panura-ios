@@ -78,7 +78,7 @@ struct ServersView: View {
 
     private var bar: some View {
         HStack(spacing: 10) {
-            Text("Servers")
+            Text("Media Servers")
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .leading)
             addMenu("Add")
@@ -111,15 +111,21 @@ struct ServersView: View {
             // already looking at. Here it opens a menu of six kinds across two
             // groups, and on an empty screen there is nothing to be one more
             // of, so the button has to say what it does.
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
+                if filled {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .bold))
+                }
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(filled ? .body.weight(.semibold) : .subheadline.weight(.semibold))
+                if !filled {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                }
             }
             .foregroundStyle(filled ? PanuraTheme.onAccent : PanuraTheme.accent)
-            .padding(.horizontal, filled ? 18 : 10)
-            .padding(.vertical, filled ? 10 : 6)
+            .padding(.horizontal, filled ? 28 : 10)
+            .padding(.vertical, filled ? 14 : 6)
             .background(filled ? PanuraTheme.accent : .clear, in: Capsule())
             .contentShape(Capsule())
         }
@@ -258,41 +264,35 @@ struct ServersView: View {
         .contentShape(Rectangle())
     }
 
+    /// Laid out as Local Videos' permission screen is: a tile, a heading, one
+    /// line, and one big button. The Add menu in the bar is a word in a corner,
+    /// and on an empty screen the only thing to do should be the biggest thing
+    /// on it.
     private var empty: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "externaldrive.connected.to.line.below")
-                .font(.system(size: 40))
+        VStack(spacing: 14) {
+            Image(systemName: "server.rack")
+                .font(.system(size: 30, weight: .medium))
                 .foregroundStyle(PanuraTheme.accent)
-            Text("Nothing added yet")
-                .font(.headline)
-            // Three kinds, named the way the Add menu names them. "IPTV
-            // account" was the old wording and it said the wrong thing twice:
-            // the menu calls these playlist servers, and "IPTV" describes a
-            // category of service rather than the thing being added, which is
-            // either an address or an account.
-            Text("""
-            Add a file server that speaks SMB, SFTP or FTP — a NAS in the \
-            house, or a machine anywhere else. Or a direct M3U playlist \
-            address. Or sign in to a playlist server account you already have.
-            """)
+                .frame(width: 72, height: 72)
+                .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            Text("No servers yet").font(.headline)
+            Text("Add a NAS, a playlist address or an account you already have.")
                 .font(.footnote)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
                 .multilineTextAlignment(.center)
-
-            // Its own line, because it is its own point. Run on to the end of
-            // the list above, it read as a footnote to the last kind rather
-            // than as what it is: the one sentence that says what this app is
-            // and is not, on the screen where somebody is deciding what to
-            // expect from it.
-            Text("Panura supplies none of it — it opens what you enter, and nothing else.")
+                .frame(maxWidth: 300)
+            addMenu("Add server", filled: true)
+                .padding(.top, 4)
+            // The one sentence that says what this app is and is not, on the
+            // screen where somebody is deciding what to expect from it.
+            Text("Panura supplies no content — it opens what you enter.")
                 .font(.caption)
                 .foregroundStyle(PanuraTheme.onSurfaceVariant.opacity(0.85))
                 .multilineTextAlignment(.center)
-            addMenu("Add a server", filled: true)
-                .padding(.top, 2)
+                .padding(.top, 6)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 32)
+        .padding(.horizontal, 24)
     }
 
     private func addSource(_ kind: IPTVSource.Kind) {
