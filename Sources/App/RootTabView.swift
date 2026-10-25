@@ -97,6 +97,8 @@ struct RootTabView: View {
     @ObservedObject private var tabSet = TabSet.shared
     /// The section list hung under the header's seat.
     @State private var showSwitcher = false
+    /// From the menu, over every section.
+    @State private var showClearData = false
 
     var body: some View {
         shell
@@ -250,6 +252,10 @@ struct RootTabView: View {
                 )
                 .zIndex(2.5)
             }
+            if showClearData {
+                ClearDataDialog(isPresented: $showClearData)
+                    .zIndex(4)
+            }
             // Above every screen, because the mark that opens it is in the
             // header and the panel has to cover what it is about.
             CastPanelOverlay()
@@ -300,6 +306,8 @@ struct RootTabView: View {
             showSettings = true
         } label: { Label("Settings", systemImage: "gearshape") }
 
+        Divider()
+
         Button { showFAQ = true } label: {
             Label("Help", systemImage: "questionmark.circle")
         }
@@ -316,10 +324,35 @@ struct RootTabView: View {
             } label: { Label("Rate Panura", systemImage: "star") }
         }
 
+        ShareLink(
+            item: VersionStore.storeLinkReady ? VersionStore.storeURL : URL(string: "https://panura.app")!,
+            message: Text("Panura — browse, play & cast web videos.")
+        ) { Label("Share Panura", systemImage: "square.and.arrow.up") }
+
         Button {
             settingsDeepLink = .about
             showSettings = true
         } label: { Label("About", systemImage: "info.circle") }
+
+        Divider()
+
+        // The community and the clean-up, at the foot, where Home's own foot
+        // buttons used to hold them. A menu cannot paint Telegram its blue;
+        // Clear Data is red by its role, which is the colour that matters.
+        Button {
+            // The app if it is installed, the web page if not. Asked by
+            // opening rather than by `canOpenURL`, which needs the scheme
+            // declared in Info.plist to answer truthfully.
+            UIApplication.shared.open(URL(string: "tg://resolve?domain=panura_player")!) { opened in
+                if !opened {
+                    UIApplication.shared.open(URL(string: "https://t.me/panura_player")!)
+                }
+            }
+        } label: { Label("Telegram", systemImage: "paperplane.fill") }
+
+        Button(role: .destructive) {
+            withAnimation(.easeOut(duration: 0.15)) { showClearData = true }
+        } label: { Label("Clear Data", systemImage: "trash") }
     }
 
     private var content: some View {

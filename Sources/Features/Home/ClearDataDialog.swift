@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 
-/// "Clear Data" — a centred dialog, from Home's third tile.
+/// "Clear Data" — a centred dialog, from the header menu.
 ///
 /// A checklist rather than one destructive button, because the things it can
 /// remove are not equally regrettable. History, the visit tally, resume points
@@ -90,25 +90,34 @@ struct ClearDataDialog: View {
                         .foregroundStyle(PanuraTheme.onSurfaceVariant)
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
-                        .background(PanuraTheme.surfaceVariant, in: Capsule())
+                        .background(
+                            PanuraTheme.surfaceVariant,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(working)
 
+                // The menu row's tinted red, its trash glyph and 12-point
+                // corners, so the dialog's answer looks like the thing that
+                // asked the question.
                 Button { clear() } label: {
                     Group {
                         if working {
-                            ProgressView().tint(.white)
+                            ProgressView().tint(Self.red)
                         } else {
-                            Text("Clear").font(.subheadline.weight(.semibold))
+                            Label("Clear", systemImage: "trash")
+                                .font(.subheadline.weight(.semibold))
                         }
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Self.red)
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
                     .background(
-                        Capsule().fill(nothingChosen ? Color.red.opacity(0.35) : Color.red)
+                        Self.red.opacity(0.18),
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
+                    .opacity(nothingChosen ? 0.45 : 1)
                 }
                 .buttonStyle(.plain)
                 .disabled(nothingChosen || working)
@@ -140,6 +149,8 @@ struct ClearDataDialog: View {
         .buttonStyle(.plain)
         .disabled(working)
     }
+
+    static let red = Color(hex: 0xE5534B)
 
     private func close() {
         withAnimation(.easeOut(duration: 0.15)) { isPresented = false }
