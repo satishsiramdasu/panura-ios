@@ -2,18 +2,10 @@ name: iOS Build
 
 # macOS runners bill at 10x, so a 10-minute build costs 100 of the 2,000
 # included minutes. Everything here exists to keep that number down:
-# build on demand, never twice at once, and never for a docs-only change.
+# build on demand only (Actions → iOS Build → Run workflow), never on push,
+# and never twice at once.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**/*.md'
-      - '.gitignore'
-      - 'docs/**'
-      # Nothing under tools/ is in the app target — a change there cannot break
-      # a build, and a macOS runner bills at 10x for finding that out.
-      - 'Tools/**'
 
 # A second push supersedes the first instead of paying for both.
 concurrency:
