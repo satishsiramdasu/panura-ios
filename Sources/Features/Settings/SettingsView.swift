@@ -57,8 +57,9 @@ struct SettingsHeader: View {
             }
 
             Spacer(minLength: 0)
+            // Bold on every level, matching the root and the Library.
             Text(title)
-                .font(.headline)
+                .font(.headline.weight(.bold))
                 .lineLimit(1)
             Spacer(minLength: 0)
 
