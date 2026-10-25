@@ -1462,7 +1462,10 @@ struct BrowserView: View {
             .padding(.top, 22)
             .padding(.bottom, 16)
         }
-        .background(PanuraTheme.background)
+        // No background of our own. The system sheet material is what gives the
+        // half sheet its inset, translucent look and the darkening as it is
+        // dragged up; painting a colour behind the list replaced it with a
+        // flat, full-width black.
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .confirmationDialog(
