@@ -1390,7 +1390,6 @@ struct BrowserView: View {
                 }
             }
         }
-        }
     }
 
     /// RESOLUTION per variant URL, for the save dialog's labels.
