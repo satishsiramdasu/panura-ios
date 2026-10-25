@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Downloads, as a sheet — Android's `DownloadsTab` in the Library's shape.
+/// Downloads, as a page in the shell — Android's `DownloadsTab`.
 ///
 /// A sheet rather than a section (Android 2767295): a download running is
 /// something to see from wherever you are, not a place to go.
@@ -9,12 +9,13 @@ import SwiftUI
 /// and how many are still going (with Cancel all), then one card per video —
 /// poster, title, resolution and length, size and date, an inline pause or
 /// resume, and a menu of Share, Rename and Delete. Delete always asks.
-struct DownloadsSheet: View {
+struct DownloadsPage: View {
+    /// Leaves the page, back to the section underneath.
+    var onClose: () -> Void
     /// Reopens the page a download came from, for a fresh link.
     var onOpenPage: (String) -> Void
 
     @ObservedObject private var store = DownloadStore.shared
-    @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var expired: DownloadEntry?
     @State private var renaming: DownloadEntry?
@@ -37,19 +38,22 @@ struct DownloadsSheet: View {
             .navigationTitle("Downloads")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    SheetCloseButton { dismiss() }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: onClose) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Back")
                 }
             }
         }
-        .onAppear { store.unseen = false }
         .alert("This link has expired", isPresented: Binding(
             get: { expired != nil }, set: { if !$0 { expired = nil } }
         ), presenting: expired) { entry in
             Button("Open page") {
-                let page = entry.pageURL
-                dismiss()
-                onOpenPage(page)
+                onOpenPage(entry.pageURL)
             }
             Button("Delete", role: .destructive) { deleting = entry }
             Button("Cancel", role: .cancel) {}
@@ -190,9 +194,9 @@ struct DownloadsSheet: View {
                     language: entry.subtitleLanguage ?? ""
                 )]
             }
-            PlaybackSession.shared.playWhenDismissed(item)
-            store.returnAfterPlayer = true
-            dismiss()
+            // The player is the root's cover, and nothing modal is in its way:
+            // this is a page, so it stays exactly as it is underneath.
+            PlaybackSession.shared.play(item)
         case .expired:
             expired = entry
         default:

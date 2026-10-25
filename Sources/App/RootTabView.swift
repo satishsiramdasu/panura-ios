@@ -127,12 +127,6 @@ struct RootTabView: View {
         // actually gone, because one presenter cannot hold two presentations.
         .fullScreenCover(item: $playback.presented, onDismiss: {
             AdManager.shared.flushQueued()
-            // Played from Downloads: the sheet comes back when the player goes,
-            // so a list of downloads is where you land, not the page behind it.
-            if DownloadStore.shared.returnAfterPlayer {
-                DownloadStore.shared.returnAfterPlayer = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showDownloads = true }
-            }
         }) { playing in
             PlayerScreen(item: playing.item, playlist: playing.playlist)
         }
@@ -163,10 +157,10 @@ struct RootTabView: View {
         .onReceive(DownloadStore.shared.$presentRequest) { requested in
             guard requested else { return }
             DownloadStore.shared.presentRequest = false
-            showDownloads = true
+            withAnimation(.easeInOut(duration: 0.2)) { showDownloads = true }
         }
-        .sheet(isPresented: $showDownloads, onDismiss: { playback.flushPending() }) {
-            DownloadsSheet { page in openInBrowser(page) }
+        .onChange(of: showDownloads) { open in
+            if open { DownloadStore.shared.unseen = false }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView(deepLink: $settingsDeepLink)
@@ -204,12 +198,6 @@ struct RootTabView: View {
             if !showing {
                 castFlow.settle()
                 AdManager.shared.flushQueued()
-            // Played from Downloads: the sheet comes back when the player goes,
-            // so a list of downloads is where you land, not the page behind it.
-            if DownloadStore.shared.returnAfterPlayer {
-                DownloadStore.shared.returnAfterPlayer = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showDownloads = true }
-            }
             }
         }
         // Nothing in release builds — see the modifier below.
@@ -244,7 +232,7 @@ struct RootTabView: View {
                     onSwitcher: {
                         withAnimation(PanelMetrics.motion) { showSwitcher = true }
                     },
-                    onDownloads: { showDownloads = true }
+                    onDownloads: { withAnimation(.easeInOut(duration: 0.2)) { showDownloads.toggle() } }
                 ) { menuRows }
                 .frame(height: chrome.visible ? Self.chromeHeight : 0, alignment: .bottom)
                 .opacity(chrome.visible ? 1 : 0)
@@ -528,6 +516,26 @@ struct RootTabView: View {
             ForEach(tabSet.added, id: \.self) { destination in
                 layer(destination) { added(destination) }
             }
+            // Downloads is a page over the sections, not a sheet. A sheet is
+            // rebuilt each time it opens, so a long list lost its place, and the
+            // player — the root's one cover — could not open over it. The page
+            // stays composed, so its scroll position and search survive being
+            // closed and opened again, and the section under it is untouched.
+            DownloadsPage(
+                onClose: { withAnimation(.easeInOut(duration: 0.2)) { showDownloads = false } },
+                onOpenPage: { page in
+                    showDownloads = false
+                    openInBrowser(page)
+                }
+            )
+            .background(PanuraTheme.background)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: AppChrome.bottomInset)
+            }
+            .opacity(showDownloads ? 1 : 0)
+            .allowsHitTesting(showDownloads)
+            .accessibilityHidden(!showDownloads)
+            .zIndex(2)
         }
     }
 
@@ -582,6 +590,8 @@ struct RootTabView: View {
 
     private func select(_ destination: AppDestination) {
         session.showBar()
+        // A section picked from anywhere closes the Downloads page over it.
+        if showDownloads { withAnimation(.easeInOut(duration: 0.2)) { showDownloads = false } }
         switch destination {
         // These open over whatever you were doing and hand it back when they
         // close, rather than replacing it.
