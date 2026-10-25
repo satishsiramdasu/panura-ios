@@ -208,8 +208,8 @@ enum StreamProbe {
                 result: Result(
                     resolution: bestResolution(in: text),
                     fileSize: size,
-                    hlsType: isMaster ? "Adaptive" : "Single",
-                    duration: duration
+                    duration: duration,
+                    hlsType: isMaster ? "Adaptive" : "Single"
                 )
             )
         }

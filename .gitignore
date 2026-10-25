@@ -21,3 +21,5 @@ Resources/GoogleService-Info.plist
 
 # The screenshot run renders this onto the runner; it must never be committed.
 Resources/screenshot-demo.mp4
+.agents/hooks.json
+.cursor/hooks.json
