@@ -1375,16 +1375,21 @@ struct BrowserView: View {
             audio: audio,
             subtitle: subtitle
         )
-        // After it was enqueued, never before (docs/ads.md §1). Whatever the ad
-        // does, the user ends up looking at the download: the list of found
-        // videos closes and Downloads opens over the page, so there is no doubt
-        // it started and no list left to wander back into.
-        AdManager.shared.showInterstitial(.download) {
-            showFoundSheet = false
-            // The found sheet has to finish leaving before another can come up.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                DownloadStore.shared.presentRequest = true
+        // After it was enqueued, never before (docs/ads.md §1), and not while
+        // the Save Offline sheet is still leaving: an ad presented from a sheet
+        // that is dismissing is dismissed with it, which looked like the ad
+        // closing itself. Whatever the ad does, the user ends up looking at the
+        // download: the list of found videos closes and Downloads opens over the
+        // page, so there is no doubt it started and no list left to wander into.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            AdManager.shared.showInterstitial(.download) {
+                showFoundSheet = false
+                // The found sheet has to finish leaving before another can come up.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    DownloadStore.shared.presentRequest = true
+                }
             }
+        }
         }
     }
 

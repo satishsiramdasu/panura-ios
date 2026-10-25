@@ -121,33 +121,28 @@ private struct DownloadGlyph: View {
 /// down. Android's animation to the number — 1100 ms, linear, restarting, the
 /// arrow travelling from one cut-height above to one cut-height below.
 private struct FallingArrow: View {
-    @State private var fall = false
     private let size: CGFloat = 24
-    private let cut: CGFloat = 17.0 / 24.0
+    private let period = 1.1
 
     var body: some View {
-        let window = size * cut
-        ZStack(alignment: .top) {
-            // The tray, still: the lower part of the glyph.
-            TrayShape()
-                .fill(PanuraTheme.onSurface)
-                .frame(width: size, height: size)
-            // The arrow alone, cut to the window above the tray before it moves,
-            // and cut again after, so it vanishes into the tray rather than
-            // sliding across it.
-            ArrowShape()
-                .fill(PanuraTheme.onSurface)
-                .frame(width: size, height: size)
-                .frame(width: size, height: window, alignment: .top)
-                .clipped()
-                .offset(y: fall ? window : -window)
-                .frame(width: size, height: window, alignment: .top)
-                .clipped()
-                .frame(width: size, height: size, alignment: .top)
-        }
-        .frame(width: size, height: size)
-        .onAppear {
-            withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) { fall = true }
+        // Drawn each frame from the clock rather than animated by a state flip:
+        // an offset animated inside nested clips was drawing nothing at all.
+        TimelineView(.animation) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let fall = CGFloat(t.truncatingRemainder(dividingBy: period) / period)
+            Canvas { gc, canvas in
+                let unit = canvas.width / 24
+                let bounds = CGRect(origin: .zero, size: canvas)
+                gc.fill(DownloadShape.tray(bounds), with: .color(PanuraTheme.onSurface))
+                // The arrow, seen only above the tray's cut line, travelling from
+                // one cut-height above to one below.
+                var arrow = gc
+                let window = 17 * unit
+                arrow.clip(to: Path(CGRect(x: 0, y: 0, width: canvas.width, height: window)))
+                arrow.translateBy(x: 0, y: window * (2 * fall - 1))
+                arrow.fill(DownloadShape.arrow(bounds), with: .color(PanuraTheme.onSurface))
+            }
+            .frame(width: size, height: size)
         }
     }
 }
