@@ -239,7 +239,8 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         let relay = !item.isLocal && (needsTypeRelay || forceRelay)
         let playURL = relay
             ? StreamProxy.shared.proxied(url: item.url, headers: item.headers, playlistHint: needsTypeRelay)
-            : item.url
+            // A saved download is served over HTTP by the relay; see StreamProxy.
+            : (item.isLocal ? StreamProxy.shared.localURL(for: item.url) : item.url)
         playedThroughRelay = relay
 
         var options: [String: Any] = [:]

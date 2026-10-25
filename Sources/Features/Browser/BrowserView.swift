@@ -19,9 +19,8 @@ struct BrowserView: View {
     @ObservedObject private var playback = PlaybackSession.shared
     @EnvironmentObject private var cast: CastManager
     @State private var showFoundSheet = false
-    /// The qualities offered for the stream being saved.
-    @State private var saveChoices: [SaveChoice] = []
-    @State private var savingVideo: ExtractedVideo?
+    /// The Save Offline sheet, while it is up.
+    @State private var saveOptions: SaveOptions?
     /// Whether this page's list has already been opened for the user.
     ///
     /// Once per page: a list that came back every time another stream turned
@@ -1311,69 +1310,82 @@ struct BrowserView: View {
     }
 
     // MARK: saving
-
-    /// One quality a stream can be saved at, with its size worked out the way
-    /// the found sheet works it out — AVERAGE-BANDWIDTH times running time —
-    /// so the two never quote different figures (Android 96b2871).
-    struct SaveChoice: Hashable {
-        let label: String
-        let url: URL
-        /// "1080p", when the master said — kept on the saved row.
-        var resolution: String?
-    }
-
     private func isHLS(_ video: ExtractedVideo) -> Bool {
         if video.probeResult?.hlsType != nil { return true }
         if ["hls", "m3u8"].contains((video.contentType ?? "").lowercased()) { return true }
         return video.url.absoluteString.lowercased().contains(".m3u8")
     }
 
+    /// Save was tapped. A plain file, or a stream with nothing to choose from,
+    /// saves at once; a master with several rungs, other audio or subtitles
+    /// opens the Save Offline sheet (Android's `HlsSaveDialog`).
     private func askToSave(_ video: ExtractedVideo) {
         guard isHLS(video) else { save(video, url: video.url); return }
         let item = model.playable(video)
+        let title = model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle
         Task {
-            // A master lists its rungs; a media playlist is one choice already.
             guard let (status, text) = await Self.fetchText(video.url, headers: item.headers),
                   (200..<300).contains(status), text.contains("#EXT-X-STREAM-INF")
             else { save(video, url: video.url); return }
-            let rungs = StreamProbe.variants(in: text, base: video.url)
-                .sorted { $0.bps > $1.bps }
-            var seconds: Double?
-            if let top = rungs.first,
+            // The running time only feeds the size shown on each quality, so it
+            // is fetched only when there is something to show it on.
+            var seconds = 0.0
+            if let top = StreamProbe.variants(in: text, base: video.url).max(by: { $0.bps < $1.bps }),
                let (_, media) = await Self.fetchText(top.url, headers: item.headers) {
-                seconds = StreamProbe.playlistSeconds(media)
+                seconds = StreamProbe.playlistSeconds(media) ?? 0
             }
-            let resolutions = Self.resolutions(in: text, base: video.url)
-            saveChoices = rungs.map { rung in
-                var parts: [String] = []
-                if let res = resolutions[rung.url], !res.isEmpty { parts.append(res) }
-                if let seconds, rung.bps > 0 {
-                    parts.append(StreamProbe.formatSize(Int64(rung.bps * seconds / 8)))
-                }
-                if parts.isEmpty { parts.append("\(Int(rung.bps / 1000)) kbps") }
-                return SaveChoice(
-                    label: parts.joined(separator: " · "), url: rung.url,
-                    resolution: resolutions[rung.url]
-                )
+            let options = SaveOptions.parse(
+                master: text, base: video.url, video: video, title: title, seconds: seconds
+            )
+            guard !options.variants.isEmpty else { save(video, url: video.url); return }
+            if options.needsSheet {
+                saveOptions = options
+            } else {
+                save(video, url: options.variants[0].url, resolution: options.variants[0].resolution)
             }
-            savingVideo = video
         }
     }
 
-    private func save(_ video: ExtractedVideo, url: URL, resolution: String? = nil) {
+    private func confirm(_ options: SaveOptions, title: String, variant: Int, audio: Int?, subtitle: Int?) {
+        let chosen = options.variants[variant]
+        saveOptions = nil
+        save(
+            options.video, url: chosen.url, title: title,
+            resolution: chosen.resolution.isEmpty ? nil : chosen.resolution,
+            // Audio only counts when the rung keeps it in a playlist of its own.
+            audio: chosen.hasAudioGroup ? audio.map { options.audio[$0] } : nil,
+            subtitle: subtitle.map { options.subtitles[$0] }
+        )
+    }
+
+    private func save(
+        _ video: ExtractedVideo, url: URL, title: String? = nil, resolution: String? = nil,
+        audio: SaveOptions.Track? = nil, subtitle: SaveOptions.Track? = nil
+    ) {
         let item = model.playable(video)
+        let typed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         DownloadStore.shared.enqueue(
-            title: model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle,
+            title: typed.isEmpty ? (model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle) : typed,
             pageURL: model.currentURL?.absoluteString ?? video.url.absoluteString,
             streamURL: url,
             headers: item.headers,
             poster: model.posterURL?.absoluteString,
             isHLS: isHLS(video),
-            resolution: resolution
+            resolution: resolution,
+            audio: audio,
+            subtitle: subtitle
         )
-        flash("Saving — open Downloads from the header")
-        // After it was enqueued, never before (docs/ads.md §1).
-        AdManager.shared.showInterstitial(.download)
+        // After it was enqueued, never before (docs/ads.md §1). Whatever the ad
+        // does, the user ends up looking at the download: the list of found
+        // videos closes and Downloads opens over the page, so there is no doubt
+        // it started and no list left to wander back into.
+        AdManager.shared.showInterstitial(.download) {
+            showFoundSheet = false
+            // The found sheet has to finish leaving before another can come up.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                DownloadStore.shared.presentRequest = true
+            }
+        }
     }
 
     /// RESOLUTION per variant URL, for the save dialog's labels.
@@ -1468,18 +1480,14 @@ struct BrowserView: View {
         // flat, full-width black.
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
-        .confirmationDialog(
-            "Save which quality?",
-            isPresented: Binding(get: { savingVideo != nil }, set: { if !$0 { savingVideo = nil } }),
-            titleVisibility: .visible
-        ) {
-            ForEach(saveChoices, id: \.self) { choice in
-                Button(choice.label) {
-                    if let video = savingVideo { save(video, url: choice.url, resolution: choice.resolution) }
-                    savingVideo = nil
-                }
-            }
-            Button("Cancel", role: .cancel) { savingVideo = nil }
+        .sheet(item: $saveOptions) { options in
+            SaveOfflineSheet(
+                options: options,
+                onConfirm: { title, variant, audio, subtitle in
+                    confirm(options, title: title, variant: variant, audio: audio, subtitle: subtitle)
+                },
+                onCancel: { saveOptions = nil }
+            )
         }
         // The browser's copy is under this sheet, where nobody can see it, so
         // the sheet shows the same message itself.

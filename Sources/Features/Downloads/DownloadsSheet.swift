@@ -182,6 +182,13 @@ struct DownloadsSheet: View {
             var item = MediaItem(title: entry.title, url: url, isLocal: true)
             item.contentType = entry.isHLS ? "hls" : nil
             item.thumbnailURL = entry.poster.flatMap(URL.init(string:))
+            if let path = entry.subtitlePath {
+                item.subtitles = [SubtitleTrack(
+                    url: DownloadStore.root.appendingPathComponent(path),
+                    label: entry.subtitleLabel ?? "Subtitles",
+                    language: entry.subtitleLanguage ?? ""
+                )]
+            }
             PlaybackSession.shared.playWhenDismissed(item)
             dismiss()
         case .expired:

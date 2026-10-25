@@ -154,6 +154,11 @@ struct RootTabView: View {
                 openInBrowser(address)
             }
         }
+        .onReceive(DownloadStore.shared.$presentRequest) { requested in
+            guard requested else { return }
+            DownloadStore.shared.presentRequest = false
+            showDownloads = true
+        }
         .sheet(isPresented: $showDownloads, onDismiss: { playback.flushPending() }) {
             DownloadsSheet { page in openInBrowser(page) }
         }

@@ -163,6 +163,62 @@ final class StreamProxy {
                 }
             }
         }
+        // A saved download's folder, served as the HTTP stream it was before it
+        // was saved. The Apple player does not open a playlist from disk the way
+        // it opens one from a server — it sits on the spinner without an error —
+        // and the segments keep any decoy image header the CDN glued on, which
+        // only this relay strips.
+        server["/d/:id/:file"] = { request in
+            guard let id = request.params[":id"], UUID(uuidString: id) != nil,
+                  let file = request.params[":file"], !file.contains("..")
+            else { return .badRequest(nil) }
+            let url = DownloadStore.root.appendingPathComponent(id).appendingPathComponent(file)
+            guard let raw = try? Data(contentsOf: url, options: .mappedIfSafe) else { return .notFound }
+
+            let ext = url.pathExtension.lowercased()
+            let type: String
+            switch ext {
+            case "m3u8": type = "application/vnd.apple.mpegurl"
+            case "ts": type = "video/MP2T"
+            case "mp4", "m4s", "m4v": type = "video/mp4"
+            case "vtt": type = "text/vtt"
+            default: type = "application/octet-stream"
+            }
+            if ext == "m3u8" { return .ok(.data(raw, contentType: type)) }
+
+            // Whole file stripped first, then ranged: offsets are the player's
+            // view of the body, which is the stripped one.
+            let body = Self.stripDecoyHeader(raw)
+            var out = ["Content-Type": type, "Accept-Ranges": "bytes"]
+            var slice = body
+            var status = 200
+            if let spec = request.headers["range"], spec.hasPrefix("bytes="),
+               !body.isEmpty {
+                let parts = spec.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
+                let start = Int(parts.first ?? "") ?? 0
+                let end = parts.count > 1 ? Int(parts[1]) ?? body.count - 1 : body.count - 1
+                let lower = min(max(0, start), body.count - 1)
+                let upper = min(max(lower, end), body.count - 1)
+                slice = body.subdata(in: (body.startIndex + lower)..<(body.startIndex + upper + 1))
+                out["Content-Range"] = "bytes \(lower)-\(upper)/\(body.count)"
+                status = 206
+            }
+            out["Content-Length"] = String(slice.count)
+            return .raw(status, status == 206 ? "Partial Content" : "OK", out) { writer in
+                try writer.write(slice)
+            }
+        }
+    }
+
+    /// The HTTP URL for a file inside a saved download, or the file's own URL
+    /// when it is not one or the server cannot start.
+    func localURL(for file: URL) -> URL {
+        let root = DownloadStore.root.standardizedFileURL.path
+        let path = file.standardizedFileURL.path
+        guard file.isFileURL, path.hasPrefix(root + "/"), start() else { return file }
+        let parts = path.dropFirst(root.count + 1).split(separator: "/")
+        guard parts.count == 2 else { return file }
+        return URL(string: "http://127.0.0.1:\(self.port)/d/\(parts[0])/\(parts[1])") ?? file
     }
 
     // MARK: decoy headers

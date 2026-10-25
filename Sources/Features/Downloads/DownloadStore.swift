@@ -35,6 +35,15 @@ struct DownloadEntry: Codable, Identifiable, Hashable {
     var created = Date()
     /// When it finished — the date the row shows.
     var completedAt: Date?
+    /// A separate audio playlist chosen in the save sheet, and its name.
+    var audioURL: String?
+    var audioLabel: String?
+    /// A subtitle chosen in the save sheet; `subtitlePath` is the file it was
+    /// saved as, relative to the downloads folder.
+    var subtitleURL: String?
+    var subtitleLabel: String?
+    var subtitleLanguage: String?
+    var subtitlePath: String?
     /// Progress as last measured: segments for HLS, bytes for a file.
     var done: Int64 = 0
     var total: Int64 = 0
@@ -64,6 +73,8 @@ final class DownloadStore: ObservableObject {
     @Published private(set) var entries: [DownloadEntry] = []
     /// Something finished that has not been looked at — the header's dot.
     @Published var unseen = false
+    /// Set after a save: the shell opens the Downloads sheet and clears it.
+    @Published var presentRequest = false
 
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
@@ -113,7 +124,8 @@ final class DownloadStore: ObservableObject {
     @discardableResult
     func enqueue(
         title: String, pageURL: String, streamURL: URL, headers: [String: String],
-        poster: String?, isHLS: Bool, resolution: String? = nil
+        poster: String?, isHLS: Bool, resolution: String? = nil,
+        audio: SaveOptions.Track? = nil, subtitle: SaveOptions.Track? = nil
     ) -> DownloadEntry {
         if let i = entries.firstIndex(where: {
             $0.pageURL == pageURL && $0.status != .complete
@@ -123,6 +135,11 @@ final class DownloadStore: ObservableObject {
             entries[i].status = .queued
             if let poster { entries[i].poster = poster }
             if let resolution { entries[i].resolution = resolution }
+            entries[i].audioURL = audio?.url.absoluteString
+            entries[i].audioLabel = audio?.name
+            entries[i].subtitleURL = subtitle?.url.absoluteString
+            entries[i].subtitleLabel = subtitle?.name
+            entries[i].subtitleLanguage = subtitle?.language
             persist()
             start(entries[i].id)
             return entries[i]
@@ -133,6 +150,11 @@ final class DownloadStore: ObservableObject {
             status: .queued, isHLS: isHLS
         )
         entry.resolution = resolution
+        entry.audioURL = audio?.url.absoluteString
+        entry.audioLabel = audio?.name
+        entry.subtitleURL = subtitle?.url.absoluteString
+        entry.subtitleLabel = subtitle?.name
+        entry.subtitleLanguage = subtitle?.language
         entries.insert(entry, at: 0)
         persist()
         start(entry.id)
@@ -197,8 +219,11 @@ final class DownloadStore: ObservableObject {
             at: entry.folder, includingPropertiesForKeys: [.fileSizeKey]
         )) ?? []
         if entry.isHLS {
+            // Video and audio segments, keys and init files; not playlists,
+            // the fingerprint, parts in flight or the subtitle.
             let segments = files.filter {
-                $0.lastPathComponent.hasPrefix("v") && $0.pathExtension != "part"
+                let name = $0.lastPathComponent
+                return (name.hasPrefix("v") || name.hasPrefix("a")) && $0.pathExtension != "part"
                     && $0.pathExtension != "m3u8" && $0.pathExtension != "fingerprint"
             }
             return (Int64(segments.count), entry.total)
@@ -229,6 +254,7 @@ final class DownloadStore: ObservableObject {
                         $0.durationSeconds = result.duration
                         $0.done = $0.total
                         $0.completedAt = Date()
+                        $0.subtitlePath = result.subtitlePath
                     }
                     self?.unseen = true
                     self?.tasks[id] = nil
