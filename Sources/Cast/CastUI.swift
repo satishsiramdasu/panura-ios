@@ -184,7 +184,7 @@ struct CastToolbarButton: View {
         } label: {
             CastMark(connected: connected)
                 .frame(width: 23, height: 23)
-                .foregroundStyle(connected ? PanuraTheme.accent : PanuraTheme.onSurfaceVariant)
+                .foregroundStyle(connected ? PanuraTheme.accent : PanuraTheme.onSurface)
                 // Says "trying", without a second glyph: the phone is
                 // discoverable but no TV has answered yet.
                 .opacity(!connected && panura.isAdvertising ? 0.55 : 1)

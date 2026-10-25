@@ -130,17 +130,12 @@ enum AppDestination: Hashable, CaseIterable {
     ///   mode is the more important fact about the browser while it is on, and
     ///   the rest of that screen - pill, mark, menu row - already says so.
     func chrome(privateBrowsing: Bool = false) -> Color {
+        // Neutral for every section now, bar private browsing, as on Android.
+        // A colour per destination told somebody which section they were in,
+        // which the header's own line already says, and it meant a palette per
+        // section to keep agreeing with the rest.
         if privateBrowsing, self == .web { return PanuraTheme.incognitoSurface }
-        switch self {
-        case .home: return PanuraTheme.surfaceContainerHigh
-        case .web: return Color(hex: 0x2A2113)
-        case .videos: return Color(hex: 0x15291C)
-        case .stream: return Color(hex: 0x12272C)
-        case .watchLater: return Color(hex: 0x201932)
-        case .settings: return PanuraTheme.surfaceContainerHigh
-        case .iptv: return Color(hex: 0x16223A)
-        case .ftp: return Color(hex: 0x2E1826)
-        }
+        return AppChrome.seat
     }
 
     /// The darker half of the pair: the header and the ground the tabs are cut
@@ -152,16 +147,7 @@ enum AppDestination: Hashable, CaseIterable {
     /// top of the screen belong to the tab you are in.
     func chromeDeep(privateBrowsing: Bool = false) -> Color {
         if privateBrowsing, self == .web { return Color(hex: 0x14101E) }
-        switch self {
-        case .home: return AppChrome.bar
-        case .web: return Color(hex: 0x15110A)
-        case .videos: return Color(hex: 0x0A1710)
-        case .stream: return Color(hex: 0x08161A)
-        case .watchLater: return Color(hex: 0x110D1D)
-        case .settings: return AppChrome.bar
-        case .iptv: return Color(hex: 0x0A1121)
-        case .ftp: return Color(hex: 0x190C14)
-        }
+        return AppChrome.bar
     }
 
     /// The tile behind the glyph, so a list of five can be found by colour
@@ -203,26 +189,10 @@ enum AppChrome {
     /// in front of it.
     static let bar = Color(hex: 0x0A0A0A)
 
-    /// Four seats across, whatever the screen width, with a fifth left peeking
-    /// over the edge rather than squeezed in.
-    ///
-    /// Four is what fits a 375pt phone with a readable label under each glyph.
-    /// Sizing to the count instead would shrink every tab as the row grew, so
-    /// the day a fifth arrives the other four would get worse - and nothing
-    /// would say there was more to see. A fixed width and a scroll view says
-    /// it by showing the edge of the next one.
-    static let tabsPerRow: CGFloat = 4
+    /// The header's seat, and the bar each screen draws under it.
+    static let seat = Color(hex: 0x1E1E1D)
 
-    /// How much of a seat is left over for the next one to show through.
-    ///
-    /// Half. A tenth was a sliver that read as a rendering seam rather than as
-    /// another tab; half of one is unmistakably a tab with its label starting,
-    /// which is what makes somebody flick the row. Only applied when there is a
-    /// fifth seat to show — with four it would be a margin down the right-hand
-    /// side and nothing else.
-    static let tabPeek: CGFloat = 0.5
-
-    /// A 375-point phone: iPhone SE 2 and 3, the 12 and 13 mini, and the 8.
+  /// A 375-point phone: iPhone SE 2 and 3, the 12 and 13 mini, and the 8.
     ///
     /// The floor, not a guess - the deployment target is 16.4 and the 320pt SE
     /// of 2016 stops at iOS 15. The next size up is 390, so the threshold has

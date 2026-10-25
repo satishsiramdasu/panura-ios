@@ -1,11 +1,11 @@
 import UIKit
 import SwiftUI
 
-/// The app's shell: one header, a row of tabs under it, and every destination
-/// stacked below that.
+/// The app's shell: one header, and every destination stacked below it. The
+/// header's seat names the section and opens the switcher; the tab strip is
+/// gone, as on Android.
 ///
 ///     ShellHeader     mark · Panura · tagline or the TV      cast   menu
-///     ShellTabBar     Browser   Videos   Network   +
 ///     content         the destination, then the cast bar
 ///
 /// **The drawer is gone.** Navigation used to be a slide-over list on the phone
@@ -95,6 +95,8 @@ struct RootTabView: View {
     @State private var showStream = false
     @ObservedObject private var chrome = ShellChrome.shared
     @ObservedObject private var tabSet = TabSet.shared
+    /// The section list hung under the header's seat.
+    @State private var showSwitcher = false
 
     var body: some View {
         shell
@@ -208,22 +210,17 @@ struct RootTabView: View {
                 // collapse on separate flags, which put two things in motion in
                 // the same corner at two different moments; they are the top of
                 // the app, so they go together.
-                VStack(spacing: 0) {
-                    ShellHeader(
-                        connectedTV: castDeviceName,
-                        ground: deepChrome
-                    ) { menuRows }
-
-                    ShellTabBar(
-                        tabs: tabSet.tabs,
-                        selection: $selection,
-                        addable: tabSet.offerable,
-                        onSelect: select,
-                        onAdd: addTab,
-                        ground: deepChrome,
-                        privateBrowsing: session.privateMode
-                    )
-                }
+                // No tab strip: the header's seat names the section and opens
+                // the switcher, and Home's tiles and search row cover the rest.
+                ShellHeader(
+                    section: selection,
+                    connectedTV: castDeviceName,
+                    ground: deepChrome,
+                    seat: selection.chrome(privateBrowsing: session.privateMode),
+                    onSwitcher: {
+                        withAnimation(PanelMetrics.motion) { showSwitcher = true }
+                    }
+                ) { menuRows }
                 .frame(height: chrome.visible ? Self.chromeHeight : 0, alignment: .bottom)
                 .opacity(chrome.visible ? 1 : 0)
                 .clipped()
@@ -242,6 +239,16 @@ struct RootTabView: View {
                     }
                     .transition(.move(edge: .bottom))
                     .zIndex(2)
+            }
+            if showSwitcher {
+                ShellSwitcher(
+                    current: selection,
+                    onSelect: select,
+                    onDismiss: {
+                        withAnimation(PanelMetrics.motion) { showSwitcher = false }
+                    }
+                )
+                .zIndex(2.5)
             }
             // Above every screen, because the mark that opens it is in the
             // header and the panel has to cover what it is about.
@@ -266,17 +273,9 @@ struct RootTabView: View {
     /// Header plus strip. Collapsed as one height, so the strip slides out
     /// under the header rather than the two of them racing.
     private static var chromeHeight: CGFloat {
-        ShellHeader<EmptyView>.height + ShellTabBar.height
+        ShellHeader<EmptyView>.height
     }
 
-    /// Puts a tab in the strip and goes to it, in one motion.
-    ///
-    /// Adding and arriving are the same gesture on purpose. Somebody who picks
-    /// IPTV from the `+` wants IPTV, not a new button to press afterwards.
-    private func addTab(_ destination: AppDestination) {
-        tabSet.add(destination)
-        select(destination)
-    }
 
     /// Everything that is not a place.
     ///
