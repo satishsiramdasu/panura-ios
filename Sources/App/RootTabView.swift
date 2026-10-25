@@ -127,6 +127,12 @@ struct RootTabView: View {
         // actually gone, because one presenter cannot hold two presentations.
         .fullScreenCover(item: $playback.presented, onDismiss: {
             AdManager.shared.flushQueued()
+            // Played from Downloads: the sheet comes back when the player goes,
+            // so a list of downloads is where you land, not the page behind it.
+            if DownloadStore.shared.returnAfterPlayer {
+                DownloadStore.shared.returnAfterPlayer = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showDownloads = true }
+            }
         }) { playing in
             PlayerScreen(item: playing.item, playlist: playing.playlist)
         }
@@ -198,6 +204,12 @@ struct RootTabView: View {
             if !showing {
                 castFlow.settle()
                 AdManager.shared.flushQueued()
+            // Played from Downloads: the sheet comes back when the player goes,
+            // so a list of downloads is where you land, not the page behind it.
+            if DownloadStore.shared.returnAfterPlayer {
+                DownloadStore.shared.returnAfterPlayer = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showDownloads = true }
+            }
             }
         }
         // Nothing in release builds — see the modifier below.

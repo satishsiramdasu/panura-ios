@@ -191,6 +191,7 @@ struct DownloadsSheet: View {
                 )]
             }
             PlaybackSession.shared.playWhenDismissed(item)
+            store.returnAfterPlayer = true
             dismiss()
         case .expired:
             expired = entry

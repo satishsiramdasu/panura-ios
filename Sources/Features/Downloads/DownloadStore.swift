@@ -78,6 +78,9 @@ final class DownloadStore: ObservableObject {
     @Published var unseen = false
     /// Set after a save: the shell opens the Downloads sheet and clears it.
     @Published var presentRequest = false
+    /// Set when a download is played from the sheet; the shell reopens the
+    /// sheet once the player has gone. Not published: nothing draws from it.
+    var returnAfterPlayer = false
 
     private var tasks: [UUID: Task<Void, Never>] = [:]
 
