@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Downloads, as a page in the shell — Android's `DownloadsTab`.
+/// Downloads, as a page above the whole app — Android's `DownloadsTab`.
 ///
 /// A sheet rather than a section (Android 2767295): a download running is
 /// something to see from wherever you are, not a place to go.
@@ -38,14 +38,8 @@ struct DownloadsPage: View {
             .navigationTitle("Downloads")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: onClose) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel("Back")
+                ToolbarItem(placement: .confirmationAction) {
+                    SheetCloseButton(action: onClose)
                 }
             }
         }

@@ -157,7 +157,7 @@ struct RootTabView: View {
         .onReceive(DownloadStore.shared.$presentRequest) { requested in
             guard requested else { return }
             DownloadStore.shared.presentRequest = false
-            withAnimation(.easeInOut(duration: 0.2)) { showDownloads = true }
+            withAnimation(.easeOut(duration: 0.25)) { showDownloads = true }
         }
         .onChange(of: showDownloads) { open in
             if open { DownloadStore.shared.unseen = false }
@@ -232,7 +232,7 @@ struct RootTabView: View {
                     onSwitcher: {
                         withAnimation(PanelMetrics.motion) { showSwitcher = true }
                     },
-                    onDownloads: { withAnimation(.easeInOut(duration: 0.2)) { showDownloads.toggle() } }
+                    onDownloads: { withAnimation(.easeOut(duration: 0.25)) { showDownloads = true } }
                 ) { menuRows }
                 .frame(height: chrome.visible ? Self.chromeHeight : 0, alignment: .bottom)
                 .opacity(chrome.visible ? 1 : 0)
@@ -253,6 +253,29 @@ struct RootTabView: View {
                     .transition(.move(edge: .bottom))
                     .zIndex(2)
             }
+            // Downloads: a page above everything, the cast page's own shape — it
+            // covers the header, slides up from the bottom and closes back to
+            // exactly the screen you were on. Not a sheet (it is rebuilt each
+            // time, so a long list lost its place, and the player cannot open
+            // over one) and not a section (it would be somewhere you have to
+            // switch away from and back). It stays composed and slides off the
+            // screen instead of leaving it, so scroll and search survive.
+            DownloadsPage(
+                onClose: { withAnimation(.easeOut(duration: 0.25)) { showDownloads = false } },
+                onOpenPage: { page in
+                    withAnimation(.easeOut(duration: 0.25)) { showDownloads = false }
+                    openInBrowser(page)
+                }
+            )
+            .background(PanuraTheme.background)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: AppChrome.bottomInset)
+            }
+            .offset(y: showDownloads ? 0 : UIScreen.main.bounds.height)
+            .opacity(showDownloads ? 1 : 0)
+            .allowsHitTesting(showDownloads)
+            .accessibilityHidden(!showDownloads)
+            .zIndex(2.2)
             if showSwitcher {
                 ShellSwitcher(
                     current: selection,
@@ -516,26 +539,6 @@ struct RootTabView: View {
             ForEach(tabSet.added, id: \.self) { destination in
                 layer(destination) { added(destination) }
             }
-            // Downloads is a page over the sections, not a sheet. A sheet is
-            // rebuilt each time it opens, so a long list lost its place, and the
-            // player — the root's one cover — could not open over it. The page
-            // stays composed, so its scroll position and search survive being
-            // closed and opened again, and the section under it is untouched.
-            DownloadsPage(
-                onClose: { withAnimation(.easeInOut(duration: 0.2)) { showDownloads = false } },
-                onOpenPage: { page in
-                    showDownloads = false
-                    openInBrowser(page)
-                }
-            )
-            .background(PanuraTheme.background)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Color.clear.frame(height: AppChrome.bottomInset)
-            }
-            .opacity(showDownloads ? 1 : 0)
-            .allowsHitTesting(showDownloads)
-            .accessibilityHidden(!showDownloads)
-            .zIndex(2)
         }
     }
 
