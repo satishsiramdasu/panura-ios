@@ -20,7 +20,7 @@ settings:
     #
     # The release workflow's `marketing_version` input overrides it per run;
     # this is the default so a run with the box left empty is still valid.
-    MARKETING_VERSION: "1.1"
+    MARKETING_VERSION: "1.2"
     # Overwritten on CI by the run number, which is monotonic and needs no
     # state. Only here so a local build has something.
     CURRENT_PROJECT_VERSION: "1"
