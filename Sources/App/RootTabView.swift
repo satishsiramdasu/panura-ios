@@ -101,8 +101,6 @@ struct RootTabView: View {
     @State private var showClearData = false
     /// Downloads, opened from the header as a sheet.
     @State private var showDownloads = false
-    /// How far the Downloads page has been pulled down by hand.
-    @State private var downloadsDrag: CGFloat = 0
 
     var body: some View {
         shell
@@ -273,34 +271,7 @@ struct RootTabView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 Color.clear.frame(height: AppChrome.bottomInset)
             }
-            // A grabber, and the page follows a finger that starts in its top
-            // strip: below that the list scrolls as it always did.
-            .overlay(alignment: .top) {
-                Capsule()
-                    .fill(PanuraTheme.onSurfaceVariant.opacity(0.5))
-                    .frame(width: 36, height: 5)
-                    .padding(.top, 8)
-                    .allowsHitTesting(false)
-            }
-            .offset(y: showDownloads ? downloadsDrag : UIScreen.main.bounds.height)
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 12, coordinateSpace: .global)
-                    .onChanged { value in
-                        guard showDownloads, value.startLocation.y < 150 else { return }
-                        downloadsDrag = max(0, value.translation.height)
-                    }
-                    .onEnded { value in
-                        guard value.startLocation.y < 150 else { downloadsDrag = 0; return }
-                        if value.translation.height > 120 || value.predictedEndTranslation.height > 320 {
-                            withAnimation(.easeOut(duration: 0.25)) {
-                                showDownloads = false
-                                downloadsDrag = 0
-                            }
-                        } else {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { downloadsDrag = 0 }
-                        }
-                    }
-            )
+            .offset(y: showDownloads ? 0 : UIScreen.main.bounds.height)
             .opacity(showDownloads ? 1 : 0)
             .allowsHitTesting(showDownloads)
             .accessibilityHidden(!showDownloads)
