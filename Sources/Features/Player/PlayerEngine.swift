@@ -203,6 +203,12 @@ enum PlayerEngineKind: String, CaseIterable, Identifiable {
             return true
         }
         let path = item.url.path.lowercased()
+        // A saved HLS download: a playlist on disk beside its segments, which
+        // keep whatever the CDN put in front of them (a decoy image header,
+        // sometimes). The Apple player does not read a local playlist like that
+        // and does not fail either — it sits on the spinner, which is how a
+        // finished download came to "keep loading". VLC plays it as it is.
+        if item.isLocal, item.url.isFileURL, path.hasSuffix(".m3u8") { return true }
         return ["mkv", "avi", "webm", "flv", "wmv", "rmvb", "ts", "mpg", "mpeg", "vob", "ogv", "divx"]
             .contains { path.hasSuffix("." + $0) }
     }

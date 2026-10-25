@@ -1305,7 +1305,7 @@ struct BrowserView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
         .background(
-            filled ? PanuraTheme.accent : PanuraTheme.surfaceContainerHigh,
+            filled ? PanuraTheme.accent : PanuraTheme.surfaceContainerHighest,
             in: RoundedRectangle(cornerRadius: 12)
         )
     }
@@ -1318,6 +1318,8 @@ struct BrowserView: View {
     struct SaveChoice: Hashable {
         let label: String
         let url: URL
+        /// "1080p", when the master said — kept on the saved row.
+        var resolution: String?
     }
 
     private func isHLS(_ video: ExtractedVideo) -> Bool {
@@ -1349,13 +1351,16 @@ struct BrowserView: View {
                     parts.append(StreamProbe.formatSize(Int64(rung.bps * seconds / 8)))
                 }
                 if parts.isEmpty { parts.append("\(Int(rung.bps / 1000)) kbps") }
-                return SaveChoice(label: parts.joined(separator: " · "), url: rung.url)
+                return SaveChoice(
+                    label: parts.joined(separator: " · "), url: rung.url,
+                    resolution: resolutions[rung.url]
+                )
             }
             savingVideo = video
         }
     }
 
-    private func save(_ video: ExtractedVideo, url: URL) {
+    private func save(_ video: ExtractedVideo, url: URL, resolution: String? = nil) {
         let item = model.playable(video)
         DownloadStore.shared.enqueue(
             title: model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle,
@@ -1363,7 +1368,8 @@ struct BrowserView: View {
             streamURL: url,
             headers: item.headers,
             poster: model.posterURL?.absoluteString,
-            isHLS: isHLS(video)
+            isHLS: isHLS(video),
+            resolution: resolution
         )
         flash("Saving — open Downloads from the header")
         // After it was enqueued, never before (docs/ads.md §1).
@@ -1466,7 +1472,7 @@ struct BrowserView: View {
         ) {
             ForEach(saveChoices, id: \.self) { choice in
                 Button(choice.label) {
-                    if let video = savingVideo { save(video, url: choice.url) }
+                    if let video = savingVideo { save(video, url: choice.url, resolution: choice.resolution) }
                     savingVideo = nil
                 }
             }
@@ -1556,7 +1562,7 @@ struct BrowserView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(
-                    saved ? PanuraTheme.accentSoft : PanuraTheme.surfaceContainerHigh,
+                    saved ? PanuraTheme.accentSoft : PanuraTheme.surfaceContainerHighest,
                     in: Capsule()
                 )
         }

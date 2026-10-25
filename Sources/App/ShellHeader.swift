@@ -52,9 +52,10 @@ struct ShellHeader<MenuContent: View>: View {
             // so the ink is spaced by the targets alone and evenly. With the
             // row's spacing added on top they sat wide and uneven.
             HStack(spacing: 0) {
+                // Downloads, then cast, then the menu — Android's order.
+                DownloadsHeaderButton(action: onDownloads)
                 CastToolbarButton()
                     .frame(width: 44, height: 44)
-                DownloadsHeaderButton(action: onDownloads)
                 menuButton
             }
         }

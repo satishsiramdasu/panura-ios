@@ -30,7 +30,11 @@ struct DownloadEntry: Codable, Identifiable, Hashable {
     var localPath: String?
     var sizeBytes: Int64 = 0
     var durationSeconds: Double = 0
+    /// "1080p", when the master playlist said which rung this is.
+    var resolution: String?
     var created = Date()
+    /// When it finished — the date the row shows.
+    var completedAt: Date?
     /// Progress as last measured: segments for HLS, bytes for a file.
     var done: Int64 = 0
     var total: Int64 = 0
@@ -109,7 +113,7 @@ final class DownloadStore: ObservableObject {
     @discardableResult
     func enqueue(
         title: String, pageURL: String, streamURL: URL, headers: [String: String],
-        poster: String?, isHLS: Bool
+        poster: String?, isHLS: Bool, resolution: String? = nil
     ) -> DownloadEntry {
         if let i = entries.firstIndex(where: {
             $0.pageURL == pageURL && $0.status != .complete
@@ -118,15 +122,17 @@ final class DownloadStore: ObservableObject {
             entries[i].headers = headers
             entries[i].status = .queued
             if let poster { entries[i].poster = poster }
+            if let resolution { entries[i].resolution = resolution }
             persist()
             start(entries[i].id)
             return entries[i]
         }
-        let entry = DownloadEntry(
+        var entry = DownloadEntry(
             id: UUID(), title: Self.clean(title), pageURL: pageURL,
             streamURL: streamURL.absoluteString, headers: headers, poster: poster,
             status: .queued, isHLS: isHLS
         )
+        entry.resolution = resolution
         entries.insert(entry, at: 0)
         persist()
         start(entry.id)
@@ -152,6 +158,30 @@ final class DownloadStore: ObservableObject {
         }
         entries.removeAll { $0.id == id }
         persist()
+    }
+
+    /// Stops and removes everything not finished; saved videos are kept.
+    func cancelAllActive() {
+        for entry in entries where entry.status != .complete { delete(entry.id) }
+    }
+
+    /// Bytes on disk for everything saved, finished or not — the sheet's
+    /// "used" line.
+    var storageUsedBytes: Int64 {
+        entries.reduce(0) { total, entry in
+            total + (entry.status == .complete ? entry.sizeBytes : Self.folderSize(entry.folder))
+        }
+    }
+
+    private static func folderSize(_ folder: URL) -> Int64 {
+        guard let walker = FileManager.default.enumerator(
+            at: folder, includingPropertiesForKeys: [.fileSizeKey]
+        ) else { return 0 }
+        var sum: Int64 = 0
+        for case let file as URL in walker {
+            sum += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
+        return sum
     }
 
     func rename(_ id: UUID, to title: String) {
@@ -198,6 +228,7 @@ final class DownloadStore: ObservableObject {
                         $0.sizeBytes = result.size
                         $0.durationSeconds = result.duration
                         $0.done = $0.total
+                        $0.completedAt = Date()
                     }
                     self?.unseen = true
                     self?.tasks[id] = nil

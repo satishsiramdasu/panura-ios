@@ -62,19 +62,30 @@ struct PosterThumb: View {
         .frame(width: width, height: height)
     }
 
-    /// The whole picture, in its own shape, inside the box.
+    /// The whole picture, fitted over a blur of itself — Android's
+    /// `PagePosterThumb`.
     ///
     /// Posters are not one shape: a film site publishes a portrait sheet, a
     /// video site a 16:9 still, and plenty publish a square. Filling the box
-    /// crops two of the three. It used to fit the picture over a blown-up blur
-    /// of itself, and the blur read as the same poster cropped to the box — so
-    /// the picture now stands alone, rounded on its own edges, and the box is
-    /// only room for it.
+    /// crops two of the three, so the picture is fitted whole and the blur of it
+    /// fills what is left either side. A portrait poster then sits in a
+    /// landscape box as a poster, not as a strip of one. A landscape still
+    /// fills the box anyway and the blur never shows.
     private func fitted(_ image: Image) -> some View {
-        image
-            .resizable()
-            .scaledToFit()
-            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        ZStack {
+            PanuraTheme.surfaceContainerHighest
+            image
+                .resizable()
+                .scaledToFill()
+                .frame(width: width, height: height)
+                .blur(radius: 16)
+                .clipped()
+            image
+                .resizable()
+                .scaledToFit()
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
     }
 
     private var tile: some View {
