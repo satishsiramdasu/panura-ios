@@ -1370,6 +1370,7 @@ struct BrowserView: View {
             streamURL: url,
             headers: item.headers,
             poster: model.posterURL?.absoluteString,
+            posterAlt: model.posterFallbackURL?.absoluteString,
             isHLS: isHLS(video),
             resolution: resolution,
             audio: audio,

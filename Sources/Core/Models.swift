@@ -8,6 +8,8 @@ struct MediaItem: Identifiable, Hashable {
     var isLocal: Bool
     var durationSeconds: Double?
     var thumbnailURL: URL?
+    /// Tried when `thumbnailURL` will not load (see `PosterThumb.alternate`).
+    var thumbnailAlternateURL: URL?
     /// Headers for local playback. Narrowed by the site rule, because requiring
     /// `Origin` forces the stream through the local relay and libVLC sends the
     /// rest natively.

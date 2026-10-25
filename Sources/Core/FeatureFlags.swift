@@ -28,21 +28,12 @@ enum FeatureFlags {
     /// It also makes the banner and the rewarded unlock testable *before*
     /// those two units exist in AdMob, which they do not yet.
     ///
-    /// Off unless a tester turns it on, on a TestFlight install (see `InstallSource`).
-    /// With it on
+    /// ⚠️ **Set this false in the release that is submitted.** With it true
     /// the app earns nothing: Google's test units pay zero. It is the one flag
     /// here whose wrong value is silent — the ads look right and the revenue
     /// is zero — so it is checked at the top of
     /// `store/app-store-listing.md`'s release list.
-    static var adsUseTestUnits: Bool {
-        // Live ads are the default everywhere. The tester's switch counts only
-        // on a TestFlight install; on any other install the stored value is
-        // ignored, so it can never turn a real user's ads into test ads.
-        InstallSource.isTestFlight && UserDefaults.standard.bool(forKey: testAdsKey)
-    }
-
-    /// The Advanced section's switch (Settings, TestFlight installs only).
-    static let testAdsKey = "ads.use_test_units"
+    static let adsUseTestUnits = false
 
     /// Ask for tracking permission and serve personalised ads.
     ///

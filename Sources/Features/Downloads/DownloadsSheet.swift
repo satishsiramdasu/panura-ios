@@ -182,6 +182,7 @@ struct DownloadsSheet: View {
             var item = MediaItem(title: entry.title, url: url, isLocal: true)
             item.contentType = entry.isHLS ? "hls" : nil
             item.thumbnailURL = entry.poster.flatMap(URL.init(string:))
+            item.thumbnailAlternateURL = entry.posterAlt.flatMap(URL.init(string:))
             if let path = entry.subtitlePath {
                 item.subtitles = [SubtitleTrack(
                     url: DownloadStore.root.appendingPathComponent(path),
@@ -219,6 +220,7 @@ private struct DownloadRow: View {
             HStack(spacing: 12) {
                 PosterThumb(
                     url: entry.poster.flatMap(URL.init(string:)),
+                    alternate: entry.posterAlt.flatMap(URL.init(string:)),
                     fallback: entry.status == .failed ? "exclamationmark.triangle" : "film",
                     width: 120, height: 68, corner: 10
                 )
@@ -263,6 +265,8 @@ private struct DownloadRow: View {
         var parts: [String] = []
         if let res = entry.resolution, !res.isEmpty { parts.append(res) }
         if entry.durationSeconds > 0 { parts.append(Self.clock(entry.durationSeconds)) }
+        // Which audio, so two saves of one page can be told apart.
+        if let audio = entry.audioLabel, !audio.isEmpty { parts.append(audio) }
         return parts.joined(separator: " · ")
     }
 

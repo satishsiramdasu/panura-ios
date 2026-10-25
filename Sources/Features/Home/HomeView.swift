@@ -630,19 +630,15 @@ private struct ContinueWatchingCard: View {
                 .fill(PanuraTheme.surfaceVariant)
 
             if let posterURL {
-                RemoteImage(url: posterURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    // A poster that will not load is no better than no poster,
-                    // so it steps aside for the frame rather than leaving a
-                    // hole where a picture was promised.
-                    case .failure: grabbedFrame
-                    default: Color.clear
-                    }
-                }
-                .frame(width: 140, height: 90)
-                .clipped()
+                // The same view Watch Later draws: the poster, the page's own
+                // picture when that will not load, and a portrait one fitted
+                // over a blur of itself.
+                PosterThumb(
+                    url: posterURL,
+                    alternate: entry.posterAlt.flatMap(URL.init(string:)),
+                    fallback: entry.isLocal ? "film.fill" : "link",
+                    width: 140, height: 90, corner: 12
+                )
             } else {
                 grabbedFrame
             }

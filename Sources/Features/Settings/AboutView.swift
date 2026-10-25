@@ -30,7 +30,7 @@ struct AboutView: View {
     /// all. There is no console on either.
     @ViewBuilder
     private var adState: some View {
-        if FeatureFlags.adsEnabled, InstallSource.isTestFlight {
+        if FeatureFlags.adsEnabled, FeatureFlags.adsUseTestUnits {
             Section {
                 let _ = adStateTick
                 ForEach(AdManager.shared.diagnostics) { row in

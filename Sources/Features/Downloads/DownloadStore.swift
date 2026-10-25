@@ -23,6 +23,9 @@ struct DownloadEntry: Codable, Identifiable, Hashable {
     var headers: [String: String]
     /// The page's poster, shown at 120x68.
     var poster: String?
+    /// Tried when `poster` will not load — the page's own picture, where
+    /// `poster` is the player's artwork, which is not always served.
+    var posterAlt: String?
     var status: Status
     var isHLS: Bool
     /// The file the player opens once complete: the local playlist for HLS,
@@ -118,27 +121,35 @@ final class DownloadStore: ObservableObject {
 
     /// Starts a download, or resumes the stopped one from the same page.
     ///
-    /// Re-saving from the same page reuses a stopped entry: the worker compares
-    /// the new link's fingerprint with the one on disk, and continues onto the
-    /// fresh URL when it is the same video, or wipes and starts over when not.
+    /// Re-saving from the same page reuses an unfinished entry only when it is
+    /// the same choice — the same quality, audio and subtitle. A different
+    /// audio track is a different download: it gets its own entry and its own
+    /// folder, and runs beside the first. The same choice already running is
+    /// left alone; the same choice stopped continues onto the fresh link, where
+    /// the worker compares the new fingerprint with the one on disk and either
+    /// carries on or wipes and starts over.
     @discardableResult
     func enqueue(
         title: String, pageURL: String, streamURL: URL, headers: [String: String],
-        poster: String?, isHLS: Bool, resolution: String? = nil,
+        poster: String?, posterAlt: String? = nil, isHLS: Bool, resolution: String? = nil,
         audio: SaveOptions.Track? = nil, subtitle: SaveOptions.Track? = nil
     ) -> DownloadEntry {
         if let i = entries.firstIndex(where: {
             $0.pageURL == pageURL && $0.status != .complete
+                && $0.resolution == resolution
+                && $0.audioLabel == audio?.name
+                && $0.subtitleLabel == subtitle?.name
         }) {
+            if entries[i].status == .downloading || entries[i].status == .queued {
+                return entries[i]
+            }
             entries[i].streamURL = streamURL.absoluteString
             entries[i].headers = headers
             entries[i].status = .queued
             if let poster { entries[i].poster = poster }
-            if let resolution { entries[i].resolution = resolution }
+            if let posterAlt { entries[i].posterAlt = posterAlt }
             entries[i].audioURL = audio?.url.absoluteString
-            entries[i].audioLabel = audio?.name
             entries[i].subtitleURL = subtitle?.url.absoluteString
-            entries[i].subtitleLabel = subtitle?.name
             entries[i].subtitleLanguage = subtitle?.language
             persist()
             start(entries[i].id)
@@ -149,6 +160,7 @@ final class DownloadStore: ObservableObject {
             streamURL: streamURL.absoluteString, headers: headers, poster: poster,
             status: .queued, isHLS: isHLS
         )
+        entry.posterAlt = posterAlt
         entry.resolution = resolution
         entry.audioURL = audio?.url.absoluteString
         entry.audioLabel = audio?.name

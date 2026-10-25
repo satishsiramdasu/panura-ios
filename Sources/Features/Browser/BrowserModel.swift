@@ -307,6 +307,7 @@ final class BrowserModel: ObservableObject {
             // built by it came off a page.
             origin: .browser
         )
+        item.thumbnailAlternateURL = posterFallbackURL
         item.previewTrack = previewTrack
         item.isPrivate = privateMode
         return item

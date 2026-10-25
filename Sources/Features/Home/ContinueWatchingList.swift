@@ -174,23 +174,16 @@ private struct ResumeThumb: View {
     @State private var frame: UIImage?
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 8).fill(PanuraTheme.surfaceVariant)
-
-            if let url = entry.poster.flatMap(URL.init(string:)) {
-                RemoteImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image): image.resizable().scaledToFill()
-                    case .failure: fallback
-                    default: Color.clear
-                    }
-                }
-            } else {
-                fallback
-            }
-        }
-        .frame(width: 78, height: 46)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        // The same picture Watch Later draws, by the same view: the poster, the
+        // page's own picture when that will not load, and a portrait one fitted
+        // over a blur of itself. The grabbed frame is the fallback.
+        PosterThumb(
+            url: entry.poster.flatMap(URL.init(string:)),
+            alternate: entry.posterAlt.flatMap(URL.init(string:)),
+            image: entry.poster == nil ? frame : nil,
+            fallback: entry.isLocal ? "film.fill" : "link",
+            width: 78, height: 46, corner: 8
+        )
         .opacity(entry.isExpired ? 0.45 : 1)
         .task(id: entry.thumbnailPath) {
             guard let path = entry.thumbnailPath else { frame = nil; return }

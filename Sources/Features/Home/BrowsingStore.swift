@@ -140,6 +140,8 @@ struct ResumeEntry: Codable, Identifiable, Hashable {
     /// only tolerates a missing key for an Optional property, and saved JSON
     /// from before this existed has to keep decoding.
     var poster: String?
+    /// Tried when `poster` will not load.
+    var posterAlt: String?
     /// Set by the liveness sweep when the link no longer answers.
     ///
     /// The entry is kept rather than deleted. A stream URL expiring does not
@@ -705,6 +707,7 @@ final class BrowsingStore: ObservableObject {
             // an empty field is worse than never having had one.
             if resumes[i].poster == nil {
                 resumes[i].poster = item.thumbnailURL?.absoluteString
+                resumes[i].posterAlt = item.thumbnailAlternateURL?.absoluteString
             }
         } else {
             resumes.append(
@@ -714,7 +717,8 @@ final class BrowsingStore: ObservableObject {
                     isLocal: item.isLocal,
                     headers: item.headers,
                     contentType: item.contentType,
-                    poster: item.thumbnailURL?.absoluteString
+                    poster: item.thumbnailURL?.absoluteString,
+                    posterAlt: item.thumbnailAlternateURL?.absoluteString
                 )
             )
         }
