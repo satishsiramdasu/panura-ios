@@ -133,13 +133,17 @@ struct FAQView: View {
             """
         ),
         Entry(
-            question: "Does Panura download videos?",
+            question: "Can I save a video to watch offline?",
             answer: """
-            No. Panura plays and casts; it does not save anything from a \
-            website to your phone.
+            Yes. In the found-video sheet, tap Save and pick a quality. \
+            Downloads opens from the arrow in the header: tap a row to pause \
+            or resume it, and a finished one to play it.
 
-            The Videos tab shows videos that are already in your photo library — \
-            your own recordings — so that you can play or cast them.
+            Some sites hand out links that expire. If a download says its link \
+            has expired, open the page again and save it once more — it \
+            continues from where it stopped.
+
+            Save only what you have the right to keep.
             """
         ),
         Entry(
