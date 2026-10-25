@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Home tab. Mirrors Android's `HomeTab`: address pill header, brand block with
-/// version + action links, then Bookmarks · Continue Watching · Most Visited.
+/// Home tab. Mirrors Android's `HomeTab`: search header, then Continue browsing,
+/// Shortcuts, Continue Watching, Explore, and the two play-something cards.
 struct HomeView: View {
     /// Hands a raw address-bar string (URL or search terms) to the Browser tab.
     var onOpenBrowser: (String) -> Void
@@ -16,7 +16,6 @@ struct HomeView: View {
     @State private var showBookmarksSheet = false
     @State private var editingBookmark: SiteEntry?
 
-    @State private var showClearData = false
     /// The Library, and which tab it opens on — one value, not two.
     ///
     /// It was a flag plus a separate tab, and the sheet's content read the tab
@@ -35,38 +34,21 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                // The order Android settled on: the page you were reading,
+                // the sites you keep, what you were watching, the places the
+                // tab strip used to hold, then the two ways to play something
+                // you already have. Watch History, Clear Data, Share and
+                // Telegram have gone to the header menu and the Library.
                 VStack(alignment: .leading, spacing: 28) {
+                    if let last = store.lastVisited { continueBrowsingCard(last) }
                     bookmarksSection
                     if !store.continueWatching.isEmpty { continueWatchingSection }
-                    // Before the destinations, where the cast card used to
-                    // sit after them. Casting is something you reach for once
-                    // you have already chosen what to watch, which made it the
-                    // last card on a screen people open in order to start
-                    // watching. Picking a video *is* starting, so it goes with
-                    // Bookmarks and Continue Watching - the three ways to be
-                    // playing something within one tap.
-                    // Above Pick a video, because it is the more specific
-                    // offer: one named page somebody was actually reading
-                    // beats a picker over the whole library.
-                    if let last = store.lastVisited { continueBrowsingCard(last) }
-                    // The ways to start something this minute, in one shape,
-                    // one under the other. They used to be a card and a grid
-                    // of tiles headed "Explore", which put the same kind of
-                    // act into two different kinds of furniture — and the
-                    // heading promised places to go while holding two
-                    // leftovers.
+                    exploreSection
                     VStack(spacing: 10) {
                         PickVideoCard()
                         networkStreamCard
                     }
                     .padding(.horizontal, 16)
-                    housekeepingRow
-                    // Last, under the cards. They were beside the name at the
-                    // very top, which gave the two least-pressed controls on
-                    // the screen the best position on it - and the name has
-                    // gone up to the app header, so there is nothing left to
-                    // sit beside.
-                    communityRow
                 }
                 .padding(.vertical, 20)
             }
@@ -106,13 +88,6 @@ struct HomeView: View {
             onDismiss: { PlaybackSession.shared.flushPending() }
         ) { tab in
             LibrarySheet(tab: tab, onOpenBrowser: onOpenBrowser)
-        }
-        // An overlay, not a sheet: it has to arrive centred, where the eye
-        // already is, rather than sliding up from the far end of the screen.
-        .overlay {
-            if showClearData {
-                ClearDataDialog(isPresented: $showClearData) { flashResume($0) }
-            }
         }
         .sheet(item: $editingBookmark) { BookmarkEditor(entry: $0) }
         .confirmationDialog(
@@ -191,41 +166,21 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    /// The small things: two lists you go looking for, and one way to tidy
-    /// up after yourself.
-    ///
-    /// Watch Later and Watch History are here rather than in the header menu,
-    /// which is where they briefly were. A menu is the right place for
-    /// something you need from every screen; these are things you go looking
-    /// for, and looking for something on Home is what Home is. It also means
-    /// Watch Later no longer depends on Continue Watching having a row — the
-    /// header shortcut vanished exactly when there was nothing to continue,
-    /// which is when somebody wants what they saved.
-    ///
-    /// Settings and Report Issue are not here. Both are one tap away in the
-    /// header menu, from every tab — a tile that repeats a menu row teaches
-    /// people the menu is not worth opening, and Home has better things to
-    /// spend a third of a row on.
-    ///
-    /// Clear Data stays, because its only other home is two levels down in
-    /// Settings → Web Browser, and it is the one thing on that path people
-    /// actually come looking for.
-    ///
-    /// "Clear Data", not "Clear History": history is one of seven things it
-    /// can take. One tile, one dialog, every choice in it — rather than a menu
-    /// whose items each did a different amount of damage with no way to see
-    /// what any of them would take.
-    private var housekeepingRow: some View {
-        HStack(spacing: 10) {
-            optionTile("Watch Later", systemImage: "clock") { openLibrary(.later) }
-            optionTile("Watch History", systemImage: "checkmark.circle") {
-                openLibrary(.history)
+    /// The places the tab strip used to keep permanently visible, as tiles on
+    /// the one screen that can spare the room. The header's switcher covers
+    /// section to section; this covers the hop from Home. Watch Later rides
+    /// with them, with a solid clock, because it is somewhere you go looking.
+    private var exploreSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader("Explore")
+            HStack(spacing: 10) {
+                optionTile("Web Browser", systemImage: "globe") { onOpenSection(.web) }
+                optionTile("Local Videos", systemImage: "film") { onOpenSection(.videos) }
+                optionTile("Media Servers", systemImage: "server.rack") { onOpenSection(.ftp) }
+                optionTile("Watch Later", systemImage: "clock.fill") { openLibrary(.later) }
             }
-            optionTile("Clear Data", systemImage: "trash") {
-                withAnimation(.easeOut(duration: 0.15)) { showClearData = true }
-            }
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
     }
 
     private func openLibrary(_ tab: LibrarySheet.Tab) {
@@ -338,53 +293,11 @@ struct HomeView: View {
             : PanuraTheme.surfaceVariant
     }
 
-    // MARK: community links
-
-    /// Share and Telegram, at the foot of the screen.
-    ///
-    /// They used to be a column beside the app's name at the very top, which
-    /// gave the two least-pressed controls on Home the most valuable position
-    /// on it. The name has moved to the app header, and these follow the cards
-    /// instead of preceding them - which is also where a person who has
-    /// finished looking at their videos actually is.
-    private var communityRow: some View {
-        HStack(spacing: 10) {
-            ShareLink(
-                item: URL(string: "https://panura.app")!,
-                // No "download". There is no download feature on iOS - the
-                // code was deleted rather than gated, because saving media
-                // from third-party sites is what Review 5.2.3 names - and
-                // the FAQ two screens away says so outright. This was the
-                // one string in the app promising the opposite, in the one
-                // place users forward to other people.
-                message: Text("Panura Player — browse, play & cast web videos.")
-            ) {
-                linkLabel("Share App", systemImage: "square.and.arrow.up")
-            }
-            Button {
-                UIApplication.shared.open(URL(string: "https://t.me/panura_player")!)
-            } label: {
-                linkLabel("Telegram", systemImage: "paperplane.fill")
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20)
-    }
-
-    private func linkLabel(_ title: String, systemImage: String) -> some View {
-        Label(title, systemImage: systemImage)
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(PanuraTheme.accent)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background(PanuraTheme.surfaceVariant, in: Capsule())
-    }
-
     // MARK: bookmarks
 
     private var bookmarksSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionHeader("Bookmarks", showAll: !store.bookmarks.isEmpty) {
+            sectionHeader("Shortcuts", showAll: !store.bookmarks.isEmpty) {
                 showBookmarksSheet = true
             }
             if store.bookmarks.isEmpty {
