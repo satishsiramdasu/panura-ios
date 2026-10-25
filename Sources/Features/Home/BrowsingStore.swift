@@ -589,6 +589,18 @@ final class BrowsingStore: ObservableObject {
         bumpHost(rawHost, title: title, isRoot: url.path.isEmpty || url.path == "/", counts: !isRestatement)
     }
 
+    /// Gives a history row the page's artwork once the page reports it, so
+    /// Continue browsing shows the page rather than the site's icon.
+    func recordPoster(url: URL, poster: URL?, alternate: URL?) {
+        guard recordHistory, let poster,
+              let i = history.firstIndex(where: { $0.url == url.absoluteString }),
+              history[i].poster != poster.absoluteString
+        else { return }
+        history[i].poster = poster.absoluteString
+        history[i].posterAlt = alternate?.absoluteString
+        persistHistory()
+    }
+
     /// The app's own plumbing, wearing a URL.
     ///
     /// Two things reach `recordVisit` that nobody chose to visit. The browser

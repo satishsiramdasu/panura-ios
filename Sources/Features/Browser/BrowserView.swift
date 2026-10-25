@@ -183,6 +183,11 @@ struct BrowserView: View {
         }
         // Record again when the title lands — WebKit fires it after didFinish, so
         // the first write usually has an empty title.
+        .onChange(of: model.posterURL) { poster in
+            if let url = model.currentURL {
+                store.recordPoster(url: url, poster: poster, alternate: model.posterFallbackURL)
+            }
+        }
         .onChange(of: model.pageTitle) { title in
             if let url = model.currentURL, !title.isEmpty {
                 store.recordVisit(url: url, title: title)
@@ -192,10 +197,9 @@ struct BrowserView: View {
         .onAppear { consumePending() }
     }
 
-    /// Opens the list by itself the first time a page has a choice to make.
-    ///
-    /// Several streams means choosing is the task, and the bar's only job was
-    /// to be tapped to get here. The bar stays underneath for reopening.
+    /// Opens the sheet by itself, at half height, the first time a page has a
+    /// find — once per page, whatever the count. The bar stays underneath for
+    /// reopening.
     ///
     /// Never over something else: this layer stays alive behind other tabs,
     /// and a sheet raised from a hidden one lands on whatever is in front.
@@ -205,7 +209,7 @@ struct BrowserView: View {
         // cover the page the bar is meant to be seen on.
         if ScreenshotMode.isActive, ScreenshotMode.screen != "found" { return }
         #endif
-        guard model.foundVideos.count > 1, !offeredFoundSheet, isActive,
+        guard !model.foundVideos.isEmpty, !offeredFoundSheet, isActive,
               !showFoundSheet, !showAddress, !showReport, !showMenu,
               !castPicker.controlsOpen, !castPicker.isShowing,
               !playback.isPlayingSomething
@@ -907,30 +911,14 @@ struct BrowserView: View {
     /// counts ride as badges, and its actions sit underneath. The row itself
     /// still opens the sheet, which is where probe state, refresh and remove
     /// live.
+    /// One shape for every count, as on Android: how many were found, and a
+    /// tap opens the sheet, where the choosing and the buttons are. The sheet
+    /// opens by itself on detection now, so a separate single-stream bar with
+    /// its own Play and Cast was a second thing to learn for nothing.
     @ViewBuilder
     private var foundBar: some View {
-        VStack(spacing: 6) {
-            // Two shapes, because one stream and nine are different questions.
-            //
-            // One: there is nothing to choose, so the bar does the choosing —
-            // quality, size, filename and the actions, right there.
-            //
-            // Several: choosing IS the task, and a bar that picked one of them
-            // and hid the rest behind a chevron made the choice look made. It
-            // says how many and opens the list, in the app's own colour so it
-            // reads as the app speaking rather than part of the page.
-            if model.foundVideos.count > 1 {
-                Button { showFoundSheet = true } label: { manyRow }
-                    .buttonStyle(.plain)
-            } else if let primary {
-                // Not a button. It used to open the sheet, and the sheet then
-                // showed one row saying exactly what is already on this bar —
-                // the same filename, the same quality, the same two actions.
-                // The only stream there is has nothing to disclose.
-                infoRow(primary)
-                actionRow(primary)
-            }
-        }
+        Button { showFoundSheet = true } label: { manyRow }
+            .buttonStyle(.plain)
         .padding(.horizontal, 12)
         .padding(.top, 8)
         // Nothing sits under this any more — the bottom bar is gone — so it is
@@ -988,12 +976,12 @@ struct BrowserView: View {
                     // so a column of identical thumbnails told the rows apart
                     // not at all while taking the width that the facts need.
                     // The poster is in the header instead, said once.
-                    Image(systemName: "film.fill")
+                    Image(systemName: "film")
                         .font(.system(size: 14))
-                        .foregroundStyle(PanuraTheme.accent)
+                        .foregroundStyle(PanuraTheme.onSurfaceVariant)
                         .frame(width: 34, height: 34)
                         .background(
-                            PanuraTheme.surfaceVariant,
+                            PanuraTheme.surfaceContainerHigh,
                             in: RoundedRectangle(cornerRadius: 9, style: .continuous)
                         )
 
@@ -1007,6 +995,12 @@ struct BrowserView: View {
                         // is delivered. They were a run-on caption before, where
                         // the eye has to parse a sentence to compare two rows.
                         streamBadges(video)
+                        if let line = lengthAndSize(video) {
+                            Text(line)
+                                .font(.caption)
+                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                                .lineLimit(1)
+                        }
                     }
 
                     Spacer(minLength: 4)
@@ -1046,12 +1040,23 @@ struct BrowserView: View {
         .padding(.vertical, 4)
     }
 
-    /// The bar when there is a choice to make.
+    private var foundCountText: String {
+        model.foundVideos.count == 1 ? "1 video found" : "\(model.foundVideos.count) videos found"
+    }
+
+    /// Running time and size, on their own line under the badges. Size is a
+    /// range for an adaptive stream — each end of its bitrate ladder.
+    private func lengthAndSize(_ video: ExtractedVideo) -> String? {
+        let parts = [video.probeResult?.duration, video.probeResult?.fileSize].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: "  ·  ")
+    }
+
+    /// The bar, whatever the count.
     private var manyRow: some View {
         HStack(spacing: 10) {
             Image(systemName: "play.rectangle.on.rectangle.fill")
                 .font(.system(size: 17, weight: .semibold))
-            Text("\(model.foundVideos.count) videos found")
+            Text(foundCountText)
                 .font(.subheadline.weight(.semibold))
             if !model.foundSubtitles.isEmpty {
                 Text("·")
@@ -1146,9 +1151,6 @@ struct BrowserView: View {
             }
             if let tag = video.probeResult?.qualityTag {
                 badge(tag, tint: PanuraTheme.accent)
-            }
-            if let size = video.probeResult?.fileSize {
-                badge(size, tint: PanuraTheme.tertiary)
             }
             if let kind = deliveryLabel(video) {
                 badge(kind)
@@ -1283,22 +1285,21 @@ struct BrowserView: View {
         filled: Bool,
         @ViewBuilder glyph: () -> Glyph
     ) -> some View {
+        // Only Play is in colour. The others are tonal — a grey fill, an accent
+        // glyph and a plain label — so the one obvious choice stays obvious.
         HStack(spacing: 6) {
             glyph()
+                .foregroundStyle(filled ? PanuraTheme.onAccent : PanuraTheme.accent)
             Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
+                .foregroundStyle(filled ? PanuraTheme.onAccent : PanuraTheme.onSurface)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
-        .background {
-            if filled {
-                RoundedRectangle(cornerRadius: 12).fill(PanuraTheme.accent)
-            } else {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(PanuraTheme.outline, lineWidth: 1)
-            }
-        }
-        .foregroundStyle(filled ? PanuraTheme.onAccent : PanuraTheme.accent)
+        .background(
+            filled ? PanuraTheme.accent : PanuraTheme.surfaceContainerHigh,
+            in: RoundedRectangle(cornerRadius: 12)
+        )
     }
 
     private var castConnected: Bool { panuraCast.isTVConnected || cast.isConnected }
@@ -1334,31 +1335,36 @@ struct BrowserView: View {
         }
     }
 
+    /// Always a half sheet first — the poster card and the best stream's
+    /// actions in view — that grows as it is dragged or its list scrolled.
+    /// Neutral throughout: flat grey cards, and only Play in colour.
     private var foundSheet: some View {
-        List {
-            // The card is this section's header, not a section of its own. Two
-            // sections in a grouped list are set apart by the spacing that says
-            // "different subject", and the card and the list under it are the
-            // same subject: this page, and what was found on it.
-            Section {
+        ScrollView {
+            VStack(spacing: 10) {
+                sheetHeader
+                countDivider
                 ForEach(model.orderedVideos) { video in
                     foundSheetRow(video)
-                        .swipeActions {
+                        .padding(12)
+                        .background(
+                            PanuraTheme.surfaceVariant,
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        )
+                        .contextMenu {
                             Button(role: .destructive) { model.remove(video) } label: {
                                 Label("Remove", systemImage: "trash")
                             }
                         }
                 }
-            } header: {
-                sheetHeader
-                    .textCase(nil)
-                    // Clear of the sheet's grabber, which sits in the same
-                    // 20 points the card would otherwise start in.
-                    .listRowInsets(EdgeInsets(top: 22, leading: 16, bottom: 10, trailing: 16))
             }
+            .padding(.horizontal, 16)
+            // Clear of the grabber.
+            .padding(.top, 22)
+            .padding(.bottom, 16)
         }
-        .listStyle(.insetGrouped)
+        .background(PanuraTheme.background)
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
         // The browser's copy is under this sheet, where nobody can see it, so
         // the sheet shows the same message itself.
         .overlay(alignment: .top) { toastView }
@@ -1385,31 +1391,71 @@ struct BrowserView: View {
             // inside it over a blur of itself.
             PosterThumb(
                 url: model.posterURL, alternate: model.posterFallbackURL,
-                fallback: "film", width: 142, height: 80, corner: 8
+                fallback: "film", width: 120, height: 68, corner: 8
             )
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(model.pageTitle.isEmpty ? "Detected videos" : model.pageTitle)
                     .font(.subheadline.weight(.semibold))
                     .lineLimit(2)
-                Text(
-                    model.foundVideos.count == 1
-                        ? "1 video found"
-                        : "\(model.foundVideos.count) videos found"
-                )
-                .font(.caption)
-                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                // Under the title: it is about the page, not about any one of
+                // the streams below. The count went to the divider.
+                watchLaterPill
             }
             Spacer(minLength: 0)
-            // Several streams on one page are still one page to come back to,
-            // and the found bar has no buttons when it is listing a count.
-            watchLaterButton()
         }
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(PanuraTheme.surfaceVariant)
         )
+    }
+
+    /// "3 videos found", centred between two hairlines, heading the list.
+    private var countDivider: some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(PanuraTheme.outline.opacity(0.5)).frame(height: 1)
+            Text(foundCountText)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                .fixedSize()
+            Rectangle().fill(PanuraTheme.outline.opacity(0.5)).frame(height: 1)
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Watch Later as a short grey pill under the page title; tonal accent
+    /// once the page is kept.
+    private var watchLaterPill: some View {
+        let url = model.currentURL?.absoluteString ?? ""
+        let saved = store.isWatchLater(url)
+        return Button {
+            if saved {
+                store.removeWatchLater(url: url)
+                flash("Removed from Watch Later")
+            } else {
+                store.addWatchLater(
+                    url: url,
+                    title: model.pageTitle.isEmpty ? (model.currentURL?.host ?? url) : model.pageTitle,
+                    poster: model.posterURL?.absoluteString,
+                    posterAlt: model.posterFallbackURL?.absoluteString
+                )
+                flash("Saved to Watch Later")
+            }
+        } label: {
+            Label(saved ? "Saved" : "Watch Later", systemImage: saved ? "clock.fill" : "clock")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurface)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(
+                    saved ? PanuraTheme.accentSoft : PanuraTheme.surfaceContainerHigh,
+                    in: Capsule()
+                )
+        }
+        .buttonStyle(.plain)
+        .disabled(!pageUsable)
+        .accessibilityLabel(saved ? "Remove from Watch Later" : "Watch later")
     }
 
     /// Resolution, size and kind, in that order, and only what is known.

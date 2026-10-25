@@ -182,6 +182,17 @@ struct AddressScreen: View {
             .padding(.horizontal, 14)
             .frame(height: 44)
             .background(fieldColor, in: Capsule())
+
+            // The switch itself, on the right, as Home's bar has it: typing an
+            // address is the moment somebody decides whether it is recorded.
+            PrivateSwitchTile(
+                on: session.privateMode,
+                hasPage: session.hasPage,
+                fill: fieldColor,
+                height: 44
+            ) { keepPage in
+                session.setPrivateMode(!session.privateMode, keepingPage: keepPage)
+            }
         }
         .padding(.horizontal, 8)
         .frame(height: PanuraHeader<AnyView>.height)

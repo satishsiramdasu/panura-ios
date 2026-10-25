@@ -32,8 +32,11 @@ enum StreamProbe {
     struct Result: Hashable {
         /// "1920×1080", when a playlist or a rendition named one.
         var resolution: String?
-        /// "412 MB" — only ever known for a single file, never for a playlist.
+        /// "412 MB" for a single file; "1.2–3.4 GB" for an HLS master, from
+        /// the lowest and highest declared bitrate times the running time.
         var fileSize: String?
+        /// "1h 52m", "Live", or nil when unknown.
+        var duration: String?
         /// `Adaptive` for a master playlist, `Single` for a media-only one,
         /// nil for anything that is not HLS.
         var hlsType: String?
@@ -179,11 +182,34 @@ enum StreamProbe {
             // — a /hls/ path match on an HTML error page, say.
             guard text.hasPrefix("#EXTM3U") else { return Outcome(active: looksLikeHlsFile) }
             let isMaster = text.range(of: "#EXT-X-STREAM-INF", options: .caseInsensitive) != nil
+            // Running time and size, as Android's found sheet shows them. A
+            // master names no length, so its highest rung's media playlist is
+            // read once for the sum of EXTINF; size is each end of the bitrate
+            // ladder times that.
+            var duration: String?
+            var size: String?
+            if isMaster {
+                let rungs = variants(in: text, base: url)
+                if let top = rungs.max(by: { $0.bps < $1.bps }),
+                   let (status, media) = await get(top.url, headers: headers, byteLimit: 2_000_000),
+                   (200..<300).contains(status), media.hasPrefix("#EXTM3U") {
+                    let seconds = playlistSeconds(media)
+                    duration = formatDuration(media, seconds: seconds)
+                    let rates = rungs.map(\.bps).filter { $0 > 0 }
+                    if let seconds, seconds > 0, let lo = rates.min(), let hi = rates.max() {
+                        size = sizeRange(lo * seconds / 8, hi * seconds / 8)
+                    }
+                }
+            } else {
+                duration = formatDuration(text, seconds: playlistSeconds(text))
+            }
             return Outcome(
                 active: true,
                 result: Result(
                     resolution: bestResolution(in: text),
-                    hlsType: isMaster ? "Adaptive" : "Single"
+                    fileSize: size,
+                    hlsType: isMaster ? "Adaptive" : "Single",
+                    duration: duration
                 )
             )
         }
@@ -220,6 +246,70 @@ enum StreamProbe {
             if w * h > bestPixels { bestPixels = w * h; best = "\(w)×\(h)" }
         }
         return best
+    }
+
+    /// Bits per second and absolute playlist URL for each rung of a master.
+    ///
+    /// AVERAGE-BANDWIDTH when the rung declares it, BANDWIDTH otherwise.
+    /// BANDWIDTH is the peak, and sized off it a film read a third larger
+    /// than it is — which is why the Save dialog and this agree on average.
+    static func variants(in master: String, base: URL) -> [(bps: Double, url: URL)] {
+        var out: [(Double, URL)] = []
+        var pending: Double?
+        for raw in master.components(separatedBy: .newlines) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.uppercased().hasPrefix("#EXT-X-STREAM-INF") {
+                pending = attribute("AVERAGE-BANDWIDTH", in: line)
+                    ?? attribute("BANDWIDTH", in: line) ?? 0
+            } else if let bps = pending, !line.isEmpty, !line.hasPrefix("#") {
+                if let url = URL(string: line, relativeTo: base)?.absoluteURL { out.append((bps, url)) }
+                pending = nil
+            }
+        }
+        return out
+    }
+
+    /// A numeric attribute, matched as a whole name — `BANDWIDTH` must not
+    /// match inside `AVERAGE-BANDWIDTH`.
+    private static func attribute(_ name: String, in line: String) -> Double? {
+        let pattern = "(?<![-A-Z])" + name + "=(\\d+)"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              let range = Range(match.range(at: 1), in: line)
+        else { return nil }
+        return Double(line[range])
+    }
+
+    /// Sum of EXTINF, or nil for a live playlist (no ENDLIST) or none.
+    static func playlistSeconds(_ media: String) -> Double? {
+        guard media.contains("#EXT-X-ENDLIST") else { return nil }
+        var total = 0.0
+        for line in media.components(separatedBy: .newlines) where line.hasPrefix("#EXTINF:") {
+            let value = line.dropFirst(8).split(separator: ",").first.map(String.init) ?? ""
+            total += Double(value.trimmingCharacters(in: .whitespaces)) ?? 0
+        }
+        return total > 0 ? total : nil
+    }
+
+    static func formatDuration(_ media: String, seconds: Double?) -> String? {
+        if !media.contains("#EXT-X-ENDLIST"), media.contains("#EXTINF") { return "Live" }
+        guard let seconds else { return nil }
+        let s = Int(seconds)
+        let h = s / 3600, m = (s % 3600) / 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if m > 0 { return "\(m)m \(s % 60)s" }
+        return "\(s)s"
+    }
+
+    /// "1.2–3.4 GB", or "~3.4 GB" when the ladder has one rung.
+    static func sizeRange(_ low: Double, _ high: Double) -> String {
+        let lo = formatSize(Int64(low)), hi = formatSize(Int64(high))
+        if lo == hi { return "~" + hi }
+        let loParts = lo.split(separator: " "), hiParts = hi.split(separator: " ")
+        if loParts.count == 2, hiParts.count == 2, loParts[1] == hiParts[1] {
+            return "\(loParts[0])–\(hi)"
+        }
+        return "\(lo)–\(hi)"
     }
 
     static func formatSize(_ bytes: Int64) -> String {

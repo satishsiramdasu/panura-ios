@@ -343,6 +343,14 @@ struct HomeView: View {
                 // — the card says a name and a host, and neither is read as
                 // fast as the icon. The back-arrow glyph stays as the fallback
                 // for a site with no icon, or no network to fetch one.
+                // The page's own poster when it gave one — the 120x68 size
+                // used app-wide — and the site's mark otherwise.
+                if let poster = entry.poster.flatMap(URL.init(string:)) {
+                    PosterThumb(
+                        url: poster, alternate: entry.posterAlt.flatMap(URL.init(string:)),
+                        fallback: "globe", width: 120, height: 68, corner: 8
+                    )
+                } else {
                 RoundedRectangle(cornerRadius: 12)
                     .fill(PanuraTheme.accentSoft)
                     .frame(width: 42, height: 42)
@@ -361,6 +369,7 @@ struct HomeView: View {
                             }
                         }
                     }
+                }
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Continue where you left off")
