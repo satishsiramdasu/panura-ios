@@ -82,6 +82,7 @@ struct SettingsView: View {
     @State private var didReset = false
     /// The one switch on the root — see the section it is in.
     @AppStorage(TabSet.restoreKey) private var restoreLastTab = true
+    @AppStorage(FeatureFlags.testAdsKey) private var testAds = false
     @State private var path: [SettingsScreen] = []
     @Environment(\.dismiss) private var dismiss
 
@@ -176,6 +177,23 @@ struct SettingsView: View {
                         icon: "ladybug",
                         value: SettingsScreen.support
                     )
+                }
+
+                // Tester tools. Present only in a TestFlight install — see
+                // `InstallSource` — so an App Store user never sees it.
+                if InstallSource.isTestFlight {
+                    Section {
+                        PreferenceToggle(
+                            title: "Test ads",
+                            description: "Google's sample ads, safe to tap",
+                            icon: "testtube.2",
+                            isOn: $testAds
+                        )
+                    } header: {
+                        Text("Advanced")
+                    } footer: {
+                        Text("Live ads are the default. Turn this on to try the ad placements without touching real ones, then restart the app. Only TestFlight installs have this switch.")
+                    }
                 }
 
                 Section {
