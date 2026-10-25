@@ -276,14 +276,13 @@ struct IPTVView: View {
         // after an ad is unlimited free refreshes, which is the rule as
         // agreed, and the hour can actually run out because pressing Refresh
         // does not touch it.
-        AdManager.shared.showRewarded { granted in
-            guard granted else {
-                refreshing = false
-                return
-            }
-            Task {
-                await store.refresh()
-                refreshing = false
+        // Refresh first, ad after — and only when the listing actually came
+        // back (docs/ads.md §5). The shared clock decides whether one is due.
+        Task {
+            await store.refresh()
+            refreshing = false
+            if store.failure == nil, store.hasListing {
+                AdManager.shared.showInterstitial(.servers)
             }
         }
     }

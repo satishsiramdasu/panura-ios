@@ -21,7 +21,7 @@ final class AdManager: NSObject {
     static let shared = AdManager()
 
     enum Slot: CaseIterable {
-        case player, cast
+        case player, cast, servers, download
 
         /// Live units, from the iOS app in AdMob. Debug builds never touch
         /// them — shipping Google's test unit in a release is an AdMob policy
@@ -35,20 +35,24 @@ final class AdManager: NSObject {
             switch self {
             case .player:  return "ca-app-pub-6998555111280991/4427286974"
             case .cast:    return "ca-app-pub-6998555111280991/6201839976"
+            // The unit created as "browser": unit ids cannot be renamed, and
+            // it serves server open and refresh now, as on Android.
+            case .servers: return "ca-app-pub-6998555111280991/6832395366"
+            // ⚠️ No unit of its own yet. Shares "browser" until one is made in
+            // AdMob, at the cost of reporting downloads under servers.
+            case .download: return "ca-app-pub-6998555111280991/6832395366"
             }
             #endif
         }
 
-        /// Which clock this slot answers to.
-        ///
-        /// AdMob also holds a third interstitial unit, "browser"
-        /// (`…/6832395366`), which the player exit ran on for a while. It is
-        /// deliberately unused: the exit ad belongs to every engine's player,
-        /// and it is reported under the unit that says so.
+        /// Which clock this slot answers to — for every interstitial, the one
+        /// shared clock (see `AdPolicy`).
         var placement: AdPolicy.Placement? {
             switch self {
-            case .player: return .player
-            case .cast:   return .cast
+            case .player:   return .player
+            case .cast:     return .cast
+            case .servers:  return .servers
+            case .download: return .download
             }
         }
     }
@@ -331,7 +335,7 @@ final class AdManager: NSObject {
     /// declined a bargain they were offered; nothing is taken away, and they
     /// can press again.
     func showRewarded(
-        for placement: AdPolicy.Placement = .servers,
+        for placement: AdPolicy.Placement = .conversion,
         then granted: @escaping (Bool) -> Void
     ) {
         guard FeatureFlags.adsEnabled, AdPolicy.allows(placement), !presenting,
@@ -539,9 +543,7 @@ final class AdManager: NSObject {
             Diagnostic(id: "Cast ad", value: ads[.cast] != nil ? "loaded" : "empty"),
             Diagnostic(id: "Rewarded", value: rewardedState),
             Diagnostic(id: "App-open ad", value: appOpen != nil ? "loaded" : "empty"),
-            Diagnostic(id: "Player gap", value: clock(.player)),
-            Diagnostic(id: "Cast gap", value: clock(.cast)),
-            Diagnostic(id: "Refresh gap", value: clock(.servers)),
+            Diagnostic(id: "Interstitial gap", value: clock(.player)),
             Diagnostic(id: "App-open gap", value: clock(.appOpen)),
             Diagnostic(
                 id: "Country tier",

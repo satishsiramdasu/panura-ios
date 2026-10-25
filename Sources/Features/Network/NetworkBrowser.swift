@@ -98,12 +98,14 @@ final class NetworkBrowser: NSObject, ObservableObject {
             return
         }
         levels = [Level(name: server.displayName, url: url)]
+        adOnLoad = true
         load(url)
     }
 
     /// Enters a directory from the listing.
     func enter(_ entry: Entry) {
         guard entry.isDirectory else { return }
+        adOnLoad = false
         levels.append(Level(name: entry.name, url: entry.url))
         load(entry.url)
     }
@@ -203,8 +205,16 @@ final class NetworkBrowser: NSObject, ObservableObject {
         }
         if entries.isEmpty {
             failure = "Nothing here that can be played."
+        } else if adOnLoad {
+            // A server opened from the list has loaded: the server ad, after
+            // the listing. Folders walked into inside it are not an open.
+            AdManager.shared.showInterstitial(.servers)
         }
+        adOnLoad = false
     }
+
+    /// Set by `open`, so only the first listing of a server earns the ad.
+    private var adOnLoad = false
 
     /// What the player is handed.
     ///

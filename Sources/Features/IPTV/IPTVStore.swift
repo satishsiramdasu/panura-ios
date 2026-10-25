@@ -196,6 +196,9 @@ final class IPTVStore: ObservableObject {
     /// channel list and nothing else, so the switcher does not appear for one.
     var hasCatalogue: Bool { open?.kind.usesXtream == true }
 
+    /// Something came back to show — what the server ad waits for.
+    var hasListing: Bool { !channels.isEmpty || !movies.isEmpty || !series.isEmpty }
+
     /// Every group name in the section on screen, in the order they first
     /// appear.
     var groups: [String] {
@@ -342,32 +345,8 @@ final class IPTVStore: ObservableObject {
         open = source
         failure = nil
 
-        // A day past its last refresh: the catalogue is *deleted*, not
-        // hidden. Cache files and all.
-        //
-        // Hiding it would have been less code and a worse idea on three
-        // counts. The wall says there is nothing to show, and with a cache
-        // sitting on disk behind it that would be a lie. Somebody else's
-        // channel list is exactly the kind of thing not worth keeping in
-        // Caches for a week after it stopped being usable. And a wall with
-        // the data still there is a wall with a way round it.
-        //
-        // `force` is the way through, and `refresh()` is what sets it.
-        if !force, ServerRefresh.isExpired(source.id) {
-            expired = true
-            channels = []
-            movies = []
-            series = []
-            // No data, so no age to report. How long ago it was last
-            // refreshed survives in `ServerRefresh`, which is what the wall
-            // reads — that clock is the user's, not the catalogue's.
-            fetchedAt = nil
-            account = nil
-            for section in Section.allCases {
-                try? FileManager.default.removeItem(at: Self.cacheURL(source, section: section))
-            }
-            return
-        }
+        // No expiry wall any more (docs/ads.md §5): the rewarded refresh wall
+        // was replaced by an interstitial after the listing loads.
         expired = false
 
         if !force, let cached = Self.readCache(source) {

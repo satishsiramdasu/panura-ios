@@ -136,7 +136,16 @@ struct ServersView: View {
             if !iptv.sources.isEmpty {
                 Section("Playlist servers") {
                     ForEach(iptv.sources) { source in
-                        Button { Task { await iptv.load(source) } } label: {
+                        Button {
+                            Task {
+                                await iptv.load(source)
+                                // After the listing, never in front of it,
+                                // and only when it loaded (docs/ads.md §5).
+                                if iptv.failure == nil, iptv.hasListing {
+                                    AdManager.shared.showInterstitial(.servers)
+                                }
+                            }
+                        } label: {
                             row(
                                 title: source.displayName,
                                 detail: detail(for: source),

@@ -8,14 +8,15 @@ import Foundation
 /// loading and presenting. The rules were argued over at length and the
 /// reasoning is worth more than the code, so it is written down beside it.
 ///
-/// **There is no global floor between placements, on purpose.** Asked for,
-/// considered, rejected: the rewarded ad is a button the user pressed, so
-/// suppressing it because an unrelated interstitial fired two minutes ago
-/// would withhold a feature they explicitly asked for. The three placements
-/// are three different actions and each keeps its own clock.
+/// **One interstitial clock** (docs/ads.md §1, revised 2026-10-25). Every
+/// interstitial placement *and app open* reads and resets one shared clock,
+/// whose gap is the manifest's country-tiered `gapSeconds`. The placements are
+/// only triggers: an exit ad followed a minute later by a server open shows
+/// nothing, because the gap has not passed. Rewarded keeps its own clock and
+/// never waits on the interstitials — the person asked for it.
 @MainActor
 enum AdPolicy {
-    /// The three things that can show an ad. One clock each.
+    /// The things that can show an ad.
     enum Placement: String, CaseIterable {
         /// Leaving the player — any player, from any tab.
         ///
@@ -35,18 +36,14 @@ enum AdPolicy {
         /// controls appear. The best-placed ad in the app — the TV is
         /// handshaking anyway, so it costs no real time.
         case cast
-        /// Refreshing a playlist server's catalogue. Rewarded.
-        ///
-        /// Not "opening a server", which is where this started and was the
-        /// highest-friction placement in the app: an unrequested ad in front
-        /// of hardware somebody owns. A refresh is a button they press, and
-        /// the reward is a real function — provider catalogues genuinely go
-        /// stale — rather than a toll with a reward's paperwork.
-        ///
-        /// The per-server clocks are `ServerRefresh`'s, not this one's: the
-        /// rules are per catalogue, and this placement has to answer for all
-        /// of them at once.
+        /// A server's listing has loaded after the person opened it from the
+        /// Servers list, or after a refresh they pressed. An interstitial,
+        /// after the listing and never in front of it — an ad between the tap
+        /// and the thing asked for is an ad for waiting. It replaced the
+        /// rewarded refresh wall.
         case servers
+        /// A download was enqueued.
+        case download
         /// Coming back to the app after time away. An app-open ad.
         ///
         /// Left out of the first design as the most resented format there
@@ -85,18 +82,27 @@ enum AdPolicy {
         /// shorter gap, because the fixed 15-minute floor was sized for
         /// countries where impressions are expensive enough that annoyance
         /// outweighs volume, and that trade is backwards everywhere else.
+        /// This placement's own gap, on top of the shared one. Only app open
+        /// has one: an hour, fixed, because it is the one ad nobody did
+        /// anything to bring on.
         @MainActor var gap: TimeInterval {
             switch self {
-            case .player, .cast: return AdCountryPolicy.gapSeconds
-            case .servers: return 60 * 60
-            // An hour, fixed. Not country-tiered: this is the one ad nobody
-            // did anything to bring on, so it is the one to be mean with.
             case .appOpen: return 60 * 60
-            case .conversion: return 0
+            default: return 0
             }
         }
 
+        /// Interstitials and app open share one clock; rewarded does not.
+        var sharesClock: Bool { self != .conversion }
+
         fileprivate var lastShownKey: String { "ads.last." + rawValue }
+    }
+
+    private static let sharedKey = "ads.last.interstitial"
+
+    private static func elapsed(since key: String) -> TimeInterval? {
+        let last = UserDefaults.standard.double(forKey: key)
+        return last > 0 ? Date().timeIntervalSince1970 - last : nil
     }
 
     // MARK: the first session
@@ -109,11 +115,11 @@ enum AdPolicy {
         defaults.set(defaults.integer(forKey: launchCountKey) + 1, forKey: launchCountKey)
     }
 
-    /// Whether this is the first time the app has been opened.
+    /// Whether this is one of the first two launches.
     ///
-    /// **The whole first session is ad-free, banner included.** Somebody who
-    /// installs the app, watches one thing and leaves sees nothing — and they
-    /// were never going to earn anything either way.
+    /// **The first two launches are ad-free, banner included** (docs/ads.md
+    /// §7). Somebody who installs the app, tries it and comes back once sees
+    /// nothing — and they were never going to earn anything either way.
     ///
     /// Counted in launches rather than measured with a clock, which is both
     /// simpler and strictly more generous: a timer can be burned by
@@ -126,7 +132,7 @@ enum AdPolicy {
     /// after. And day-one impressions from install-once-and-leave users are
     /// lost, which is close to nothing in revenue.
     static var isFirstSession: Bool {
-        UserDefaults.standard.integer(forKey: launchCountKey) <= 1
+        UserDefaults.standard.integer(forKey: launchCountKey) <= 2
     }
 
     // MARK: may we
@@ -134,28 +140,30 @@ enum AdPolicy {
     /// Whether `placement` may fire right now.
     static func allows(_ placement: Placement) -> Bool {
         guard FeatureFlags.adsEnabled, !isFirstSession else { return false }
-        let last = UserDefaults.standard.double(forKey: placement.lastShownKey)
-        guard last > 0 else { return true }
-        return Date().timeIntervalSince1970 - last >= placement.gap
+        return remaining(placement) <= 0
     }
 
-    /// Starts `placement`'s clock. Called when an ad is actually presented —
-    /// never when one was merely requested, or a failed load would spend the
-    /// gap and the next genuine chance with it.
+    /// Starts the clocks. Called when an ad is actually presented — never when
+    /// one was merely requested, or a failed load would spend the gap and the
+    /// next genuine chance with it.
     static func record(_ placement: Placement) {
-        UserDefaults.standard.set(
-            Date().timeIntervalSince1970,
-            forKey: placement.lastShownKey
-        )
+        let now = Date().timeIntervalSince1970
+        UserDefaults.standard.set(now, forKey: placement.lastShownKey)
+        if placement.sharesClock { UserDefaults.standard.set(now, forKey: sharedKey) }
     }
 
     /// How long until `placement` may fire again, or zero if it may now.
     /// For the ad-state panel: "blocked by a gap" and "never loaded" look
     /// identical from outside, and they need completely different fixes.
     static func remaining(_ placement: Placement) -> TimeInterval {
-        let last = UserDefaults.standard.double(forKey: placement.lastShownKey)
-        guard last > 0 else { return 0 }
-        return max(0, placement.gap - (Date().timeIntervalSince1970 - last))
+        var wait: TimeInterval = 0
+        if placement.sharesClock, let since = elapsed(since: sharedKey) {
+            wait = max(wait, AdCountryPolicy.gapSeconds - since)
+        }
+        if placement.gap > 0, let since = elapsed(since: placement.lastShownKey) {
+            wait = max(wait, placement.gap - since)
+        }
+        return max(0, wait)
     }
 
     /// Whether anything may be drawn for ads at all — what the banner asks.
@@ -200,5 +208,6 @@ enum AdPolicy {
     static func reset() {
         let defaults = UserDefaults.standard
         Placement.allCases.forEach { defaults.removeObject(forKey: $0.lastShownKey) }
+        defaults.removeObject(forKey: sharedKey)
     }
 }
