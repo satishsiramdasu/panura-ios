@@ -21,6 +21,8 @@ struct BrowserView: View {
     @State private var showFoundSheet = false
     /// The Save Offline sheet, while it is up.
     @State private var saveOptions: SaveOptions?
+    /// What the selected found row turned out to be, fetched when it is opened.
+    @State private var rowDetails: [UUID: DirectLinkProbe.Details] = [:]
     /// Whether this page's list has already been opened for the user.
     ///
     /// Once per page: a list that came back every time another stream turned
@@ -455,7 +457,7 @@ struct BrowserView: View {
                     poster: model.posterURL?.absoluteString,
                     posterAlt: model.posterFallbackURL?.absoluteString
                 )
-                flash("Saved to Watch Later", fromBottom: boxed)
+                flash("Added to Watch Later", fromBottom: boxed)
             }
         } label: {
             let glyph = Image(systemName: saved ? "clock.fill" : "clock")
@@ -1019,6 +1021,7 @@ struct BrowserView: View {
             .buttonStyle(.plain)
 
             if open {
+                rowFacts(video)
                 HStack(spacing: 8) {
                     Button {
                         showFoundSheet = false
@@ -1421,41 +1424,73 @@ struct BrowserView: View {
         }
     }
 
+
+    /// The facts block of the video-link dialog, for any details — also under
+    /// the selected row of the found sheet, so the two read the same.
+    @ViewBuilder
+    private func factsBlock(_ d: DirectLinkProbe.Details, includeKind: Bool = false) -> some View {
+        let rows: [(String, String, String)] = [
+            ("Type", "film", includeKind ? d.kind : ""),
+            ("Size", "externaldrive", d.size ?? ""),
+            ("Length", "clock", d.duration ?? ""),
+            ("Picture", "rectangle.dashed", d.resolution ?? ""),
+            ("Seeking", "forward", d.seekable.map { $0 ? "Can skip around" : "Plays from the start" } ?? ""),
+        ].filter { !$0.2.isEmpty }
+        if !rows.isEmpty {
+            VStack(spacing: 0) {
+                ForEach(rows.indices, id: \.self) { i in
+                    HStack(spacing: 10) {
+                        Image(systemName: rows[i].1)
+                            .font(.system(size: 13))
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            .frame(width: 20)
+                        Text(rows[i].0)
+                            .font(.subheadline)
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        Spacer(minLength: 8)
+                        Text(rows[i].2)
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .padding(.vertical, 9)
+                    if i < rows.count - 1 { Divider().opacity(0.5) }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 2)
+            .background(PanuraTheme.surfaceContainerHighest, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    /// What is known about a found row: what the probe already read, then what
+    /// the extra look at the file added once it was opened.
+    private func rowFacts(_ video: ExtractedVideo) -> some View {
+        let known = rowDetails[video.id] ?? DirectLinkProbe.Details(
+            kind: video.probeResult?.hlsType.map { $0 == "Adaptive" ? "HLS stream · several qualities" : "HLS stream" } ?? "",
+            size: video.probeResult?.fileSize,
+            duration: video.probeResult?.duration,
+            resolution: video.probeResult?.resolution
+        )
+        return factsBlock(known, includeKind: true)
+            .task(id: video.id) { await loadDetails(video) }
+    }
+
+    /// Only for the row that was opened, and only for a plain file. A rule-matched
+    /// stream is never read: those hosts hand out single-use tokens, and a look
+    /// that spends one leaves the player with a 410. A playlist has been read
+    /// already, by the probe that made its row.
+    private func loadDetails(_ video: ExtractedVideo) async {
+        guard rowDetails[video.id] == nil, !video.ruleMatched,
+              !isHLS(video), StreamProbe.isDirectMedia(video.url)
+        else { return }
+        if case .video(let details) = await DirectLinkProbe.check(url: video.url, headers: video.headers) {
+            rowDetails[video.id] = details
+        }
+    }
     /// Size, length, picture size and whether it can be skipped through — only
     /// the ones the check found out.
     @ViewBuilder
     private func directLinkFacts(_ offer: BrowserModel.DirectLinkOffer) -> some View {
-        if case .ready(let d) = offer.state {
-            let rows: [(String, String, String)] = [
-                ("Size", "externaldrive", d.size ?? ""),
-                ("Length", "clock", d.duration ?? ""),
-                ("Picture", "rectangle.dashed", d.resolution ?? ""),
-                ("Seeking", "forward", d.seekable.map { $0 ? "Can skip around" : "Plays from the start" } ?? ""),
-            ].filter { !$0.2.isEmpty }
-            if !rows.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(rows.indices, id: \.self) { i in
-                        HStack(spacing: 10) {
-                            Image(systemName: rows[i].1)
-                                .font(.system(size: 13))
-                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                                .frame(width: 20)
-                            Text(rows[i].0)
-                                .font(.subheadline)
-                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                            Spacer(minLength: 8)
-                            Text(rows[i].2)
-                                .font(.subheadline.weight(.medium))
-                        }
-                        .padding(.vertical, 9)
-                        if i < rows.count - 1 { Divider().opacity(0.5) }
-                    }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 2)
-                .background(PanuraTheme.surfaceContainerHighest, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-        }
+        if case .ready(let d) = offer.state { factsBlock(d) }
     }
     // MARK: saving
     private func isHLS(_ video: ExtractedVideo) -> Bool {
@@ -1720,10 +1755,12 @@ struct BrowserView: View {
                     poster: model.posterURL?.absoluteString,
                     posterAlt: model.posterFallbackURL?.absoluteString
                 )
-                flash("Saved to Watch Later")
+                flash("Added to Watch Later")
             }
         } label: {
-            Label(saved ? "Saved" : "Watch Later", systemImage: saved ? "clock.fill" : "clock")
+            // Said as an act, and the tick says it is done: "Add to Watch Later"
+            // becomes "Added to Watch Later" with a check.
+            Label(saved ? "Added to Watch Later" : "Add to Watch Later", systemImage: saved ? "checkmark" : "clock")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(saved ? PanuraTheme.accent : PanuraTheme.onSurface)
                 .padding(.horizontal, 10)
