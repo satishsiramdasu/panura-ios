@@ -1613,14 +1613,9 @@ struct BrowserView: View {
 
     private var castConnected: Bool { panuraCast.isTVConnected || cast.isConnected }
 
-    /// "Play on TV" when nothing is linked — the action, not the machinery,
-    /// and the same words Android uses. Once a TV is linked the button names
-    /// it instead, because by then the question is which screen this goes to.
-    private var castLabel: String {
-        if panuraCast.isTVConnected { return "Panura TV" }
-        if cast.isConnected { return "Chromecast" }
-        return "Play on TV"
-    }
+    /// "Cast", always — the same word as the Android button. Which screen it goes
+    /// to is asked on the next step, when there is more than one to choose from.
+    private var castLabel: String { "Cast" }
 
     /// Panura TV first when both are linked: it plays what this app plays, and
     /// Chromecast is limited to what its receiver accepts.

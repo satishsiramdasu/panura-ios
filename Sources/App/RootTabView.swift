@@ -45,9 +45,9 @@ struct RootTabView: View {
             }
         }
         #endif
-        // Where they were last time, unless that was the browser - see
-        // `TabSet.openingTab`.
-        return TabSet.openingTab()
+        // Always Home: it offers the page you were reading and the video you were
+        // watching as cards, which is a better start than a section that was merely last.
+        return .home
     }()
 
     /// Watch Later is a sheet, for the reason Settings is one: it is somewhere
@@ -110,7 +110,6 @@ struct RootTabView: View {
         // `select` so it is also right on launch and after a deep link.
         .onChange(of: selection) { destination in
             chrome.destinationChanged(to: destination)
-            tabSet.remember(destination)
         }
         .onAppear { chrome.destinationChanged(to: selection) }
         // One bottom edge for everything in the stack — the screen's, not the
