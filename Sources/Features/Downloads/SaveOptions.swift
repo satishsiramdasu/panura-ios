@@ -204,7 +204,7 @@ struct SaveOfflineSheet: View {
 }
 
 /// Pills that wrap onto further lines, as Compose's `FlowRow` does.
-private struct PillFlow: Layout {
+struct PillFlow: Layout {
     var spacing: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

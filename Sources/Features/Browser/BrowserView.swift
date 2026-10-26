@@ -1002,7 +1002,8 @@ struct BrowserView: View {
                         // is delivered. They were a run-on caption before, where
                         // the eye has to parse a sentence to compare two rows.
                         streamBadges(video)
-                        if let line = lengthAndSize(video) {
+                        // The open row says the same thing in chips below.
+                        if !open, let line = lengthAndSize(video) {
                             Text(line)
                                 .font(.caption)
                                 .foregroundStyle(PanuraTheme.onSurfaceVariant)
@@ -1461,6 +1462,38 @@ struct BrowserView: View {
         }
     }
 
+    /// The same facts as `factsBlock`, packed for a list: small chips that wrap,
+    /// where the dialog gives each fact a line. A page with a dozen streams has
+    /// room for about one line of small print per row, and the chips say more in
+    /// it than a caption can.
+    @ViewBuilder
+    private func factChips(_ d: DirectLinkProbe.Details) -> some View {
+        let chips: [(String, String)] = [
+            ("film", d.kind),
+            ("externaldrive", d.size ?? ""),
+            ("clock", d.duration ?? ""),
+            ("rectangle.dashed", d.resolution ?? ""),
+            ("forward", d.seekable.map { $0 ? "Seekable" : "No seeking" } ?? ""),
+        ].filter { !$0.1.isEmpty }
+        if !chips.isEmpty {
+            PillFlow(spacing: 6) {
+                ForEach(chips.indices, id: \.self) { i in
+                    HStack(spacing: 4) {
+                        Image(systemName: chips[i].0)
+                            .font(.system(size: 10))
+                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                        Text(chips[i].1)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(PanuraTheme.surfaceContainerHighest, in: Capsule())
+                }
+            }
+        }
+    }
+
     /// What is known about a found row: what the probe already read, then what
     /// the extra look at the file added once it was opened.
     private func rowFacts(_ video: ExtractedVideo) -> some View {
@@ -1470,7 +1503,7 @@ struct BrowserView: View {
             duration: video.probeResult?.duration,
             resolution: video.probeResult?.resolution
         )
-        return factsBlock(known, includeKind: true)
+        return factChips(known)
             .task(id: video.id) { await loadDetails(video) }
     }
 
