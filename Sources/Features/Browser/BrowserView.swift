@@ -151,6 +151,9 @@ struct BrowserView: View {
             if connected { castPendingIfConnected() }
         }
         .sheet(isPresented: $showFoundSheet) { foundSheet }
+        .sheet(item: Binding(get: { model.directLink }, set: { model.directLink = $0 })) { offer in
+            directLinkSheet(offer)
+        }
         // The best stream is open on arrival, and re-chosen each time rather
         // than remembered: the page may have found something better since.
         .onChange(of: showFoundSheet) { shown in
@@ -1309,6 +1312,151 @@ struct BrowserView: View {
         )
     }
 
+
+    // MARK: a tapped link to a video file
+
+    /// The dialog for a link somebody tapped that points at a video file: what
+    /// the file is, in the words a person would use, and Play / Cast / Save.
+    /// No address anywhere — it is long, it says nothing, and the name carries
+    /// the point.
+    private func directLinkSheet(_ offer: BrowserModel.DirectLinkOffer) -> some View {
+        let video = offer.video
+        let name = (video.fileLabel.removingPercentEncoding ?? video.fileLabel)
+        return VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "film")
+                    .font(.system(size: 20))
+                    .foregroundStyle(PanuraTheme.accent)
+                    .frame(width: 44, height: 44)
+                    .background(PanuraTheme.accentSoft, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(name)
+                        .font(.headline)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                    directLinkSubtitle(offer)
+                }
+                Spacer(minLength: 0)
+            }
+
+            directLinkFacts(offer)
+
+            if case .gone = offer.state {
+                Button { model.directLink = nil } label: {
+                    Text("Close")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(PanuraTheme.onSurface)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(PanuraTheme.surfaceContainerHighest, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .buttonStyle(.plain)
+            } else {
+                HStack(spacing: 8) {
+                    Button {
+                        model.directLink = nil
+                        play(video)
+                    } label: {
+                        streamActionLabel("Play", icon: "play.fill", filled: true)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        model.directLink = nil
+                        castOrConnect(video)
+                    } label: {
+                        streamActionLabel(castLabel, filled: false) {
+                            CastMark(connected: castConnected)
+                                .frame(width: 18, height: 18)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { askToSave(video) } label: {
+                        streamActionLabel("Save", icon: "arrow.down.to.line", filled: false)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 28)
+        .padding(.bottom, 16)
+        .frame(maxHeight: .infinity, alignment: .top)
+        // No background of our own: the system sheet material, as the found sheet.
+        .presentationDetents([.height(300), .medium])
+        .presentationDragIndicator(.visible)
+        // Save opens its own sheet; it has to be presented from here, because the
+        // found sheet that normally hosts it is not on screen.
+        .sheet(item: $saveOptions) { options in
+            SaveOfflineSheet(
+                options: options,
+                onConfirm: { title, variant, audio, subtitle in
+                    model.directLink = nil
+                    confirm(options, title: title, variant: variant, audio: audio, subtitle: subtitle)
+                },
+                onCancel: { saveOptions = nil }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func directLinkSubtitle(_ offer: BrowserModel.DirectLinkOffer) -> some View {
+        switch offer.state {
+        case .checking:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.mini)
+                Text("Checking the link…")
+            }
+            .font(.footnote)
+            .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        case .ready(let details):
+            Text(details.kind)
+                .font(.footnote)
+                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        case .gone:
+            Text("No longer available")
+                .font(.footnote.weight(.medium))
+                .foregroundStyle(PanuraTheme.error)
+        }
+    }
+
+    /// Size, length, picture size and whether it can be skipped through — only
+    /// the ones the check found out.
+    @ViewBuilder
+    private func directLinkFacts(_ offer: BrowserModel.DirectLinkOffer) -> some View {
+        if case .ready(let d) = offer.state {
+            let rows: [(String, String, String)] = [
+                ("Size", "externaldrive", d.size ?? ""),
+                ("Length", "clock", d.duration ?? ""),
+                ("Picture", "rectangle.dashed", d.resolution ?? ""),
+                ("Seeking", "forward", d.seekable.map { $0 ? "Can skip around" : "Plays from the start" } ?? ""),
+            ].filter { !$0.2.isEmpty }
+            if !rows.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(rows.indices, id: \.self) { i in
+                        HStack(spacing: 10) {
+                            Image(systemName: rows[i].1)
+                                .font(.system(size: 13))
+                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                                .frame(width: 20)
+                            Text(rows[i].0)
+                                .font(.subheadline)
+                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+                            Spacer(minLength: 8)
+                            Text(rows[i].2)
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .padding(.vertical, 9)
+                        if i < rows.count - 1 { Divider().opacity(0.5) }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 2)
+                .background(PanuraTheme.surfaceContainerHighest, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
+    }
     // MARK: saving
     private func isHLS(_ video: ExtractedVideo) -> Bool {
         if video.probeResult?.hlsType != nil { return true }
@@ -1363,6 +1511,9 @@ struct BrowserView: View {
         audio: SaveOptions.Track? = nil, subtitle: SaveOptions.Track? = nil
     ) {
         let item = model.playable(video)
+        // Saved from the video-link dialog, if that is where this began: it has done
+        // its job, and the ad below waits for it to be gone.
+        model.directLink = nil
         let typed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         DownloadStore.shared.enqueue(
             title: typed.isEmpty ? (model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle) : typed,

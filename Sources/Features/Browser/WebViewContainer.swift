@@ -267,6 +267,8 @@ struct WebViewContainer: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler, WKUIDelegate {
         let model: BrowserModel
+        /// A link let back through once, past the video-link check.
+        var passOnce: URL?
         /// Offscreen extraction of `#referer=` embeds; held here so it lives as
         /// long as the view.
         let embeds = EmbedExtractor()
@@ -616,6 +618,13 @@ struct WebViewContainer: UIViewRepresentable {
                !Self.webSchemes.contains(scheme) {
                 return .cancel
             }
+            // The one page load that was let through after the check said it was not a
+            // video; without this it would be stopped by the same rule again.
+            if let pass = passOnce, pass == navigationAction.request.url {
+                passOnce = nil
+                return .allow
+            }
+
 
             if let rawURL = navigationAction.request.url,
                VideoURL.looksLikeVideo(rawURL) {
@@ -635,6 +644,23 @@ struct WebViewContainer: UIViewRepresentable {
                 // Same rule as the JS path: the browser's page title, not
                 // whichever frame or extraction view happened to catch this.
                 let pageTitle = model.pageTitle.isEmpty ? (webView.title ?? "") : model.pageTitle
+                // A tap on the link itself, as against a page loading a video
+                // of its own accord: ask what it is and offer Play / Cast /
+                // Save, rather than filing it in the found list unread.
+                if navigationAction.navigationType == .linkActivated {
+                    let video = ExtractedVideo(
+                        url: url, title: pageTitle, headers: headers, castHeaders: headers,
+                        source: .network, probeState: .active
+                    )
+                    let request = navigationAction.request
+                    model.offerDirectLink(video) { [weak self, weak webView] in
+                        // It was not a video after all: load it as the page it is,
+                        // past the check that stopped it.
+                        self?.passOnce = request.url
+                        webView?.load(request)
+                    }
+                    return .cancel
+                }
                 // Caught on the wire rather than in the page: this is a
                 // navigation the app intercepted.
                 model.report(

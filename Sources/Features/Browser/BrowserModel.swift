@@ -213,6 +213,49 @@ final class BrowserModel: ObservableObject {
         if direct { startProbe(video) }
     }
 
+    // MARK: a tapped link to a video file
+
+    /// What the "Video link" dialog is showing.
+    struct DirectLinkOffer: Identifiable {
+        enum State {
+            /// The precheck is still out. Play, Cast and Save already work.
+            case checking
+            case ready(DirectLinkProbe.Details)
+            /// 404/410.
+            case gone
+        }
+
+        let id = UUID()
+        let video: ExtractedVideo
+        var state: State = .checking
+    }
+
+    /// The link somebody tapped, while the dialog about it is up.
+    @Published var directLink: DirectLinkOffer?
+
+    /// A tap on a link to a video file. The dialog opens at once, saying it is
+    /// checking, and fills in what the file turns out to be.
+    ///
+    /// Not added to the found list: the dialog is the answer to this tap, and a
+    /// bar and a sheet appearing under it said the same thing twice. If the
+    /// link proves to be a web page after all, `openAsPage` carries on the
+    /// navigation that was cancelled to ask.
+    func offerDirectLink(_ video: ExtractedVideo, openAsPage: @escaping () -> Void) {
+        let offer = DirectLinkOffer(video: video)
+        directLink = offer
+        Task { [weak self] in
+            let verdict = await DirectLinkProbe.check(url: video.url, headers: video.headers)
+            guard let self, self.directLink?.id == offer.id else { return }
+            switch verdict {
+            case .video(let details): self.directLink?.state = .ready(details)
+            case .gone: self.directLink?.state = .gone
+            case .notVideo:
+                self.directLink = nil
+                openAsPage()
+            }
+        }
+    }
+
     /// Probes one detection and folds the answer back into its row.
     ///
     /// An inactive result drops the row outright rather than listing it: only
