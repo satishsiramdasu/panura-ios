@@ -148,7 +148,7 @@ struct AddressScreen: View {
                 Image(systemName: "arrow.left")
                     .font(.system(size: 16, weight: .medium))
                     .frame(width: 40, height: 40)
-                    .background(tintSoft, in: Circle())
+                    .background(tintSoft, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .foregroundStyle(tint)
             }
             .buttonStyle(.plain)
@@ -181,7 +181,7 @@ struct AddressScreen: View {
             }
             .padding(.horizontal, 14)
             .frame(height: 44)
-            .background(fieldColor, in: Capsule())
+            .background(fieldColor, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
 
             // The switch itself, on the right, as Home's bar has it: typing an
             // address is the moment somebody decides whether it is recorded.

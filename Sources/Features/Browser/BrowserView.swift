@@ -152,8 +152,11 @@ struct BrowserView: View {
         .onChange(of: panuraCast.isTVConnected) { connected in
             if connected { castPendingIfConnected() }
         }
-        .sheet(isPresented: $showFoundSheet) { foundSheet }
-        .sheet(item: Binding(get: { model.directLink }, set: { model.directLink = $0 })) { offer in
+        // Only ever over the browser. This layer stays alive behind the other
+        // sections, and a sheet raised a beat after you switched away landed on
+        // Home or Videos; so it is shown only while this section is the active one.
+        .sheet(isPresented: Binding(get: { showFoundSheet && isActive }, set: { showFoundSheet = $0 })) { foundSheet }
+        .sheet(item: Binding(get: { isActive ? model.directLink : nil }, set: { model.directLink = $0 })) { offer in
             directLinkSheet(offer)
         }
         // The best stream is open on arrival, and re-chosen each time rather
@@ -171,7 +174,15 @@ struct BrowserView: View {
             offerFoundSheet()
         }
         // Streams found while another tab was in front are offered on return.
-        .onChange(of: isActive) { _ in offerFoundSheet() }
+        .onChange(of: isActive) { active in
+            // Leaving the browser takes its sheets with it.
+            if !active {
+                showFoundSheet = false
+                model.directLink = nil
+                saveOptions = nil
+            }
+            offerFoundSheet()
+        }
         .sheet(isPresented: $showReport) {
             ReportIssueSheet(
                 pageURL: model.currentURL?.absoluteString,
