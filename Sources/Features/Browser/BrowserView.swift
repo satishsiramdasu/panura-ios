@@ -444,7 +444,6 @@ struct BrowserView: View {
         Button {
             if saved {
                 store.removeWatchLater(url: url)
-                flash("Removed from Watch Later", fromBottom: boxed)
             } else {
                 // Both pictures, not the winner. The winner is whichever
                 // the page ranked first, and on a page that names two the
@@ -457,7 +456,6 @@ struct BrowserView: View {
                     poster: model.posterURL?.absoluteString,
                     posterAlt: model.posterFallbackURL?.absoluteString
                 )
-                flash("Added to Watch Later", fromBottom: boxed)
             }
         } label: {
             let glyph = Image(systemName: saved ? "clock.fill" : "clock")
@@ -1002,13 +1000,6 @@ struct BrowserView: View {
                         // is delivered. They were a run-on caption before, where
                         // the eye has to parse a sentence to compare two rows.
                         streamBadges(video)
-                        // The open row says the same thing in chips below.
-                        if !open, let line = lengthAndSize(video) {
-                            Text(line)
-                                .font(.caption)
-                                .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                                .lineLimit(1)
-                        }
                     }
 
                     Spacer(minLength: 4)
@@ -1022,7 +1013,8 @@ struct BrowserView: View {
             .buttonStyle(.plain)
 
             if open {
-                rowFacts(video)
+                // Looks the file over once the row is open; the answer lands in its badges.
+                Color.clear.frame(height: 0).task(id: video.id) { await loadDetails(video) }
                 HStack(spacing: 8) {
                     Button {
                         showFoundSheet = false
@@ -1163,8 +1155,18 @@ struct BrowserView: View {
                 // tell two rows apart, not to teach how detection works.
                 badge(nil, systemImage: video.source.icon, label: video.source.label)
             }
-            if let tag = video.probeResult?.qualityTag {
+            // Everything about the file in this one row: how good, how long,
+            // how big, how it is delivered. What the probe read comes first;
+            // what looking at the opened row added fills the gaps.
+            let looked = rowDetails[video.id]
+            if let tag = video.probeResult?.qualityTag ?? looked?.resolution.flatMap(Self.heightTag) {
                 badge(tag, tint: PanuraTheme.accent)
+            }
+            if let length = video.probeResult?.duration ?? looked?.duration {
+                badge(length, systemImage: "clock")
+            }
+            if let size = video.probeResult?.fileSize ?? looked?.size {
+                badge(size, systemImage: "externaldrive")
             }
             if let kind = deliveryLabel(video) {
                 badge(kind)
@@ -1179,6 +1181,13 @@ struct BrowserView: View {
             }
             Spacer(minLength: 0)
         }
+    }
+
+    /// "1920×1080" → "1080p", the number streams are picked by.
+    private static func heightTag(_ resolution: String) -> String? {
+        let parts = resolution.split(whereSeparator: { $0 == "×" || $0 == "x" })
+        guard parts.count == 2, let h = Int(parts[1]) else { return nil }
+        return "\(h)p"
     }
 
     /// Adaptive or progressive — the one fact that decides whether a quality
@@ -1414,10 +1423,9 @@ struct BrowserView: View {
             }
             .font(.footnote)
             .foregroundStyle(PanuraTheme.onSurfaceVariant)
-        case .ready(let details):
-            Text(details.kind)
-                .font(.footnote)
-                .foregroundStyle(PanuraTheme.onSurfaceVariant)
+        case .ready:
+            // The grid below has its type; nothing to say twice.
+            EmptyView()
         case .gone:
             Text("No longer available")
                 .font(.footnote.weight(.medium))
@@ -1426,86 +1434,40 @@ struct BrowserView: View {
     }
 
 
-    /// The facts block of the video-link dialog, for any details — also under
-    /// the selected row of the found sheet, so the two read the same.
+    /// The video-link dialog's facts: four cells, two by two — what it is,
+    /// how big, how long, how sharp — each a small label over its value. Only
+    /// the ones the check found; a missing fact leaves its cell out, not blank.
     @ViewBuilder
-    private func factsBlock(_ d: DirectLinkProbe.Details, includeKind: Bool = false) -> some View {
-        let rows: [(String, String, String)] = [
-            ("Type", "film", includeKind ? d.kind : ""),
-            ("Size", "externaldrive", d.size ?? ""),
-            ("Length", "clock", d.duration ?? ""),
-            ("Picture", "rectangle.dashed", d.resolution ?? ""),
-            ("Seeking", "forward", d.seekable.map { $0 ? "Can skip around" : "Plays from the start" } ?? ""),
-        ].filter { !$0.2.isEmpty }
-        if !rows.isEmpty {
-            VStack(spacing: 0) {
-                ForEach(rows.indices, id: \.self) { i in
-                    HStack(spacing: 10) {
-                        Image(systemName: rows[i].1)
-                            .font(.system(size: 13))
+    private func factsBlock(_ d: DirectLinkProbe.Details) -> some View {
+        let cells: [(String, String)] = [
+            ("Type", d.kind),
+            ("Size", d.size ?? ""),
+            ("Length", d.duration ?? ""),
+            ("Picture", d.resolution ?? ""),
+        ].filter { !$0.1.isEmpty }
+        if !cells.isEmpty {
+            LazyVGrid(
+                columns: [GridItem(.flexible(), alignment: .leading), GridItem(.flexible(), alignment: .leading)],
+                alignment: .leading, spacing: 14
+            ) {
+                ForEach(cells.indices, id: \.self) { i in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(cells[i].0)
+                            .font(.caption)
                             .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                            .frame(width: 20)
-                        Text(rows[i].0)
-                            .font(.subheadline)
-                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        Spacer(minLength: 8)
-                        Text(rows[i].2)
+                        Text(cells[i].1)
                             .font(.subheadline.weight(.medium))
+                            .lineLimit(1)
                     }
-                    .padding(.vertical, 9)
-                    if i < rows.count - 1 { Divider().opacity(0.5) }
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 2)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(PanuraTheme.surfaceContainerHighest, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
     }
 
-    /// The same facts as `factsBlock`, packed for a list: small chips that wrap,
-    /// where the dialog gives each fact a line. A page with a dozen streams has
-    /// room for about one line of small print per row, and the chips say more in
-    /// it than a caption can.
-    @ViewBuilder
-    private func factChips(_ d: DirectLinkProbe.Details) -> some View {
-        let chips: [(String, String)] = [
-            ("film", d.kind),
-            ("externaldrive", d.size ?? ""),
-            ("clock", d.duration ?? ""),
-            ("rectangle.dashed", d.resolution ?? ""),
-            ("forward", d.seekable.map { $0 ? "Seekable" : "No seeking" } ?? ""),
-        ].filter { !$0.1.isEmpty }
-        if !chips.isEmpty {
-            PillFlow(spacing: 6) {
-                ForEach(chips.indices, id: \.self) { i in
-                    HStack(spacing: 4) {
-                        Image(systemName: chips[i].0)
-                            .font(.system(size: 10))
-                            .foregroundStyle(PanuraTheme.onSurfaceVariant)
-                        Text(chips[i].1)
-                            .font(.caption.weight(.medium))
-                            .lineLimit(1)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(PanuraTheme.surfaceContainerHighest, in: Capsule())
-                }
-            }
-        }
-    }
 
-    /// What is known about a found row: what the probe already read, then what
-    /// the extra look at the file added once it was opened.
-    private func rowFacts(_ video: ExtractedVideo) -> some View {
-        let known = rowDetails[video.id] ?? DirectLinkProbe.Details(
-            kind: video.probeResult?.hlsType.map { $0 == "Adaptive" ? "HLS stream · several qualities" : "HLS stream" } ?? "",
-            size: video.probeResult?.fileSize,
-            duration: video.probeResult?.duration,
-            resolution: video.probeResult?.resolution
-        )
-        return factChips(known)
-            .task(id: video.id) { await loadDetails(video) }
-    }
 
     /// Only for the row that was opened, and only for a plain file. A rule-matched
     /// stream is never read: those hosts hand out single-use tokens, and a look
@@ -1780,7 +1742,6 @@ struct BrowserView: View {
         return Button {
             if saved {
                 store.removeWatchLater(url: url)
-                flash("Removed from Watch Later")
             } else {
                 store.addWatchLater(
                     url: url,
@@ -1788,7 +1749,6 @@ struct BrowserView: View {
                     poster: model.posterURL?.absoluteString,
                     posterAlt: model.posterFallbackURL?.absoluteString
                 )
-                flash("Added to Watch Later")
             }
         } label: {
             // Said as an act, and the tick says it is done: "Add to Watch Later"
