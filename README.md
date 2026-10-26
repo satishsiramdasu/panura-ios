@@ -39,7 +39,7 @@ To actually **run on a device or ship**, you still need:
 **Needs design work / doesn't port 1:1**
 - **`shouldInterceptRequest` has no iOS equivalent.** Extraction relies on the injected JS sniffer + navigation-policy sniffing. Some sites that Android catches via request interception will need per-case handling.
 - **PanuraCast local HTTP server (`:8888`).** iOS suspends arbitrary sockets in the background, so streaming *local files/downloads* to a TV while backgrounded is not reliable. Remote-URL casting is fine. Options: keep-alive via the `audio` background mode, or restructure around `AVAssetDownloadURLSession` + AirPlay.
-- **HLS offline download.** `DownloadManager` handles progressive `.mp4`; `.m3u8` offline needs `AVAssetDownloadTask` (marked TODO).
+- **Downloads.** HLS is saved as HLS (segments plus a rewritten playlist) and single files with Range resume; see `Sources/Features/Downloads`.
 
 ## Before first real build — fill in
 - `GADApplicationIdentifier` in `project.yml` — real **iOS** AdMob app id (the Android one won't work).

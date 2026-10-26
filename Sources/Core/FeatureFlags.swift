@@ -2,10 +2,10 @@ import Foundation
 
 /// Compile-time feature toggles.
 ///
-/// There is deliberately no `downloadsEnabled` here: iOS ships no download
-/// feature, and the code is gone rather than gated. Saving streamed content is
-/// the clearest App Review 5.2.3 exposure in this app, so it is not a flag flip
-/// away from returning.
+/// Downloads (1.2) have no flag: saving the stream a page is already playing is
+/// generic, stays private to the app and cannot be shared out of it. If App
+/// Review ever objects (guideline 5.2.3), the way back is hiding the Save button
+/// in `BrowserView` and the header button — nothing else depends on them.
 enum FeatureFlags {
     static var adsEnabled: Bool {
         #if DEBUG

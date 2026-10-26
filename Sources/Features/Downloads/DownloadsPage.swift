@@ -8,7 +8,7 @@ import SwiftUI
 /// Top to bottom: a search field, a line saying what the saved videos take up
 /// and how many are still going (with Cancel all), then one card per video —
 /// poster, title, resolution and length, size and date, an inline pause or
-/// resume, and a menu of Share, Rename and Delete. Delete always asks.
+/// resume, and a menu of Rename and Delete. Delete always asks.
 struct DownloadsPage: View {
     /// Leaves the page, back to the section underneath.
     var onClose: () -> Void
@@ -347,12 +347,8 @@ private struct DownloadRow: View {
 
     private var menu: some View {
         Menu {
-            if entry.status == .complete, !entry.isHLS, let url = entry.playableURL {
-                // A single file can be handed over as it is. A saved playlist is a
-                // folder of segments with no one file to send; see the note in
-                // the commit that added this.
-                ShareLink(item: url) { Label("Share", systemImage: "square.and.arrow.up") }
-            }
+            // No Share: a saved copy stays in the app, which is what the review notes
+            // promise. (Android shares; on iOS it would also have been single files only.)
             if entry.status == .complete {
                 Button(action: onRename) { Label("Rename", systemImage: "pencil") }
             }

@@ -100,7 +100,7 @@ adblock popup captions flv mov
 ## Promotional text (≤170, editable without a new build)
 
 ```
-Play any video — found on a web page, or already in your library. Real subtitles, gestures, background audio, and your TV a tap away. No account, no downloads.
+Play any video — found on a web page, or already in your library. Real subtitles, gestures, background audio, and your TV a tap away. No account, no ad tracking.
 ```
 
 159 characters. Rewritten 2026-09-23: the old line said "find a video on any
@@ -151,7 +151,6 @@ PLAY ON TV
 
 WHAT PANURA DOES NOT DO
 • No account, ever. Nothing to sign up for
-• No downloading of anything you browse to
 • No ad tracking. Your history, bookmarks and resume positions stay on the
   device and are deleted with the app
 • YouTube and its domains are deliberately excluded
@@ -231,6 +230,21 @@ New screen reads the changelog from there, and two different stories about the
 same release is the kind of thing reviewers notice.
 
 ---
+
+## What's New (1.2)
+
+```
+• Tap a link to a video file and see what it is before you play or cast it
+• A new header: switch sections from the Panura mark, and Downloads one tap away
+• The found-videos sheet shows length, size and quality on one tidy row
+• Cast remembers the audio language you chose on your TV
+• Home shows where you left off, and the app always opens there
+• Fixes and a smoother player
+```
+
+Keep it in step with the `ios` changelog in `version.json` (panura repo), added
+after 1.2 is live. Save is left out of What's New, the description and the
+screenshots on purpose: it is in the review notes, not the pitch.
 
 ## App Privacy (the nutrition label)
 
@@ -548,9 +562,15 @@ address bar. The only media we host anywhere is on our own demo page,
 panura.app/demo: a ten-second excerpt of "Big Buck Bunny", (c) 2008 Blender
 Foundation, under Creative Commons Attribution 3.0 and attributed there.
 
-There is NO download feature on iOS. Nothing browsed to can be saved to the
-device. The Videos tab plays videos already in the user's photo library, via
-PHPhotoLibrary, and nothing else.
+SAVING (new in 1.2). While a video is playing on a page the user chose, they can
+tap Save to keep a copy inside the app for offline viewing - the same as the
+download button in a browser. It saves exactly the stream the page is already
+playing, nothing more: there is no site-specific code, no list of sites, no
+search, no way to bypass a protected or DRM stream, and YouTube is blocked. The
+copy lives in the app's private storage, is excluded from backup, is deleted with
+the app, and plays only in Panura. The user is responsible for having the right
+to keep what they save, and our Terms of Use (section 3) say so. The Videos tab
+plays videos already in the user's photo library, via PHPhotoLibrary.
 
 YouTube and its associated domains are explicitly blocked from detection, in line
 with their terms.
@@ -748,9 +768,12 @@ third-party content. It hosts no media, bundles none and indexes none. There is
 no catalogue, no directory, no recommendations and no search across other
 people's sites, and the app never suggests a site to visit — the first screen is
 a browser address bar. What plays is whatever page the user typed in themselves,
-exactly as it would in Safari, plus files already in their own photo library.
-There is no download feature on iOS: nothing browsed to can be saved to the
-device.
+exactly as it would in Safari, plus files already in their own photo library, and any copy the user chose to save.
+In 1.2 the user can save the stream a page is playing into the app's private
+storage, to watch offline - see the SAVING paragraph in the review notes. It is
+generic (no per-site logic, no DRM bypass, YouTube blocked), the copy never
+leaves the app, and the Terms of Use put the responsibility for rights on the
+user.
 The only media we host anywhere is on our own demo page, https://panura.app/demo:
 a ten-second excerpt of "Big Buck Bunny", © 2008 Blender Foundation, published
 under the Creative Commons Attribution 3.0 licence
@@ -866,7 +889,7 @@ platform — that is a requirement of the page, not an accident of it.
 Short list, because each of these has either already gone wrong or would be
 silent if it did.
 
-1. **`FeatureFlags.adsUseTestUnits` is `false`.** The one flag whose wrong value
+1. **`FeatureFlags.adsUseTestUnits` is `false`** (it is a constant now, and no TestFlight switch exists). The one flag whose wrong value
    shows no symptom: the ads look right, fill every time, and pay nothing,
    because they are Google's sample units. It is `true` for TestFlight
    verification — TestFlight runs the Release configuration, so `#if DEBUG`

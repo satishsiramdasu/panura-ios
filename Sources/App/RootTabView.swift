@@ -27,11 +27,8 @@ import SwiftUI
 /// Every destination stays composed and is hidden by opacity rather than being
 /// rebuilt. The browser owns a live `WKWebView`, a page mid-load and a set of
 /// detections; a trip to Home or to Videos must not cost any of that.
-///
-/// iOS ships no download feature at all — saving streamed content is the
-/// clearest App Review 5.2.3 problem in this app, and a flag-gated feature still
-/// ships the code — so the bar has no Downloads seat to trade Videos for, as
-/// Android's does inside the browser.
+/// Downloads is not a section: it is a page above the whole shell, like the cast
+/// page (see `DownloadsPage`), so it has no seat in this app.
 struct RootTabView: View {
     @State private var selection: AppDestination = {
         #if DEBUG
