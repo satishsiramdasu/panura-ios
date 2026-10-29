@@ -95,10 +95,11 @@ struct IPTVView: View {
             // search: a glyph and a labelled button side by side read as two
             // unrelated sizes of control, and this bar's job is the server's
             // name and the one action the server has.
-            if store.isLoading || refreshing {
-                ProgressView().controlSize(.small).frame(width: 34, height: 34)
-            } else if store.open != nil {
+            // No spinner in the bar (Android 6d212d1): the list's own loading state
+            // says it. Refresh stays where it is and is greyed while one runs.
+            if store.open != nil {
                 refreshButton
+                    .disabled(store.isLoading || refreshing)
             }
         }
         .padding(.horizontal, 12)

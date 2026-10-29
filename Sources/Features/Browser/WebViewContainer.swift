@@ -233,6 +233,9 @@ struct WebViewContainer: UIViewRepresentable {
             for: .valueChanged
         )
         webView.scrollView.refreshControl = refresh
+        webView.scrollView.panGestureRecognizer.addTarget(
+            context.coordinator, action: #selector(Coordinator.panChanged(_:))
+        )
         context.coordinator.observe(webView)
         // The page that was open, not the start page.
         //
@@ -434,7 +437,20 @@ struct WebViewContainer: UIViewRepresentable {
         /// direction.
         private var lastScrollY: CGFloat = 0
 
+        /// Whether the header was away when the current drag began.
+        ///
+        /// A pull at the top brings a hidden header back before it can refresh
+        /// (Android 545138f): the first downward pull while the header is hidden
+        /// shows it and spends the rest of that gesture, however long it runs.
+        /// Only a pull made with the header already showing reloads the page.
+        private var dragBeganWithHeaderHidden = false
+
+        @MainActor @objc func panChanged(_ pan: UIPanGestureRecognizer) {
+            if pan.state == .began { dragBeganWithHeaderHidden = !ShellChrome.shared.visible }
+        }
+
         @objc func handleRefresh(_ sender: UIRefreshControl) {
+            if dragBeganWithHeaderHidden { sender.endRefreshing(); return }
             webView?.reload()
         }
 

@@ -32,6 +32,8 @@ struct ShellHeader<MenuContent: View>: View {
     var ground: Color = AppChrome.bar
     var seat: Color = AppChrome.seat
     let onSwitcher: () -> Void
+    /// Goes Home. Used by the mark in every section but Home.
+    var onHome: () -> Void = {}
     /// Opens the Downloads sheet.
     var onDownloads: () -> Void = {}
     /// The rows behind the menu button, supplied by the shell so this view
@@ -66,13 +68,11 @@ struct ShellHeader<MenuContent: View>: View {
     }
 
     private var seatBlock: some View {
-        Button(action: onSwitcher) {
-            HStack(spacing: 10) {
-                Image("AppLogo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 32, height: 32)
-
+        HStack(spacing: 10) {
+            markSlot
+            // The name and the line under it open the switcher from every
+            // section, as they always did; only the mark beside them changes.
+            Button(action: onSwitcher) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("Panura")
@@ -89,17 +89,58 @@ struct ShellHeader<MenuContent: View>: View {
                     }
                     sectionLine
                 }
+                .padding(.trailing, 16)
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 16)
-            .frame(maxHeight: .infinity)
-            .background(
-                TopRoundedRectangle(radius: 20).fill(seat)
-            )
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(section.placeName). Switch section")
+        }
+        .padding(.leading, 14)
+        .background(
+            TopRoundedRectangle(radius: 20).fill(seat)
+        )
+    }
+
+    /// The Panura logo on Home, and in every other section a Home button in its
+    /// place (Android 1077c08, ee2eec5). The two swap with a fade and a scale
+    /// from and to 0.6.
+    ///
+    /// One slot rather than a Home button beside the logo: beside it there was
+    /// under 48 points left between the seat and the Downloads button at large
+    /// text. And no one-time hint that the logo goes Home — it was tried and
+    /// dropped; the button is simply always there.
+    ///
+    /// On Home the logo is part of the title, so it opens the switcher like the
+    /// name does; elsewhere it is its own target and goes Home.
+    private var markSlot: some View {
+        let atHome = section == .home
+        return Button(action: atHome ? onSwitcher : onHome) {
+            ZStack {
+                if atHome {
+                    Image("AppLogo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 32, height: 32)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                } else {
+                    Image(systemName: "house.fill")
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(PanuraTheme.accent)
+                        .frame(width: 32, height: 32)
+                        .background(
+                            PanuraTheme.accent.opacity(0.18),
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
+            }
+            .frame(width: 32, height: 32)
+            .animation(.easeInOut(duration: 0.38), value: atHome)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(section.placeName). Switch section")
+        .accessibilityLabel(atHome ? "Panura. Switch section" : "Home")
     }
 
     private var sectionLine: some View {

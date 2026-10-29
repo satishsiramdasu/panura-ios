@@ -228,6 +228,7 @@ struct RootTabView: View {
                     onSwitcher: {
                         withAnimation(PanelMetrics.motion) { showSwitcher = true }
                     },
+                    onHome: { select(.home) },
                     onDownloads: { withAnimation(.easeOut(duration: 0.25)) { showDownloads = true } }
                 ) { menuRows }
                 .frame(height: chrome.visible ? Self.chromeHeight : 0, alignment: .bottom)
