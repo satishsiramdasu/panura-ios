@@ -383,10 +383,16 @@ struct CastHero: View {
                 if hasPoster {
                     // Room for either shape: a 16:9 still fills the width, a
                     // portrait sheet the height, each drawn whole.
-                    PosterThumb(
-                        url: posterURL, image: posterImage, fallback: "tv.fill",
-                        width: 240, height: 200, corner: 14
-                    )
+                    // Full width, 16:9: the poster fitted whole over a blur of
+                    // itself (PosterThumb), so a portrait sheet sits centred.
+                    GeometryReader { geo in
+                        PosterThumb(
+                            url: posterURL, image: posterImage, fallback: "tv.fill",
+                            width: geo.size.width, height: geo.size.height, corner: 20
+                        )
+                    }
+                    .aspectRatio(16 / 9, contentMode: .fit)
+                    .padding(.horizontal, 16)
                 } else {
                     ZStack {
                         RoundedRectangle(cornerRadius: 26, style: .continuous)
