@@ -19,6 +19,9 @@ struct CastMessage: Codable {
     /// often want opposite things, and a CDN that 429s on a Referer would take
     /// the captions down with it if the two sets were shared.
     var subtitleHeaders: [String: String] = [:]
+    /// Absolute http(s) URL of the page's poster, "" when there is none. The TV
+    /// fetches it with `subtitleHeaders` and keeps it as the Continue Watching image.
+    var poster: String = ""
 
     // hello, both directions
     var deviceName: String = ""
@@ -54,6 +57,7 @@ struct CastMessage: Codable {
         mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? ""
         subtitles = try c.decodeIfPresent([CastSubtitle].self, forKey: .subtitles) ?? []
         subtitleHeaders = try c.decodeIfPresent([String: String].self, forKey: .subtitleHeaders) ?? [:]
+        poster = try c.decodeIfPresent(String.self, forKey: .poster) ?? ""
         deviceName = try c.decodeIfPresent(String.self, forKey: .deviceName) ?? ""
         incognito = try c.decodeIfPresent(Bool.self, forKey: .incognito) ?? false
         command = try c.decodeIfPresent(String.self, forKey: .command) ?? ""

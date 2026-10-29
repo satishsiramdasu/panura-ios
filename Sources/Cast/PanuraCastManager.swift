@@ -457,6 +457,8 @@ final class PanuraCastManager: ObservableObject {
             // host is usually a different origin from the video CDN and often
             // wants the opposite headers.
             message.subtitleHeaders = item.castHeaders
+            message.poster = Self.posterString(item)
+            self.log("Cast poster: " + (message.poster.isEmpty ? "none" : message.poster))
 
             self.server.send(message)
             self.mode = direct == nil ? "proxy" : "direct"
@@ -507,9 +509,18 @@ final class PanuraCastManager: ObservableObject {
             CastSubtitle(url: $0.url.absoluteString, label: $0.label, lang: $0.language)
         }
         message.subtitleHeaders = item.castHeaders
+        message.poster = Self.posterString(item)
         server.send(message)
         mode = "proxy"
         log("\(why) — retrying through this phone")
+    }
+
+    /// The page's poster as the TV is told it: http(s) only, "" otherwise.
+    private static func posterString(_ item: MediaItem) -> String {
+        guard !item.isLocal, let url = item.thumbnailURL,
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
+        else { return "" }
+        return url.absoluteString
     }
 
     /// The probe's verdict and, in plain words, what decided it.
