@@ -1621,6 +1621,9 @@ struct BrowserView: View {
     /// Chromecast is limited to what its receiver accepts.
     private func castOrConnect(_ video: ExtractedVideo) {
         let item = model.playable(video)
+        // The picker, the replace prompt or the cast screen takes over from
+        // here; a found sheet left up would sit over it.
+        showFoundSheet = false
         guard panuraCast.isTVConnected || cast.isConnected else {
             pendingCast = item
             CastPicker.shared.open()
