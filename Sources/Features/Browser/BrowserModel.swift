@@ -338,7 +338,9 @@ final class BrowserModel: ObservableObject {
     /// Build the playable item for a detection, carrying page subtitles with it.
     func playable(_ video: ExtractedVideo) -> MediaItem {
         var item = MediaItem(
-            title: video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title,
+            // The title the found sheet shows: the page's current one. `video.title` was
+            // captured at detection and is often stale or empty by the time of the tap.
+            title: !pageTitle.isEmpty ? pageTitle : (video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title),
             url: video.url,
             thumbnailURL: posterURL,
             headers: video.headers,
