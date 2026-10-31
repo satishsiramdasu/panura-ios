@@ -231,7 +231,7 @@ same release is the kind of thing reviewers notice.
 
 ---
 
-## What's New (1.2)
+## What's New (4.0)
 
 ```
 • Tap a link to a video file and see what it is before you play or cast it
@@ -243,7 +243,7 @@ same release is the kind of thing reviewers notice.
 ```
 
 Keep it in step with the `ios` changelog in `version.json` (panura repo), added
-after 1.2 is live. Save is left out of What's New, the description and the
+after 4.0 is live. Save is left out of What's New, the description and the
 screenshots on purpose: it is in the review notes, not the pitch.
 
 ## App Privacy (the nutrition label)
@@ -562,7 +562,7 @@ address bar. The only media we host anywhere is on our own demo page,
 panura.app/demo: a ten-second excerpt of "Big Buck Bunny", (c) 2008 Blender
 Foundation, under Creative Commons Attribution 3.0 and attributed there.
 
-SAVING (new in 1.2). While a video is playing on a page the user chose, they can
+SAVING (new in 4.0). While a video is playing on a page the user chose, they can
 tap Save to keep a copy inside the app for offline viewing - the same as the
 download button in a browser. It saves exactly the stream the page is already
 playing, nothing more: there is no site-specific code, no list of sites, no
@@ -769,7 +769,7 @@ no catalogue, no directory, no recommendations and no search across other
 people's sites, and the app never suggests a site to visit — the first screen is
 a browser address bar. What plays is whatever page the user typed in themselves,
 exactly as it would in Safari, plus files already in their own photo library, and any copy the user chose to save.
-In 1.2 the user can save the stream a page is playing into the app's private
+In 4.0 the user can save the stream a page is playing into the app's private
 storage, to watch offline - see the SAVING paragraph in the review notes. It is
 generic (no per-site logic, no DRM bypass, YouTube blocked), the copy never
 leaves the app, and the Terms of Use put the responsibility for rights on the
