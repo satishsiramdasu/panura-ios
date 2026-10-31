@@ -412,11 +412,11 @@ struct WebViewContainer: UIViewRepresentable {
             BrowserSession.shared.showBar()
         }
 
-        @MainActor
         /// A route change that keeps the document never re-runs the user script, and
         /// a query-only one never reaches `clearFindings`, so the last page's poster
         /// and artwork would stay. Any URL change drops them and reads this page's.
         /// KVO on `url` does not fire for a reload, whose URL is unchanged.
+        @MainActor
         private func rereadPoster(_ url: URL) {
             defer { lastPosterURL = url }
             guard let last = lastPosterURL, last != url else { return }
@@ -427,6 +427,7 @@ struct WebViewContainer: UIViewRepresentable {
 
         private var lastPosterURL: URL?
 
+        @MainActor
         private func documentChanged(_ url: URL?) {
             guard let url else { return }
             model.currentURL = url
