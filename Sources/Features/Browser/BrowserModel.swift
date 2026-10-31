@@ -22,6 +22,9 @@ final class BrowserModel: ObservableObject {
     @Published var canGoForward = false
     @Published var desktopMode = false
     @Published var foundVideos: [ExtractedVideo] = []
+    /// Counts `clearFindings`, so a list emptied by navigation can be told from one
+    /// whose last candidate was retracted or probed dead.
+    @Published private(set) var navigations = 0
     /// Sidecar subtitles sniffed from the page; attached to whatever the user plays.
     @Published var foundSubtitles: [SubtitleTrack] = []
     /// The page's thumbnail VTT, if it offered one. Reported through the same
@@ -161,6 +164,7 @@ final class BrowserModel: ObservableObject {
 
     /// Findings belong to a page — drop them whenever we navigate.
     func clearFindings() {
+        navigations += 1
         foundVideos.removeAll()
         foundSubtitles.removeAll()
         previewTrack = nil

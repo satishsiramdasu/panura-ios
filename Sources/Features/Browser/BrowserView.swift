@@ -169,9 +169,16 @@ struct BrowserView: View {
             }
         }
         .onChange(of: model.foundVideos.count) { count in
-            // Empty means a new page: its list is a new offer.
-            if count == 0 { offeredFoundSheet = false }
+            // The list can empty under an open sheet: a candidate is retracted or
+            // probes dead, or the page navigates. Nothing left to show, so it
+            // closes; the found bar is the way back in.
+            if count == 0 { showFoundSheet = false }
             offerFoundSheet()
+        }
+        // A new page's list is a new offer. A list that emptied on the same page
+        // is not, or a retracted candidate followed by another reopens the sheet.
+        .onChange(of: model.navigations) { _ in
+            offeredFoundSheet = false
         }
         // Streams found while another tab was in front are offered on return.
         .onChange(of: isActive) { active in
