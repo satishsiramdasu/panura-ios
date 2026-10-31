@@ -846,6 +846,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
                     label: $0.height > 0 ? "\($0.height)p" : "\($0.bandwidth / 1000) kbps",
                     url: $0.url,
                     bandwidth: $0.bandwidth,
+                    averageBandwidth: $0.average,
                     height: $0.height
                 )
             }

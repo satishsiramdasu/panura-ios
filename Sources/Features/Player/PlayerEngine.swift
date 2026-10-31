@@ -20,6 +20,9 @@ struct PlayerQuality: Identifiable, Hashable {
     let url: URL?
     /// Advertised bits/sec, for the size estimate. 0 when unknown or Auto.
     var bandwidth: Int = 0
+    /// AVERAGE-BANDWIDTH when declared, else 0. Size estimates prefer it: the peak runs
+    /// two to three times high.
+    var averageBandwidth: Int = 0
     /// Vertical resolution from the master playlist; 0 when it names none.
     var height: Int = 0
 
@@ -30,8 +33,9 @@ struct PlayerQuality: Identifiable, Hashable {
     /// approximation and is labelled as one. Empty when either input is
     /// unknown — a live stream has no duration, so no estimate is shown.
     func sizeEstimate(durationSeconds: Double) -> String {
-        guard durationSeconds > 0, bandwidth > 0 else { return "" }
-        let bytes = Double(bandwidth) / 8 * durationSeconds
+        let rate = averageBandwidth > 0 ? averageBandwidth : bandwidth
+        guard durationSeconds > 0, rate > 0 else { return "" }
+        let bytes = Double(rate) / 8 * durationSeconds
         switch bytes {
         case 1_000_000_000...:
             return String(format: "~%.1f GB", bytes / 1_000_000_000)

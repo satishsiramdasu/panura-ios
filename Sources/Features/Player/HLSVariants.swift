@@ -3,7 +3,10 @@ import Foundation
 /// One HLS master-playlist variant (a selectable quality level).
 struct HLSVariant: Hashable {
     let height: Int      // 0 when the variant carries no RESOLUTION attribute
-    let bandwidth: Int   // bits/sec
+    let bandwidth: Int   // bits/sec  — the peak (BANDWIDTH)
+    /// AVERAGE-BANDWIDTH, 0 when not declared. Sizes come from this; BANDWIDTH is the
+    /// peak and reads two to three times too big.
+    var average: Int = 0
     let url: URL
 }
 
@@ -80,13 +83,14 @@ enum HLSVariants {
                     .flatMap { $0.split(separator: "x").last }
                     .flatMap { Int($0) } ?? 0
                 let bandwidth = value("BANDWIDTH", in: line).flatMap { Int($0) } ?? 0
+                let average = value("AVERAGE-BANDWIDTH", in: line).flatMap { Int($0) } ?? 0
                 // The next non-empty, non-comment line is the variant URI.
                 var j = i + 1
                 while j < lines.count {
                     let uri = lines[j].trimmingCharacters(in: .whitespaces)
                     if uri.isEmpty || uri.hasPrefix("#") { j += 1; continue }
                     if let vurl = URL(string: uri, relativeTo: base)?.absoluteURL {
-                        out.append(HLSVariant(height: height, bandwidth: bandwidth, url: vurl))
+                        out.append(HLSVariant(height: height, bandwidth: bandwidth, average: average, url: vurl))
                     }
                     break
                 }
@@ -104,7 +108,8 @@ enum HLSVariants {
 
     /// Extract `KEY=VALUE` (value may be quoted) from an EXT-X-STREAM-INF line.
     private static func value(_ key: String, in line: String) -> String? {
-        guard let r = line.range(of: "\(key)=") else { return nil }
+        // Whole attribute name only: BANDWIDTH must not match inside AVERAGE-BANDWIDTH.
+        guard let r = line.range(of: ":\(key)=") ?? line.range(of: ",\(key)=") else { return nil }
         var rest = line[r.upperBound...]
         if rest.first == "\"" {
             rest = rest.dropFirst()
