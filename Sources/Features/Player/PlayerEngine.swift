@@ -109,6 +109,9 @@ protocol PlayerEngine: ObservableObject {
     var total: String { get }
     var buffering: Bool { get }
     var failure: String? { get }
+    /// The cause in engine terms, shown small under `failure` so a failure can be
+    /// diagnosed from a screenshot. Nil when the engine gave none.
+    var failureDetail: String? { get }
     var resumeEntryRemoved: Bool { get }
     var rate: Float { get }
     var totalSeconds: Double { get }

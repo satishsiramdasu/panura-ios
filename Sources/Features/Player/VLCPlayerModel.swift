@@ -19,6 +19,7 @@ final class VLCPlayerModel: NSObject, ObservableObject {
     @Published var buffering = true
     /// Non-nil when playback failed, so the UI says so instead of spinning.
     @Published var failure: String?
+    @Published var failureDetail: String?
     /// True once a dead source has cost this item its Continue Watching entry —
     /// the failure message says so, rather than leaving it a silent deletion.
     @Published private(set) var resumeEntryRemoved = false
@@ -1043,6 +1044,9 @@ extension VLCPlayerModel: VLCMediaPlayerDelegate {
                 // direct and plays relayed.
                 if retryThroughRelay() { return }
                 buffering = false
+                // libVLC reports one undifferentiated error state, with no code or
+                // cause, so the route it failed on is all there is to say.
+                failureDetail = "VLC error state, " + (playedThroughRelay ? "through relay" : "direct")
                 failure = "This stream could not be opened."
                 dropResumeIfSourceIsGone()
             default: break

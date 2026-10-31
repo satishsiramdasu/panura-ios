@@ -60,6 +60,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
     @Published var total = "0:00"
     @Published var buffering = true
     @Published var failure: String?
+    @Published var failureDetail: String?
     @Published private(set) var resumeEntryRemoved = false
     @Published var rate: Float = 1.0
 
@@ -199,7 +200,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         audioTracks = []; subtitleTracks = []
         currentAudioId = -1; currentSubtitleId = -1
         subtitleDelayMs = 0; audioDelayMs = 0
-        failure = nil; buffering = true
+        failure = nil; failureDetail = nil; buffering = true
         pendingResumeSeconds = nil; resumeApplied = false
         relayRetryUsed = false; forceRelay = false
         thumbnailCaptured = false
@@ -386,6 +387,16 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         updateNowPlaying(force: true)
     }
 
+    /// Domain and code of an item error, then its underlying error when present.
+    private static func describe(_ error: Error?) -> String? {
+        guard let error = error as NSError? else { return nil }
+        var text = "(error.domain) (error.code)"
+        if let under = error.userInfo[NSUnderlyingErrorKey] as? NSError {
+            text += " · (under.domain) (under.code)"
+        }
+        return text
+    }
+
     private func itemStatusChanged(_ observed: AVPlayerItem) {
         guard observed === player.currentItem else { return }
         switch observed.status {
@@ -409,6 +420,7 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
             if retryThroughRelay() { return }
             buffering = false
             isPlaying = false
+            failureDetail = Self.describe(observed.error)
             failure = "This stream could not be opened."
             dropResumeIfSourceIsGone()
         default:

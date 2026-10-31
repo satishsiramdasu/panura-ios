@@ -948,6 +948,12 @@ struct PlayerView<Model: PlayerEngine>: View {
         VStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundStyle(.orange)
             Text(text).font(.callout).foregroundStyle(.white).multilineTextAlignment(.center)
+            if let detail = model.failureDetail {
+                Text(detail)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.white.opacity(0.6))
+                    .multilineTextAlignment(.center)
+            }
             // Said out loud rather than deleted silently, and only when
             // something was actually removed.
             if model.resumeEntryRemoved {
