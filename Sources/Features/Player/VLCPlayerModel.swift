@@ -263,9 +263,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         }
         // Enough ahead to skip into (Android c00dc30): a ten-second skip hit
         // the spinner because the player held barely more than it was
-        // playing. Adaptive streams may run two minutes ahead. Not
+        // playing. Adaptive streams may run three minutes ahead. Not
         // `network-caching`, which is a start-up delay, not a ceiling.
-        media.addOption(":adaptive-maxbuffer=120000")
+        media.addOption(":adaptive-maxbuffer=180000")
     }
 
     /// Subtitle look — set at media-open time (libVLC's text renderer reads these

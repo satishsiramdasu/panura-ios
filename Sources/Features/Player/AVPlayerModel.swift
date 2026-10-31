@@ -258,9 +258,9 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         }
         let asset = AVURLAsset(url: playURL, options: options)
         let playerItem = AVPlayerItem(asset: asset)
-        // A minute ahead, so a skip lands in what is already here (Android
+        // Three minutes ahead (Android 8de8aca), so a skip lands in what is already here (Android
         // c00dc30). Zero, the default, lets AVFoundation keep only a little.
-        playerItem.preferredForwardBufferDuration = 60
+        playerItem.preferredForwardBufferDuration = 180
 
         applySubtitleStyle(to: playerItem)
         applyQualityCap(to: playerItem)
