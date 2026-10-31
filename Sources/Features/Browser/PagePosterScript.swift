@@ -21,6 +21,13 @@ import Foundation
 enum PagePosterScript {
     static let source = #"""
     (function(){
+      // Run again on every in-page navigation (the app re-injects it): stop the
+      // previous run so an old schedule cannot report over the new page.
+      if (window.__panuraPosterTimers) {
+        window.__panuraPosterTimers.forEach(function(t){ clearTimeout(t); clearInterval(t); });
+      }
+      var timers = window.__panuraPosterTimers = [];
+      var run = window.__panuraPosterRun = (window.__panuraPosterRun || 0) + 1;
       function abs(u){
         try { return new URL(u, location.href).href; } catch (e) { return ''; }
       }
@@ -120,10 +127,24 @@ enum PagePosterScript {
       // has already spoken — so one ill-timed clear lost the poster for the
       // life of the page. Re-stating it costs one small message; the app just
       // assigns the same URL again.
+      //
+      // What the meta tags said on the page this run started on. A single-page
+      // app often leaves the first page's og:image in <head> for every page
+      // after it, so on a later page the same meta answer is not evidence -
+      // the other sources are asked instead.
+      var prev = window.__panuraPosterPrev;
+      var startHref = location.href;
       function report(){
         try {
-          var url = fromMeta() || fromJSONLD() || fromVideo()
+          // The event listeners below outlive the run that added them.
+          if (run !== window.__panuraPosterRun) return;
+          var meta = fromMeta();
+          if (prev && prev.href !== location.href && meta && meta === prev.meta) meta = '';
+          var url = meta || fromJSONLD() || fromVideo()
                     || fromArticle() || fromLargest();
+          if (location.href === startHref) {
+            window.__panuraPosterPrev = { href: location.href, meta: fromMeta() };
+          }
           // Data URIs are usually a placeholder pixel, and a poster worth
           // showing is never one.
           if (!url || url.indexOf('data:') === 0) return;
@@ -131,11 +152,11 @@ enum PagePosterScript {
         } catch (e) {}
       }
       report();
-      setTimeout(report, 1200);
-      setTimeout(report, 3000);
+      timers.push(setTimeout(report, 1200));
+      timers.push(setTimeout(report, 3000));
       // Images decode after the document is done, and `naturalWidth` is 0 until
       // they do — the size-based fallbacks are blind before that.
-      setTimeout(report, 6000);
+      timers.push(setTimeout(report, 6000));
       window.addEventListener('load', function(){ setTimeout(report, 400); });
       // A single-page app changes the page without reloading it, and the poster
       // changes with it.
@@ -149,6 +170,7 @@ enum PagePosterScript {
         if (++beats > 12) { clearInterval(timer); return; }
         report();
       }, 5000);
+      timers.push(timer);
     })();
     """#
 }

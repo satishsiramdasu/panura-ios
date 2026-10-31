@@ -405,6 +405,7 @@ struct WebViewContainer: UIViewRepresentable {
             guard url.absoluteString != lastRouteKey else { return }
             lastRouteKey = url.absoluteString
             model.currentURL = url
+            rereadPoster(url)
             model.clearFindings()
             embeds.reset()
             lastScrollY = 0
@@ -412,9 +413,24 @@ struct WebViewContainer: UIViewRepresentable {
         }
 
         @MainActor
+        /// A route change that keeps the document never re-runs the user script, and
+        /// a query-only one never reaches `clearFindings`, so the last page's poster
+        /// and artwork would stay. Any URL change drops them and reads this page's.
+        /// KVO on `url` does not fire for a reload, whose URL is unchanged.
+        private func rereadPoster(_ url: URL) {
+            defer { lastPosterURL = url }
+            guard let last = lastPosterURL, last != url else { return }
+            model.pagePoster = nil
+            model.sessionArtwork = nil
+            webView?.evaluateJavaScript(PagePosterScript.source, completionHandler: nil)
+        }
+
+        private var lastPosterURL: URL?
+
         private func documentChanged(_ url: URL?) {
             guard let url else { return }
             model.currentURL = url
+            rereadPoster(url)
 
             let key = "\(url.host ?? "")\(url.path)"
             guard key != lastDocumentKey else { return }
