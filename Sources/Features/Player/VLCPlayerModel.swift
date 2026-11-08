@@ -283,6 +283,12 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // a remote MKV or MP4 the exact seek reads and decodes everything from
         // the previous keyframe over the network, which is the slow scrub.
         media.addOption(":input-fast-seek")
+        // Remote MKV: libVLC skips the Cues index on a stream it can't
+        // fast-seek (HTTP), then seeks by reading cluster after cluster from
+        // the current spot, over a gigabyte for an hour's jump. Seeking by
+        // byte share jumps straight there in one ranged request. Matroska
+        // only; other demuxers ignore it.
+        media.addOption(":mkv-seek-percent")
     }
 
     /// Subtitle look — set at media-open time (libVLC's text renderer reads these
