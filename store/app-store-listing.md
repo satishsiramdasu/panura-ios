@@ -74,10 +74,10 @@ served from the `panura` repo (`public/_redirects`).
 ## Keywords (≤100 characters, comma-separated, no spaces)
 
 ```
-m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,captions,flv,mov
+m3u8,hls,dash,stream,streaming,live,media,srt,mkv,mp4,webm,avi,hd,adblock,popup,captions,flv,mov,ftp
 ```
 
-96 characters. Apple indexes name, subtitle and keywords together and counts a
+100 characters (4.0 added `ftp`, for Media Servers). Apple indexes name, subtitle and keywords together and counts a
 word once, so nothing from the name (panura, video, browser, tv, cast) or the
 subtitle (web, player, subtitles) is repeated here.
 
@@ -94,16 +94,18 @@ The whole indexed set, which should contain no word twice:
 ```
 panura video browser tv cast web player subtitles
 m3u8 hls dash stream streaming live media srt mkv mp4 webm avi hd
-adblock popup captions flv mov
+adblock popup captions flv mov ftp
 ```
 
 ## Promotional text (≤170, editable without a new build)
 
 ```
-Play any video — found on a web page, or already in your library. Real subtitles, gestures, background audio, and your TV a tap away. No account, no ad tracking.
+Play any video — from a web page, your library or your own media server. Real subtitles, gestures, background audio, your TV a tap away. No account, no ad tracking.
 ```
 
-159 characters. Rewritten 2026-09-23: the old line said "find a video on any
+157 characters, rewritten for 4.0 to name Media Servers. Scrub previews were
+considered and left out: most streams carry none, and this line should only name
+what works on every video. Before that, rewritten 2026-09-23: the old line said "find a video on any
 site", which sold the browser and left the Videos tab out of the only 170
 characters a passer-by reads. Both halves now appear in the first clause, and
 "already in your library" is the honest phrasing — the photo library is what the
@@ -112,32 +114,38 @@ app reads, and it is not a Files-app player.
 ## Description (≤4000)
 
 ```
-Panura is a web browser and a video player in one. What plays on a page and what
-is already on your phone open in the same player — full screen, free of the
-page's ads and pop-ups.
+Panura is a web browser and a video player in one. What plays on a page, what is
+already on your phone and what sits on your own media server open in the same
+player — full screen, free of the page's ads and pop-ups.
 
 Browse to a page, press play, and Panura finds the stream the page is playing.
-Or open the Videos tab, where the same player opens your library. Either way you
-get real controls, a picture that fills the screen properly, and subtitles you
-can size, colour and re-encode until they are readable.
+Tap a link to a video file and Panura tells you what it is — type, size, length
+and picture — before you play or cast it. Or open your library or your own
+server, and get the same player, the same gestures and subtitles you can size,
+colour and re-encode until they are readable.
 
 BUILT-IN BROWSER
 • Ad and pop-up blocking, so a page that opens six tabs opens none
 • Private mode that keeps nothing once you leave it
 • Desktop mode for sites that hide their player from phones
 • Bookmarks, history and Watch Later, with the address bar where your thumb is
+• Home shows where you left off, one tap from every section
 
 YOUR PHONE'S VIDEOS
 • Every video in your photo library, in a grid or a list
 • Albums, search, and sorting by name, date or size
 • Length and file size on every row, and delete without leaving the app
 • iCloud videos play too — Panura fetches them at full quality when you tap
-• The same player, the same gestures, the same subtitle settings
 • Add any of them to Watch Later, beside the pages you saved
+
+MEDIA SERVERS
+• Browse the shares on your own network and play straight from them
+• Open your own playlists and keep them a tap away
 
 THE PLAYER
 • Plays what other players refuse: HLS, MP4, MKV, AVI, and more
 • Gestures for seek, brightness, volume and hold-to-speed
+• Scrub previews and chapters, so you land where you meant to
 • Pinch to zoom and move the picture inside the frame
 • Subtitle control that goes past on and off: size, font, colour, outline,
   background, and the character encoding that fixes garbled non-English files
@@ -147,6 +155,7 @@ THE PLAYER
 
 PLAY ON TV
 • Cast to a Chromecast, or to Panura on an Android TV
+• Panura TV shows the title and poster, and remembers your audio language
 • Discovery runs on your own network and stops when you leave the screen
 
 WHAT PANURA DOES NOT DO
@@ -234,12 +243,16 @@ same release is the kind of thing reviewers notice.
 ## What's New (4.0)
 
 ```
+Panura is now version 4.0, the same as Panura on Android.
+
 • Tap a link to a video file and see what it is before you play or cast it
-• A new header: switch sections from the Panura mark, and Downloads one tap away
+• A new header with a Home button and Downloads one tap away
 • The found-videos sheet shows length, size and quality on one tidy row
+• Casting to Panura TV sends the page's title and poster
+• Scrub previews appear instantly anywhere on the timeline
 • Cast remembers the audio language you chose on your TV
 • Home shows where you left off, and the app always opens there
-• Fixes and a smoother player
+• Smoother playback with a longer buffer, plus fixes
 ```
 
 Keep it in step with the `ios` changelog in `version.json` (panura repo), added
@@ -550,70 +563,65 @@ app will otherwise be asked.
 ```
 Panura is a web browser and a video player in one. The user browses to a page
 themselves; when that page plays a video, Panura detects the stream the page is
-already loading and offers to play the same video in its own player, which
-handles more formats and gives the subtitle, audio-track, speed and aspect
-control the page's own player does not. That same player opens videos already in
-the user's photo library. For adults who watch video on the web.
+already loading and offers to play the same video in its own player, with the
+subtitle, audio-track, speed and aspect control the page's player lacks. The same
+player opens videos in the user's photo library and on servers the user adds.
+For adults who watch video on the web.
 
 No content is hosted, bundled, indexed or recommended by us. There is no
-catalogue, no directory, no recommendations and no search across other people's
-sites, and the app never suggests a site to visit. The first screen is a browser
-address bar. The only media we host anywhere is on our own demo page,
+catalogue, no directory, no search across other people's sites, and the app never
+suggests a site or a server. The only media we host is on our demo page,
 panura.app/demo: a ten-second excerpt of "Big Buck Bunny", (c) 2008 Blender
-Foundation, under Creative Commons Attribution 3.0 and attributed there.
+Foundation, CC BY 3.0, attributed there.
 
-SAVING (new in 4.0). While a video is playing on a page the user chose, they can
-tap Save to keep a copy inside the app for offline viewing - the same as the
-download button in a browser. It saves exactly the stream the page is already
-playing, nothing more: there is no site-specific code, no list of sites, no
-search, no way to bypass a protected or DRM stream, and YouTube is blocked. The
-copy lives in the app's private storage, is excluded from backup, is deleted with
-the app, and plays only in Panura. The user is responsible for having the right
-to keep what they save, and our Terms of Use (section 3) say so. The Videos tab
-plays videos already in the user's photo library, via PHPhotoLibrary.
+SAVING. While a video plays on a page the user chose, they can tap Save to keep a
+copy inside the app for offline viewing - like a browser's download button. It
+saves exactly the stream the page is already playing: no site-specific code, no
+list of sites, no DRM bypass, and YouTube is blocked. The copy lives in the app's
+private storage, is excluded from backup, is deleted with the app and plays only
+in Panura. The user is responsible for the right to keep it (Terms of Use, s.3).
 
-YouTube and its associated domains are explicitly blocked from detection, in line
-with their terms.
+DIRECT LINKS (new in 4.0). Tapping a link to a video file shows its type, size
+and length before the user chooses Play, Cast or Save.
 
-NO ACCOUNTS of any kind - no registration, login or account deletion. No
-user-generated content, so nothing to report or block. No paid content, no
-in-app purchase, no subscription. Nothing is gated and no credentials are needed.
+MEDIA SERVERS. The user can add their own FTP or SMB shares on their own
+network, or a playlist address they already have. Nothing is preset or
+suggested; the section is empty until the user adds something.
 
-TO TRY IT: type any site with video into the address bar and press play on that
-site's own player. A bar appears at the bottom naming what was found, with a Play
-button; if the page offers several streams it shows a count, and tapping it lists
-them. panura.app/demo demonstrates it end to end - that page carries its clip in
-two qualities, so the bar shows 2. archive.org/details/BigBuckBunny_124 works the
-same way if you would rather use a page that is not ours.
+YouTube and its domains are blocked from detection, in line with their terms.
 
-PERMISSIONS: Photos, to list and play the user's own videos in the Videos tab.
-Local Network, to find a Chromecast or a Panura receiver on an Android TV, and
-only while "Play on TV" is open. Background audio, only when the user turns
-background play on. App Transport Security allows arbitrary loads because a
-browser must reach sites that are still HTTP; no connection of our own is
-weakened.
+NO ACCOUNTS - no registration, login or account deletion. No user-generated
+content. No in-app purchase or subscription. Nothing is gated.
 
-This build shows no ads: the Google Mobile Ads SDK is linked but gated off at
-compile time, never initialised, and the App Tracking Transparency prompt is
-never shown.
+TO TRY IT: type a site with video into the address bar and press play on that
+site's own player. A bar appears naming what was found, with a Play button; with
+several streams it shows a count, and tapping it lists them. panura.app/demo
+shows this end to end (two qualities, so the bar shows 2);
+archive.org/details/BigBuckBunny_124 works the same way.
 
-EXTERNAL SERVICES: Google - Analytics for Firebase and Crashlytics (aggregate
-usage statistics and crash reports, linked to no identity and not used for
-tracking), the Cast SDK, and address-bar completion via
-suggestqueries.google.com (search terms only; anything containing "://" or
-beginning "www." is refused). Filter lists fetched and compiled on the device:
-EasyList, EasyPrivacy, uBlock Origin, AdGuard mobile, oisd. Ours:
+PERMISSIONS: Photos, to list and play the user's own videos. Local Network, to
+find a Chromecast or the Panura Android TV receiver while Cast is open, and to
+reach servers the user adds. Background audio, only when the user turns it on.
+App Transport Security allows arbitrary loads because a browser must reach sites
+still on HTTP.
+
+ADS: the app shows Google AdMob ads, non-personalised only. No tracking, so the
+App Tracking Transparency prompt is never shown. Consent is collected through
+Google's UMP where required. The ad blocker applies to web pages, never to the
+app's own ads.
+
+EXTERNAL SERVICES: Google - AdMob, Analytics for Firebase and Crashlytics
+(aggregate, linked to no identity), the Cast SDK, and address-bar completion via
+suggestqueries.google.com (search terms only, never a URL). Filter lists compiled
+on device: EasyList, EasyPrivacy, uBlock Origin, AdGuard mobile, oisd. Ours:
 panura.app/version.json (version and changelog), panura.app/manifest.json (tunes
 stream detection and cannot enable a feature), and a Cloudflare Worker receiving
-Report a Problem. VLCKit is a bundled playback engine, not a service. No
-authentication, payment, AI or content-provider service.
+Report a Problem. VLCKit is a bundled playback engine, not a service.
 
-Browsing history and the pages a user visits are never sent anywhere. The only
-playback events logged record the format ("hls", "mkv") and which of the two
-engines played it, never an address.
+Browsing history and visited pages are never sent anywhere. Playback analytics
+record only the format ("hls", "mkv") and which engine played it, never an address.
 
-REGIONS: the app behaves identically in every region where it is available.
-Nothing is geo-gated.
+REGIONS: identical behaviour everywhere the app is available. Nothing is geo-gated.
 ```
 
 **The detection manifest is deliberately not mentioned in the notes — option B,
@@ -682,6 +690,9 @@ it in Resolution Center rather than linking to it, so nothing depends on a
 third-party host resolving.
 
 ### The reply, in full
+
+History, as sent in 2026-09: it predates ads, Saving and Media Servers and says
+"this build shows no ads". Do not reuse it; the Notes block above is current.
 
 ```
 Thank you for the review. All six items are answered below, and the same
