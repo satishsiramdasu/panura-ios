@@ -173,8 +173,6 @@ final class StreamProxy {
                   let file = request.params[":file"], !file.contains("..")
             else { return .badRequest(nil) }
             let url = DownloadStore.root.appendingPathComponent(id).appendingPathComponent(file)
-            guard let raw = try? Data(contentsOf: url, options: .mappedIfSafe) else { return .notFound }
-
             let ext = url.pathExtension.lowercased()
             let type: String
             switch ext {
@@ -182,8 +180,20 @@ final class StreamProxy {
             case "ts": type = "video/MP2T"
             case "mp4", "m4s", "m4v": type = "video/mp4"
             case "vtt": type = "text/vtt"
-            default: type = "application/octet-stream"
+            default: type = Self.sniffedType(url) ?? "application/octet-stream"
             }
+
+            // A whole saved film, not a segment. Served from the file in pieces:
+            // stripping and slicing it as one `Data` copied the requested range
+            // into memory, and a player's "bytes=0-" asks for all of it — a
+            // multi-gigabyte MKV killed the app.
+            let size = ((try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber)?
+                .int64Value ?? 0
+            if size > Self.wholeFileLimit {
+                return Self.ranged(url, size: size, type: type, range: request.headers["range"])
+            }
+
+            guard let raw = try? Data(contentsOf: url, options: .mappedIfSafe) else { return .notFound }
             if ext == "m3u8" { return .ok(.data(raw, contentType: type)) }
 
             // Whole file stripped first, then ranged: offsets are the player's
@@ -208,6 +218,63 @@ final class StreamProxy {
                 try writer.write(slice)
             }
         }
+    }
+
+    /// Above this a saved file is a whole video, not a segment, and is served
+    /// from disk in pieces with no decoy check: decoys are a per-segment trick.
+    private static let wholeFileLimit: Int64 = 32 << 20
+
+    /// A byte range of a large file, read and written a megabyte at a time so
+    /// memory stays flat whatever the player asks for.
+    private static func ranged(_ url: URL, size: Int64, type: String, range: String?) -> HttpResponse {
+        var lower: Int64 = 0
+        var upper = size - 1
+        var status = 200
+        if let range, range.hasPrefix("bytes=") {
+            let parts = range.dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
+            if let first = parts.first, let start = Int64(first) {
+                lower = min(max(0, start), size - 1)
+                if parts.count > 1, let end = Int64(parts[1]) { upper = min(max(lower, end), size - 1) }
+            } else if parts.count > 1, let suffix = Int64(parts[1]) {
+                // "bytes=-N": the last N bytes.
+                lower = max(0, size - suffix)
+            }
+            status = 206
+        }
+        var headers = [
+            "Content-Type": type, "Accept-Ranges": "bytes",
+            "Content-Length": String(upper - lower + 1),
+        ]
+        if status == 206 { headers["Content-Range"] = "bytes \(lower)-\(upper)/\(size)" }
+        return .raw(status, status == 206 ? "Partial Content" : "OK", headers) { writer in
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            try handle.seek(toOffset: UInt64(lower))
+            var left = upper - lower + 1
+            while left > 0 {
+                let chunk = try handle.read(upToCount: Int(min(left, 1 << 20))) ?? Data()
+                if chunk.isEmpty { break }
+                try writer.write(chunk)
+                left -= Int64(chunk.count)
+            }
+        }
+    }
+
+    /// The type of an extensionless saved file from its first bytes. A plain
+    /// download is stored as `video`, and an octet-stream told the Apple player
+    /// nothing about what it was opening.
+    static func sniffedType(_ url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 12), head.count >= 8 else { return nil }
+        let bytes = [UInt8](head)
+        if bytes.starts(with: [0x1A, 0x45, 0xDF, 0xA3]) {
+            // Matroska and WebM share the EBML header.
+            return "video/x-matroska"
+        }
+        if bytes[4...7].elementsEqual(Array("ftyp".utf8)) { return "video/mp4" }
+        if bytes[0] == 0x47 { return "video/MP2T" }
+        return nil
     }
 
     /// The HTTP URL for a file inside a saved download, or the file's own URL

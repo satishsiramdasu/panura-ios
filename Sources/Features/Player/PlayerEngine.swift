@@ -209,6 +209,13 @@ enum PlayerEngineKind: String, CaseIterable, Identifiable {
            ["smb", "sftp", "ftp", "ftps", "nfs"].contains(scheme) {
             return true
         }
+        // A plain download is saved as `video`, with no extension to go on, so
+        // its first bytes say what it is. An MKV opened in the Apple player only
+        // fails and hands over.
+        if item.url.isFileURL, item.url.pathExtension.isEmpty,
+           StreamProxy.sniffedType(item.url) == "video/x-matroska" {
+            return true
+        }
         let path = item.url.path.lowercased()
         return ["mkv", "avi", "webm", "flv", "wmv", "rmvb", "ts", "mpg", "mpeg", "vob", "ogv", "divx"]
             .contains { path.hasSuffix("." + $0) }
