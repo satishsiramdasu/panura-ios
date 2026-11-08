@@ -99,6 +99,12 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
     // Resume-from-position bookkeeping.
     private var pendingResumeSeconds: Double?
+    /// Where the next open starts, through libVLC's `start-time`.
+    private var openAtSeconds: Double?
+    /// The seek being watched; a newer seek replaces it.
+    private var seekWatch: Task<Void, Never>?
+    /// Audio and subtitle picks to put back once a reopened stream lists its tracks.
+    private var restoreTracks: (audio: Int, subtitle: Int)?
     private var resumeApplied = false
     private var lastResumeSave = Date.distantPast
 
@@ -223,6 +229,13 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         }
         lengthMs = 0
         applyHeaders(item.headers, to: media)     // belt-and-braces for the direct path
+        // Opened at a time rather than seeked to after it starts: see `watchSeek`.
+        if let at = openAtSeconds {
+            media.addOption(":start-time=\(Int(at))")
+            openAtSeconds = nil
+            pendingResumeSeconds = nil
+            resumeApplied = true
+        }
         applySubtitleStyle(to: media)
         player.media = media
         player.play()
@@ -410,7 +423,9 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // of its OWN length, which is the value that can be a day too long.
         let total = durationMs
         if total > 0 {
-            player.time = VLCTime(int: Int32(clamping: Int(Double(clamped) * Double(total))))
+            let targetMs = Int(Double(clamped) * Double(total))
+            player.time = VLCTime(int: Int32(clamping: targetMs))
+            watchSeek(toMs: targetMs)
         } else {
             player.position = Double(clamped)
         }
@@ -419,6 +434,33 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // expects playback. Harmless if already playing.
         if wantsPlayback, !player.isPlaying { player.play() }
     }
+    /// A long jump in a remote file that never lands is reopened at the target.
+    ///
+    /// A 3-hour MKV over HTTP, jumped an hour ahead, sat with nothing on screen:
+    /// libVLC's in-place seek on a progressive file can stall reading toward
+    /// the target, where Android's player jumps there by its index at once.
+    /// Opening the stream again with `start-time` makes libVLC start at the
+    /// right place in one ranged request. Not for local files, which seek in
+    /// place quickly, nor HLS, whose segments make a seek one request anyway.
+    private func watchSeek(toMs target: Int) {
+        seekWatch?.cancel()
+        guard let item, !item.isLocal, !item.url.isFileURL,
+              item.contentType != "hls", !item.url.path.lowercased().hasSuffix(".m3u8")
+        else { return }
+        // Shown at once, so the seek reads as working rather than ignored.
+        buffering = true
+        seekWatch = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled, let self, self.item?.url == item.url else { return }
+            let now = Int(self.player.time.intValue)
+            guard abs(now - target) > 10_000 else { return }
+            self.openAtSeconds = Double(target) / 1000
+            // The reopen starts on the file's default tracks; the user's picks go back on.
+            self.restoreTracks = (self.currentAudioId, self.currentSubtitleId)
+            self.buildAndPlay()
+        }
+    }
+
     func setRate(_ r: Float) { player.rate = r; rate = r }
 
     /// Hold-to-speed-up (long press): remember the rate, jump to 2×, restore.
@@ -958,6 +1000,11 @@ final class VLCPlayerModel: NSObject, ObservableObject {
 
         guard !audio.isEmpty || !text.isEmpty else { return }
         tracksLoaded = true
+        if let picks = restoreTracks {
+            restoreTracks = nil
+            if picks.audio >= 0 { selectAudio(picks.audio) }
+            selectSubtitle(picks.subtitle)
+        }
         if !preferredLanguagesApplied {
             preferredLanguagesApplied = true
             applyPreferredLanguages()
