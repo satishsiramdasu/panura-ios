@@ -78,6 +78,26 @@ final class HLSExtras: ObservableObject {
         }
     }
 
+    /// Fetches every preview sheet ahead of the first scrub, so a scrub anywhere
+    /// on the timeline shows its still at once instead of after a round trip.
+    ///
+    /// Starts 4 s in, once the video has its opening segments, and fetches one
+    /// sheet at a time so it never competes with the stream for bandwidth.
+    /// Runs in the player's `.task`, so closing the player or changing the
+    /// video cancels it.
+    func prefetchPreviews() async {
+        guard hasPreviews else { return }
+        try? await Task.sleep(for: .seconds(4))
+        let urls = thumbnails?.imageURLs ?? trickPlay?.sheetURLs ?? []
+        for url in urls {
+            if Task.isCancelled { return }
+            guard sheets.object(forKey: url as NSURL) == nil, !fetching.contains(url) else { continue }
+            fetching.insert(url)
+            await fetchSheetNow(url)
+            fetching.remove(url)
+        }
+    }
+
     private func loadChapters(_ url: URL, headers: [String: String]) async {
         var request = URLRequest(url: url)
         request.timeoutInterval = 8
@@ -145,15 +165,20 @@ final class HLSExtras: ObservableObject {
         guard !fetching.contains(url) else { return }
         fetching.insert(url)
         Task { [weak self] in
-            defer { Task { @MainActor in self?.fetching.remove(url) } }
-            var request = URLRequest(url: url)
-            request.timeoutInterval = 10
-            for (name, value) in self?.headers ?? [:] { request.setValue(value, forHTTPHeaderField: name) }
-            guard let (data, _) = try? await URLSession.shared.data(for: request),
-                  let image = UIImage(data: data)
-            else { return }
-            await MainActor.run { self?.sheets.setObject(image, forKey: url as NSURL) }
+            await self?.fetchSheetNow(url)
+            self?.fetching.remove(url)
         }
+    }
+
+    /// One sheet, decoded up front so the first crop of it costs nothing.
+    private func fetchSheetNow(_ url: URL) async {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return }
+        let image = await Task.detached { UIImage(data: data)?.preparingForDisplay() ?? UIImage(data: data) }.value
+        guard let image else { return }
+        sheets.setObject(image, forKey: url as NSURL)
     }
 
     /// Cuts one tile out of a sheet.
@@ -255,6 +280,9 @@ struct TrickPlay {
     }
 
     private let sheets: [Sheet]
+
+    /// Every sheet, in playback order, for the prefetch.
+    var sheetURLs: [URL] { sheets.map(.url) }
 
     init?(_ text: String, base: URL) {
         guard text.contains("#EXT-X-IMAGES-ONLY") || text.contains("#EXT-X-TILES") else { return nil }
@@ -435,6 +463,12 @@ struct ThumbnailTrack {
             }
         }
         return Cue(start: start, end: end, image: url, rect: rect)
+    }
+
+    /// Each distinct image, in playback order, for the prefetch.
+    var imageURLs: [URL] {
+        var seen = Set<URL>()
+        return cues.map(.image).filter { seen.insert($0).inserted }
     }
 
     func cue(at seconds: Double) -> Cue? {

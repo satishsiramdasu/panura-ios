@@ -222,7 +222,10 @@ struct PlayerView<Model: PlayerEngine>: View {
         .persistentSystemOverlays(.hidden)
         // Chapters and sprite sheets, if the stream has them. Keyed on the URL
         // so a next-in-playlist reloads them and a redraw does not.
-        .task(id: item.url) { await extras.load(item) }
+        .task(id: item.url) {
+            await extras.load(item)
+            await extras.prefetchPreviews()
+        }
         .onAppear {
             index = playlist?.startIndex ?? 0
             OrientationManager.allowAll()
