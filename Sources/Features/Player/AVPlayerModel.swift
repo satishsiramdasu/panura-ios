@@ -562,11 +562,13 @@ final class AVPlayerModel: NSObject, ObservableObject, PlayerEngine {
         // the moment the seek takes.
         if totalSeconds > 0 { position = Float(seconds / totalSeconds) }
         elapsed = PlayerClock.format(seconds)
-        // Frame-exact for a local file, where it is cheap. A stream is allowed
-        // half a second either way: exact means decoding forward from the last
-        // keyframe over the network, which turns a scrub into a wait.
+        // Frame-exact for a local file, where it is cheap. A stream lands on
+        // the nearest keyframe, as ExoPlayer does: anything tighter means
+        // fetching from the keyframe before the target and decoding forward
+        // over the network, which on a remote file with sparse keyframes
+        // turned every scrub into a wait of several seconds.
         let local = item?.isLocal == true
-        let tolerance = local ? CMTime.zero : CMTime(seconds: 0.5, preferredTimescale: 600)
+        let tolerance = local ? CMTime.zero : CMTime.positiveInfinity
         player.seek(
             to: CMTime(seconds: seconds, preferredTimescale: 600),
             toleranceBefore: tolerance,

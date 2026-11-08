@@ -266,6 +266,10 @@ final class VLCPlayerModel: NSObject, ObservableObject {
         // playing. Adaptive streams may run three minutes ahead. Not
         // `network-caching`, which is a start-up delay, not a ceiling.
         media.addOption(":adaptive-maxbuffer=180000")
+        // Seek to keyframes rather than decoding forward to the exact frame. On
+        // a remote MKV or MP4 the exact seek reads and decodes everything from
+        // the previous keyframe over the network, which is the slow scrub.
+        media.addOption(":input-fast-seek")
     }
 
     /// Subtitle look — set at media-open time (libVLC's text renderer reads these
