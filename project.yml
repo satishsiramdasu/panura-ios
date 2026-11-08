@@ -61,7 +61,10 @@ packages:
   # Converts EasyList/uBlock ABP filter lists into Safari content-blocker JSON.
   SafariConverterLib:
     url: https://github.com/AdguardTeam/SafariConverterLib
-    from: "4.3.0"
+    # Exact, not `from`: 4.3.1 added a GenerateVersion build plugin, and a CI
+    # runner cannot click Xcode's "Trust" for it, so the archive failed at
+    # "Validate plug-in". Move up deliberately, after checking what it adds.
+    exactVersion: "4.3.0"
   # VLCKit 4 (libVLC 4) — every format + reliable HTTP header support
   # (Referer/User-Agent/Cookie) for gated streams, plus Picture in Picture.
   # A local package around VideoLAN's own binary xcframework; the version and
