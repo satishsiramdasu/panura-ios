@@ -1518,7 +1518,7 @@ struct BrowserView: View {
     private func askToSave(_ video: ExtractedVideo) {
         guard isHLS(video) else { save(video, url: video.url); return }
         let item = model.playable(video)
-        let title = model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle
+        let title = video.fixedTitle ?? (model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle)
         Task {
             guard let (status, text) = await Self.fetchText(video.url, headers: item.headers),
                   (200..<300).contains(status), text.contains("#EXT-X-STREAM-INF")
@@ -1564,7 +1564,9 @@ struct BrowserView: View {
         model.directLink = nil
         let typed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         DownloadStore.shared.enqueue(
-            title: typed.isEmpty ? (model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle) : typed,
+            title: typed.isEmpty
+                ? (video.fixedTitle ?? (model.pageTitle.isEmpty ? video.fileLabel : model.pageTitle))
+                : typed,
             pageURL: model.currentURL?.absoluteString ?? video.url.absoluteString,
             streamURL: url,
             headers: item.headers,

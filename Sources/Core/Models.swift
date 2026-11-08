@@ -130,6 +130,10 @@ struct ExtractedVideo: Identifiable, Hashable {
     let id = UUID()
     let url: URL
     let title: String
+    /// A title that beats the page's, set when the page title describes the
+    /// wrong thing: a tapped link to a file on a directory listing would
+    /// otherwise play, cast and save as "Index of /downloads/".
+    var fixedTitle: String?
     /// Rule-narrowed, for local playback.
     let headers: [String: String]
     /// Untrimmed, for casting — see `MediaItem.castHeaders`.

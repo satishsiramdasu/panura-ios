@@ -245,6 +245,9 @@ final class BrowserModel: ObservableObject {
     /// link proves to be a web page after all, `openAsPage` carries on the
     /// navigation that was cancelled to ask.
     func offerDirectLink(_ video: ExtractedVideo, openAsPage: @escaping () -> Void) {
+        // The dialog names the file, so Play, Cast and Save do too.
+        var video = video
+        video.fixedTitle = video.fileLabel.removingPercentEncoding ?? video.fileLabel
         let offer = DirectLinkOffer(video: video)
         directLink = offer
         Task { [weak self] in
@@ -344,7 +347,7 @@ final class BrowserModel: ObservableObject {
         var item = MediaItem(
             // The title the found sheet shows: the page's current one. `video.title` was
             // captured at detection and is often stale or empty by the time of the tap.
-            title: !pageTitle.isEmpty ? pageTitle : (video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title),
+            title: video.fixedTitle ?? (!pageTitle.isEmpty ? pageTitle : (video.title.isEmpty ? (mediaSessionTitle.isEmpty ? "Video" : mediaSessionTitle) : video.title)),
             url: video.url,
             thumbnailURL: posterURL,
             headers: video.headers,
