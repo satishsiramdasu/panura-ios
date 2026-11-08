@@ -282,7 +282,7 @@ struct TrickPlay {
     private let sheets: [Sheet]
 
     /// Every sheet, in playback order, for the prefetch.
-    var sheetURLs: [URL] { sheets.map(.url) }
+    var sheetURLs: [URL] { sheets.map { $0.url } }
 
     init?(_ text: String, base: URL) {
         guard text.contains("#EXT-X-IMAGES-ONLY") || text.contains("#EXT-X-TILES") else { return nil }
@@ -468,7 +468,7 @@ struct ThumbnailTrack {
     /// Each distinct image, in playback order, for the prefetch.
     var imageURLs: [URL] {
         var seen = Set<URL>()
-        return cues.map(.image).filter { seen.insert($0).inserted }
+        return cues.map { $0.image }.filter { seen.insert($0).inserted }
     }
 
     func cue(at seconds: Double) -> Cue? {
