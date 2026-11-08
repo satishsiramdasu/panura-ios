@@ -60,6 +60,9 @@ struct ShellHeader<MenuContent: View>: View {
                     .frame(width: 44, height: 44)
                 menuButton
             }
+            // The seat gives way on a narrow row, never the buttons.
+            .layoutPriority(1)
+            .fixedSize()
         }
         .padding(.leading, 12)
         .padding(.trailing, 4)
@@ -78,6 +81,7 @@ struct ShellHeader<MenuContent: View>: View {
                         Text("Panura")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(PanuraTheme.onSurface)
+                            .lineLimit(1)
                         if !appVersion.isEmpty {
                             Text("v\(appVersion)")
                                 .font(.system(size: 9, weight: .semibold))
@@ -90,6 +94,10 @@ struct ShellHeader<MenuContent: View>: View {
                     sectionLine
                 }
                 .padding(.trailing, 16)
+                // Fixed point sizes keep the row at 58pt at any text size; on the
+                // narrowest phones the name and section line shrink rather than
+                // push the buttons off the row.
+                .minimumScaleFactor(0.8)
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
             }
