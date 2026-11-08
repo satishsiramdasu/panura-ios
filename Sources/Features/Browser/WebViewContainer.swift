@@ -998,7 +998,9 @@ enum VideoURL {
         ".ts", ".m4s", ".js", ".mjs", ".css", ".json",
         ".gif", ".png", ".jpg", ".jpeg", ".ico", ".svg", ".webp", ".xml",
     ]
-    private static let acceptedSuffixes = [".m3u8", ".mpd", ".mp4", ".webm", ".mkv"]
+    private static let acceptedSuffixes = [
+        ".m3u8", ".mpd", ".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".flv",
+    ]
 
     static func looksLikeVideo(_ url: URL) -> Bool {
         let s = url.absoluteString.lowercased()

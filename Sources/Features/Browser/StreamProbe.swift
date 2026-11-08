@@ -73,7 +73,8 @@ enum StreamProbe {
     static func isDirectMedia(_ url: URL) -> Bool {
         let full = url.absoluteString.lowercased()
         let path = full.components(separatedBy: "?").first ?? full
-        if [".m3u8", ".mpd", ".mp4", ".webm", ".mkv"].contains(where: path.hasSuffix) { return true }
+        if [".m3u8", ".mpd", ".mp4", ".webm", ".mkv", ".mov", ".m4v", ".avi", ".flv"]
+            .contains(where: path.hasSuffix) { return true }
         if path.contains("/hls/"), !path.hasSuffix(".js"), !path.hasSuffix(".mjs") { return true }
         if path.hasSuffix(".txt"),
            ["master", "index", "playlist"].contains(where: path.contains) { return true }
